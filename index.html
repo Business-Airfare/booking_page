@@ -1,0 +1,2439 @@
+<!-- =========================
+     BA PAYMENT PAGE — FULL
+     Paste this whole thing in ONE place
+========================= -->
+
+<div id="baPayRoot"></div>
+
+<!-- Stripe.js -->
+<script src="https://js.stripe.com/v3"></script>
+
+<script>
+(function () {
+  const STRIPE_PUBLISHABLE_KEY = "pk_test_51RpG5EIb9TlAdJMajS3FihUE4iCrGg1egeXP6zXIZikRLV9hSuNpeXcYqnna968mOYw0RTcrboKPYYBjfXQA3aE600eLwmPhad";
+  const SUPABASE_FUNCTIONS_BASE = "https://ofyciacvdpwpkcbbmmxj.supabase.co/functions/v1";
+  const GET_SESSION = SUPABASE_FUNCTIONS_BASE + "/get_public_session";
+  const UPDATE_SELECTION = SUPABASE_FUNCTIONS_BASE + "/update_selection";
+  const START_PAYMENT = SUPABASE_FUNCTIONS_BASE + "/start_payment";
+  const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
+
+  function qs(name){
+    return new URLSearchParams(window.location.search).get(name);
+  }
+  const publicId = qs("public_id");
+
+  const root = document.getElementById("baPayRoot");
+  if (!root) return;
+
+  // ---------- helpers ----------
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, m => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
+    ));
+  }
+
+  function renderLoading(){
+    root.innerHTML = `
+      <div style="position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:system-ui;background:#fff;z-index:99999">
+        <div style="width:32px;height:32px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+        <div style="font-weight:700;font-size:15px;color:#333">Loading booking page</div>
+      </div>
+      <style>
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    `;
+  }
+
+  function renderError(msg){
+    root.innerHTML =
+      '<div style="padding:24px;font-family:system-ui;color:#b00020">Error: ' +
+      escapeHtml(msg) + '</div>';
+  }
+
+  function fmtMoney(cents){
+    if (typeof cents !== "number") return "—";
+    const dollars = cents/100;
+    const formatted = dollars.toFixed(2);
+    const parts = formatted.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return "$" + parts.join(".");
+  }
+
+  function fmtPhoneDisplay(phoneStr){
+    if (!phoneStr) return "";
+    const digits = String(phoneStr).replace(/\D/g, "");
+    if (digits.length === 10) {
+      return "+1 " + digits.slice(0, 3) + "-" + digits.slice(3, 6) + "-" + digits.slice(6);
+    }
+    if (digits.length === 11 && digits.startsWith("1")) {
+      return "+1 " + digits.slice(1, 4) + "-" + digits.slice(4, 7) + "-" + digits.slice(7);
+    }
+    if (phoneStr.startsWith("+1")) {
+      const rest = phoneStr.slice(2).replace(/\D/g, "");
+      if (rest.length === 10) {
+        return "+1 " + rest.slice(0, 3) + "-" + rest.slice(3, 6) + "-" + rest.slice(6);
+      }
+    }
+    return phoneStr;
+  }
+
+  function dtToParts(localStr){ // "YYYY-MM-DD HH:MM"
+    if (!localStr || localStr.length < 16) return null;
+    return {
+      y: +localStr.slice(0,4),
+      m: +localStr.slice(5,7),
+      d: +localStr.slice(8,10),
+      hh: +localStr.slice(11,13),
+      mm: +localStr.slice(14,16),
+      date: localStr.slice(0,10)
+    };
+  }
+
+  function fmt12(localStr){
+    const p = dtToParts(localStr);
+    if (!p) return "—";
+    const ampm = p.hh >= 12 ? "PM" : "AM";
+    let h = p.hh % 12;
+    if (h === 0) h = 12;
+    return `${h}:${String(p.mm).padStart(2,"0")} ${ampm}`;
+  }
+
+  function monthDayLabel(localStr){ // -> "Jun 04"
+    const p = dtToParts(localStr);
+    if (!p) return "—";
+    const d = new Date(Date.UTC(p.y, p.m - 1, p.d));
+    return d.toLocaleDateString(undefined, { month:"short", day:"2-digit" });
+  }
+
+  function dateHeaderLabel(yyyy_mm_dd){
+    const d = new Date(yyyy_mm_dd + "T00:00:00Z");
+    return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+  }
+
+  function minsToHM(mins){
+    if (mins == null || !Number.isFinite(mins)) return "—";
+    const m = Math.max(0, Math.round(mins));
+    const h = Math.floor(m/60);
+    const mm = m % 60;
+    return `${h}h ${String(mm).padStart(2,"0")}m`;
+  }
+
+  function minsToHMM(mins){ // -> "3:35"
+    if (mins == null || !Number.isFinite(mins)) return "";
+    const m = Math.max(0, Math.round(mins));
+    const h = Math.floor(m/60);
+    const mm = m % 60;
+    return `${h}:${String(mm).padStart(2,"0")}`;
+  }
+
+  function expiresClock(expiresAtISO){
+    const exp = new Date(expiresAtISO).getTime();
+    const now = Date.now();
+    const s = Math.max(0, Math.floor((exp - now)/1000));
+    if (s <= 0) return "00:00:00";
+    const hh = Math.floor(s/3600);
+    const mm = Math.floor((s%3600)/60);
+    const ss = s%60;
+    return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+  }
+
+  const AIRLINE_NAMES = {
+    UA: "United Airlines",
+    LH: "Lufthansa",
+    LX: "Swiss International Air Lines",
+    AA: "American Airlines",
+    DL: "Delta Air Lines",
+    AF: "Air France",
+    KL: "KLM",
+    BA: "British Airways",
+    EY: "Etihad Airways",
+  };
+
+  // Format cabin name from backend format to display format
+  function formatCabinName(cabin) {
+    if (!cabin) return "";
+    const c = String(cabin).toLowerCase().trim();
+    if (c === "first") return "First";
+    if (c === "business") return "Business";
+    if (c === "premium_economy" || c === "premium-economy" || c === "premium economy") return "Premium Economy";
+    if (c === "economy") return "Economy";
+    return cabin; // fallback to original if not recognized
+  }
+
+  function cabinFromClass(cls, carrier){
+    const c = String(cls || "").toUpperCase();
+    const a = String(carrier || "").toUpperCase();
+    if (!c) return "";
+    if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
+    if (c === "F" || c === "A") return "First";
+    if ("JCDIZP".includes(c)) return "Business";
+    if (c === "W") return "Premium Economy";
+    return "Economy";
+  }
+
+  function logoUrl(carrier){
+    return `https://pnrexpert.b-cdn.net/images/airlines/${String(carrier||"").toLowerCase()}.png`;
+  }
+
+  function cityPairFromJourney(j){
+    const segs = Array.isArray(j?.segments) ? j.segments : [];
+    if (!segs.length) return { fromCity:"—", toCity:"—", fromIata:"", toIata:"" };
+    const first = segs[0];
+    const last = segs[segs.length - 1];
+    return {
+      fromCity: first?.origin_city || "",
+      toCity: last?.destination_city || "",
+      fromIata: first?.origin || "",
+      toIata: last?.destination || ""
+    };
+  }
+
+  function clampInt(n, min, max){
+    const x = Math.round(Number(n));
+    if (!Number.isFinite(x)) return min;
+    return Math.min(max, Math.max(min, x));
+  }
+
+  function segmentFlightTime(s){
+    const mins =
+      (Number.isFinite(s?.flight_minutes) ? s.flight_minutes : null) ??
+      (Number.isFinite(s?.duration_minutes) ? s.duration_minutes : null) ??
+      (Number.isFinite(s?.elapsed_minutes) ? s.elapsed_minutes : null);
+
+    if (mins != null) {
+      const hmm = minsToHMM(mins);
+      return hmm ? `Flight time: ${hmm}` : "";
+    }
+
+    const st = String(s?.flight_time || s?.duration || "").trim();
+    if (st) return `Flight time: ${st}`;
+    return "";
+  }
+
+  function segmentMealText(s){
+    return String(s?.meal || s?.meal_text || s?.service_meal || "").trim();
+  }
+
+  // ---------- Stripe state ----------
+  let stripe = null;
+  let elements = null;
+  let paymentElement = null;
+  let linkAuthElement = null;
+  let addressElement = null;
+
+  let billingEmail = "";
+  let billingAddressComplete = false;
+
+  function normalizePhone(s){
+    return String(s || "").trim();
+  }
+
+  function setConfirmEnabled(enabled){
+    const confirmBtn = document.getElementById("baStripeConfirm");
+    const msg = document.getElementById("baStripeMsg");
+    if (!confirmBtn) return;
+    confirmBtn.disabled = !enabled;
+    confirmBtn.style.opacity = enabled ? "1" : ".6";
+    confirmBtn.style.cursor = enabled ? "pointer" : "not-allowed";
+    if (!enabled && msg && !msg.textContent) {
+      msg.textContent = "Please enter billing details to continue.";
+    }
+  }
+
+  function validateBillingUI(){
+    const emailOk = !!(billingEmail && billingEmail.includes("@"));
+    const addrOk = !!billingAddressComplete;
+    return emailOk && addrOk;
+  }
+
+  async function mountStripePaymentElement(clientSecret){
+    if (!window.Stripe) throw new Error("Stripe.js failed to load");
+    if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
+
+    elements = stripe.elements({
+      clientSecret,
+      appearance: { theme: "stripe" },
+      loader: "auto"
+    });
+
+    linkAuthElement = elements.create("linkAuthentication");
+    const linkMount = document.getElementById("baLinkAuthMount");
+    if (!linkMount) throw new Error("Missing baLinkAuthMount container");
+    linkMount.innerHTML = "";
+    linkAuthElement.mount("#baLinkAuthMount");
+
+    linkAuthElement.on("change", (event) => {
+      billingEmail = (event && event.value && event.value.email) ? String(event.value.email) : "";
+      const ok = validateBillingUI();
+      const m = document.getElementById("baStripeMsg");
+      if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
+      setConfirmEnabled(ok);
+    });
+
+    addressElement = elements.create("address", {
+      mode: "billing",
+      fields: { phone: "always" },
+      defaultValues: { address: { country: "US" } }
+    });
+
+    const addrMount = document.getElementById("baAddressMount");
+    if (!addrMount) throw new Error("Missing baAddressMount container");
+    addrMount.innerHTML = "";
+    addressElement.mount("#baAddressMount");
+
+    addressElement.on("change", (event) => {
+      billingAddressComplete = !!(event && event.complete);
+      const ok = validateBillingUI();
+      const m = document.getElementById("baStripeMsg");
+      if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
+      setConfirmEnabled(ok);
+    });
+
+    paymentElement = elements.create("payment", { layout: "tabs" });
+    const payMount = document.getElementById("baStripeMount");
+    if (!payMount) throw new Error("Missing baStripeMount container");
+    payMount.innerHTML = "";
+    paymentElement.mount("#baStripeMount");
+
+    setConfirmEnabled(validateBillingUI());
+  }
+
+  async function confirmStripePayment(){
+    if (!stripe || !elements) throw new Error("Stripe Elements not initialized");
+
+    if (!linkAuthElement) throw new Error("Email element not initialized.");
+    if (!billingEmail) throw new Error("Please enter a valid billing email.");
+
+    if (!addressElement) throw new Error("Address element not initialized.");
+    const addr = await addressElement.getValue();
+    if (!addr || !addr.complete) throw new Error("Please complete the billing address.");
+
+    const address = (addr.value && addr.value.address) ? addr.value.address : null;
+    const phone = normalizePhone(addr.value && addr.value.phone ? addr.value.phone : "");
+    const billingName = String((addr.value && addr.value.name) ? addr.value.name : "").trim();
+    if (billingName.length < 2) throw new Error("Please enter your full name in the billing address section.");
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+        payment_method_data: {
+          billing_details: {
+            name: billingName,
+            email: billingEmail,
+            phone: phone || undefined,
+            address: address || undefined,
+          }
+        }
+      },
+      redirect: "if_required"
+    });
+
+    if (error) throw new Error(error.message || "Payment failed");
+    return paymentIntent;
+  }
+
+  // ---------- selection update ----------
+  async function updateSelection(public_id, patch){
+    const res = await fetch(UPDATE_SELECTION, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ public_id, ...patch })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || ("HTTP " + res.status));
+    return data;
+  }
+
+  // ---------- Paid UI ----------
+  function renderPaid(data){
+    const pax = (data.passengers || []).join(", ");
+    root.innerHTML = `
+      <div style="padding:24px;font-family:system-ui;max-width:920px;margin:0 auto">
+        <div style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
+          <div style="font-weight:900;font-size:16px;margin-bottom:4px">Payment received ✅</div>
+          <div style="opacity:.9">Thank you. Your agent will follow up with the next steps.</div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:14px;opacity:.75">Passengers</div>
+            <div style="font-weight:700">${escapeHtml(pax || "—")}</div>
+          </div>
+          <div>
+            <div style="font-size:14px;opacity:.75">Paid</div>
+            <div style="font-weight:900;font-size:18px">
+              ${fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount)} ${escapeHtml(data.currency || "USD")}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:14px;opacity:.75">Paid at</div>
+            <div style="font-weight:800">${escapeHtml(data.paid_at ? new Date(data.paid_at).toLocaleString() : "—")}</div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px">
+          <h2 style="margin:0 0 12px;font-size:34px;letter-spacing:-0.02em">Flight Itinerary</h2>
+          <div style="opacity:.85">You can keep this page for your records.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ----------------------------
+  // PASSENGERS (data helpers)
+  // ----------------------------
+  function getPassengerDetailsArray(d){
+    const candidates = [
+      d.passenger_details,
+      d.passengers_details,
+      d.passengerDetails,
+      d.passengersDetails,
+      d.pax_details,
+      d.paxDetails,
+      d.travelers,
+      d.travellers
+    ];
+    for (const c of candidates){
+      if (Array.isArray(c) && c.length) return c;
+    }
+    return null;
+  }
+
+  function splitFullName(full){
+    const s = String(full || "").trim().replace(/\s+/g, " ");
+    if (!s) return { first:"", last:"" };
+    const parts = s.split(" ");
+    if (parts.length === 1) return { first: parts[0], last: "" };
+    return { first: parts[0], last: parts.slice(1).join(" ") };
+  }
+
+  function normalizeGender(g){
+    const s = String(g || "").trim().toLowerCase();
+    if (s === "m" || s === "male") return "male";
+    if (s === "f" || s === "female") return "female";
+    return "";
+  }
+
+  function isoDob(dob){
+    const s = String(dob || "").trim();
+    if (!s) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/);
+    if (m){
+      const dd = m[1];
+      const mon = m[2].toLowerCase();
+      const yyyy = m[3];
+      const map = {jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12"};
+      const mm = map[mon] || "";
+      if (mm) return `${yyyy}-${mm}-${dd}`;
+    }
+    return s;
+  }
+
+  function formatDobDisplay(isoStr){
+    if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) return "";
+    const parts = isoStr.split("-");
+    const yyyy = parts[0];
+    const mm = parts[1];
+    const dd = parts[2];
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const monthIdx = parseInt(mm, 10) - 1;
+    if (monthIdx < 0 || monthIdx > 11) return isoStr;
+    return `${dd}-${monthNames[monthIdx]}-${yyyy}`;
+  }
+
+  function parseDobInput(textStr){
+    const s = String(textStr || "").trim();
+    if (!s) return "";
+    const m = s.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/i);
+    if (m){
+      const dd = m[1];
+      const mon = m[2].toLowerCase();
+      const yyyy = m[3];
+      const map = {jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12"};
+      const mm = map[mon] || "";
+      if (mm) return `${yyyy}-${mm}-${dd}`;
+    }
+    return s;
+  }
+
+  function getPassengerFromSession(data, idx){
+    const pdArr = getPassengerDetailsArray(data);
+    const p = pdArr && pdArr[idx] ? pdArr[idx] : null;
+
+    const fullArr = Array.isArray(data.passengers) ? data.passengers : [];
+    const full = fullArr[idx] ? String(fullArr[idx]) : "";
+
+    // Title case helper
+    function toTitleCase(str) {
+      if (!str) return "";
+      return str.split(/\s+/).map(word => {
+        if (!word) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      }).join(" ");
+    }
+    
+    const first  = toTitleCase(String(p?.first_name ?? p?.first ?? "").trim());
+    const last   = toTitleCase(String(p?.last_name ?? p?.last ?? "").trim());
+    const middle = toTitleCase(String(p?.middle_name ?? p?.middle ?? "").trim());
+    const dobISO = isoDob(p?.date_of_birth ?? p?.dob ?? "");
+    const email  = String(p?.email ?? "").trim();
+    const phone  = String(p?.phone ?? "").trim();
+    const gender = normalizeGender(p?.gender);
+
+    if (!p || (!first && !last && !dobISO && !email && !phone && !gender && !middle)){
+      const sp = splitFullName(full);
+      return {
+        first_name: sp.first,
+        last_name: sp.last,
+        middle_name: "",
+        date_of_birth: "",
+        email: "",
+        phone: "",
+        gender: "",
+        dobISO: "",
+        full
+      };
+    }
+
+    let first2 = first, last2 = last;
+    if (!first2 && !last2 && full){
+      const sp = splitFullName(full);
+      first2 = sp.first; last2 = sp.last;
+    }
+
+    return {
+      first_name: first2,
+      last_name: last2,
+      middle_name: middle,
+      date_of_birth: dobISO,
+      email,
+      phone,
+      gender,
+      dobISO,
+      full
+    };
+  }
+
+  // ---------- passenger validation UI ----------
+  function isValidEmail(v){
+    const s = String(v || "").trim();
+    if (!s) return false; // required
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  }
+  function isValidPhone(v){
+    const s = String(v || "").trim();
+    if (!s) return false; // required
+    // Normalize: remove all non-digits except leading +
+    const normalized = s.replace(/[^\d+]/g, "");
+    // Must start with +1 and have exactly 11 digits total (+1 + 10 digits)
+    if (!normalized.startsWith("+1")) return false;
+    const digitsOnly = normalized.replace(/\+/g, "");
+    return digitsOnly.length === 11 && digitsOnly.startsWith("1");
+  }
+  
+  function normalizePhone(v){
+    if (!v) return "+1";
+    // Remove all non-digits
+    const digits = String(v).replace(/\D/g, "");
+    // If starts with 1, assume it's already country code
+    if (digits.startsWith("1") && digits.length === 11) {
+      return "+" + digits;
+    }
+    // Otherwise, assume it's 10 digits US number
+    if (digits.length === 10) {
+      return "+1" + digits;
+    }
+    // If already has +1 prefix
+    if (v.startsWith("+1")) {
+      const rest = v.slice(2).replace(/\D/g, "");
+      if (rest.length === 10) return "+1" + rest;
+    }
+    return "+1" + digits.slice(-10);
+  }
+  function isValidDobISO(v){
+    const s = String(v || "").trim();
+    if (!s) return false; // required
+    // Accept both DD-MMM-YYYY and YYYY-MM-DD formats
+    let isoDate = s;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      // Try to parse DD-MMM-YYYY format
+      isoDate = parseDobInput(s);
+      if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
+    }
+    const d = new Date(isoDate + "T00:00:00Z");
+    if (Number.isNaN(d.getTime())) return false;
+    // sanity: not in future, not older than 120 years
+    const now = new Date();
+    if (d.getTime() > now.getTime()) return false;
+    const oldest = new Date();
+    oldest.setUTCFullYear(oldest.getUTCFullYear() - 120);
+    if (d.getTime() < oldest.getTime()) return false;
+    return true;
+  }
+
+  function setFieldInvalid(inputEl, invalid){
+    if (!inputEl) return;
+    inputEl.classList.toggle("is-invalid", !!invalid);
+    // For phone field, also mark the wrapper div
+    if (inputEl.getAttribute("data-field") === "phone") {
+      const wrapper = inputEl.closest(".baPhoneWrapper");
+      if (wrapper) wrapper.classList.toggle("is-invalid", !!invalid);
+    }
+  }
+
+  function validatePassengerBlock(paxIndex){
+    const box = root.querySelector(`.baPaxCard[data-pax-card="${paxIndex}"]`);
+    if (!box) return true;
+
+    const first = box.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="first_name"]`);
+    const last  = box.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="last_name"]`);
+    const dob   = box.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="date_of_birth"]`);
+    const email = box.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="email"]`);
+    const phone = box.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="phone"]`);
+
+    const male = box.querySelector(`input[type="radio"][data-pax="${paxIndex}"][data-field="gender"][value="male"]`);
+    const female = box.querySelector(`input[type="radio"][data-pax="${paxIndex}"][data-field="gender"][value="female"]`);
+    const genderOk = !!((male && male.checked) || (female && female.checked));
+
+    const firstOk = String(first?.value || "").trim().length > 0;
+    const lastOk  = String(last?.value  || "").trim().length > 0;
+    // Convert DD-MMM-YYYY to ISO for validation if needed
+    const dobValue = dob?.value || "";
+    const dobIso = /^\d{4}-\d{2}-\d{2}$/.test(dobValue) ? dobValue : parseDobInput(dobValue);
+    const dobOk   = isValidDobISO(dobIso);
+    const emailOk = isValidEmail(email?.value || "");
+    // For phone, the input field only contains digits (10 digits), we validate with +1 prefix
+    const phoneDigits = phone?.value ? String(phone.value).replace(/\D/g, "") : "";
+    const phoneOk = isValidPhone(phoneDigits.length === 10 ? "+1" + phoneDigits : phoneDigits);
+
+    setFieldInvalid(first, !firstOk);
+    setFieldInvalid(last,  !lastOk);
+    setFieldInvalid(dob,   !dobOk);
+    setFieldInvalid(email, !emailOk);
+    setFieldInvalid(phone, !phoneOk);
+
+    // gender highlight: add class on the container row
+    const genderWrap = box.querySelector(".baPaxGender");
+    if (genderWrap) genderWrap.classList.toggle("is-invalid", !genderOk);
+
+    return firstOk && lastOk && dobOk && emailOk && phoneOk && genderOk;
+  }
+
+  function validateAllPassengers(paxCount){
+    let ok = true;
+    for (let i=0;i<paxCount;i++){
+      ok = validatePassengerBlock(i) && ok;
+    }
+    return ok;
+  }
+
+  // ---------- passenger autosave ----------
+  function showPaxToast(text, ok=true){
+    let el = document.getElementById("baPaxToast");
+    if (!el){
+      el = document.createElement("div");
+      el.id = "baPaxToast";
+      el.style.cssText = `
+        position:fixed; right:14px; bottom:92px; z-index:99999;
+        max-width:340px; padding:10px 12px; border-radius:10px;
+        background:${ok ? "#0b6b2f" : "#b00020"}; color:#fff;
+        font-weight:800; font-family:system-ui; box-shadow:0 10px 24px rgba(0,0,0,.18);
+        opacity:0; transform:translateY(8px); transition:.18s ease;
+      `;
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.background = ok ? "#0b6b2f" : "#b00020";
+    requestAnimationFrame(() => { el.style.opacity = "1"; el.style.transform="translateY(0)"; });
+    clearTimeout(el._t);
+    el._t = setTimeout(() => {
+      el.style.opacity = "0"; el.style.transform="translateY(8px)";
+    }, 2200);
+  }
+
+  async function savePassengerField(public_id, paxIndex, patch){
+    const res = await fetch(UPDATE_PAX, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        public_id,
+        pax_index: paxIndex,
+        patch
+      })
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out?.error || ("HTTP " + res.status));
+    return out;
+  }
+
+  function wirePassengerAutosave(public_id, paxCount){
+    // live validation on input
+    root.querySelectorAll('.baBoxInput[data-pax][data-field]').forEach(inp => {
+      const paxIndex = Number(inp.getAttribute("data-pax"));
+      inp.addEventListener("input", () => validatePassengerBlock(paxIndex));
+      inp.addEventListener("change", () => validatePassengerBlock(paxIndex));
+    });
+    root.querySelectorAll('input[type="radio"][data-pax][data-field="gender"]').forEach(r => {
+      r.addEventListener("change", () => validatePassengerBlock(Number(r.getAttribute("data-pax"))));
+    });
+
+    // Debounce per passenger
+    const paxTimers = new Map();
+    const paxPending = new Map(); // paxIndex -> patch
+
+    function queuePaxSave(paxIndex, patch){
+      const cur = paxPending.get(paxIndex) || {};
+      Object.assign(cur, patch);
+      paxPending.set(paxIndex, cur);
+
+      if (paxTimers.get(paxIndex)) clearTimeout(paxTimers.get(paxIndex));
+      paxTimers.set(paxIndex, setTimeout(async () => {
+        const payload = paxPending.get(paxIndex);
+        paxPending.delete(paxIndex);
+
+        // If local validation fails, do not try to save yet
+        const localOk = validatePassengerBlock(paxIndex);
+        if (!localOk){
+          showPaxToast("Fix highlighted fields to continue.", false);
+          return;
+        }
+
+        try{
+          await savePassengerField(public_id, paxIndex, payload);
+          showPaxToast("Saved passenger changes ✅", true);
+
+          // if saved ok, ensure validation is clean
+          validatePassengerBlock(paxIndex);
+        }catch(e){
+          showPaxToast("Could not save changes: " + (e?.message || e), false);
+
+          // mark involved fields invalid (server complained)
+          // if we can map, mark those fields; otherwise mark all required ones for that pax
+          const keys = Object.keys(payload || {});
+          if (!keys.length){
+            validatePassengerBlock(paxIndex);
+          } else {
+            for (const k of keys){
+              const el = root.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="${k}"]`);
+              if (el) setFieldInvalid(el, true);
+              if (k === "gender"){
+                const box = root.querySelector(`.baPaxCard[data-pax-card="${paxIndex}"] .baPaxGender`);
+                if (box) box.classList.add("is-invalid");
+              }
+            }
+          }
+        }
+      }, 450));
+    }
+
+    // Date picker buttons: trigger calendar
+    root.querySelectorAll('.baDatePickerBtn').forEach(btn => {
+      const paxIndex = Number(btn.getAttribute("data-pax"));
+      const hiddenDateInput = root.querySelector(`.baDatePicker[data-pax="${paxIndex}"]`);
+      const visibleTextInput = root.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="date_of_birth"]`);
+      
+      if (!hiddenDateInput || !visibleTextInput) return;
+      
+      // Sync visible text to hidden date input value
+      function syncToHiddenDate() {
+        const textValue = visibleTextInput.value.trim();
+        if (textValue) {
+          const isoDate = parseDobInput(textValue);
+          if (isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+            hiddenDateInput.value = isoDate;
+          }
+        } else if (visibleTextInput.value === "") {
+          hiddenDateInput.value = "";
+        }
+      }
+      
+      // Sync hidden date input change to visible text (formatted)
+      hiddenDateInput.addEventListener("change", () => {
+        if (hiddenDateInput.value) {
+          const formatted = formatDobDisplay(hiddenDateInput.value);
+          if (formatted) {
+            visibleTextInput.value = formatted;
+            // Trigger validation and save
+            validatePassengerBlock(paxIndex);
+            const isoDate = parseDobInput(formatted);
+            queuePaxSave(paxIndex, { date_of_birth: isoDate || null });
+          }
+        }
+      });
+      
+      // Click on calendar button or text input opens calendar
+      function openCalendar() {
+        syncToHiddenDate();
+        hiddenDateInput.showPicker ? hiddenDateInput.showPicker() : hiddenDateInput.click();
+      }
+      
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openCalendar();
+      });
+      
+      // Also make the text input clickable to open calendar
+      visibleTextInput.addEventListener("click", () => {
+        openCalendar();
+      });
+      
+      // Sync on initial load
+      syncToHiddenDate();
+    });
+
+    // Title case formatter for names
+    function toTitleCase(str) {
+      if (!str) return "";
+      return str.split(/\s+/).map(word => {
+        if (!word) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      }).join(" ");
+    }
+
+    // Text/date inputs: save on blur/change
+    root.querySelectorAll('.baBoxInput[data-pax][data-field]').forEach(inp => {
+      const paxIndex = Number(inp.getAttribute("data-pax"));
+      const field = inp.getAttribute("data-field");
+      
+      // Skip date_of_birth - handled by date picker above
+      if (field === "date_of_birth") return;
+
+      // Auto-capitalize name fields on input/blur
+      if (field === "first_name" || field === "last_name" || field === "middle_name") {
+        inp.addEventListener("input", () => {
+          const current = inp.value;
+          const cursorPos = inp.selectionStart;
+          // Don't format while typing, just on blur
+        });
+        inp.addEventListener("blur", () => {
+          const formatted = toTitleCase(inp.value);
+          if (formatted !== inp.value) {
+            inp.value = formatted;
+          }
+        });
+      }
+
+      // Phone formatting
+      if (field === "phone") {
+        inp.addEventListener("input", () => {
+          // Only allow digits, limit to 10
+          const digits = inp.value.replace(/\D/g, "").slice(0, 10);
+          inp.value = digits;
+        });
+        inp.addEventListener("blur", () => {
+          const digits = inp.value.replace(/\D/g, "");
+          // Ensure +1 is always present in stored value
+          if (digits.length === 10) {
+            inp.value = digits; // Display only digits
+          } else if (digits.length === 0) {
+            inp.value = ""; // Allow empty for validation
+          }
+        });
+      }
+
+      const handler = () => {
+        let v = inp.value;
+
+        if (field === "email") v = String(v || "").trim().toLowerCase();
+        if (field === "phone") {
+          const digits = String(v || "").replace(/\D/g, "");
+          // Normalize to +1XXXXXXXXXX format for storage
+          v = digits.length === 10 ? normalizePhone("+1" + digits) : null;
+        }
+        if (field === "first_name" || field === "last_name" || field === "middle_name") {
+          v = toTitleCase(String(v || "").trim());
+        }
+
+        // immediate validate UI
+        validatePassengerBlock(paxIndex);
+
+        queuePaxSave(paxIndex, { [field]: v || null });
+      };
+
+      inp.addEventListener("blur", handler);
+      inp.addEventListener("change", handler);
+    });
+
+    // Gender radios: save on change
+    root.querySelectorAll('input[type="radio"][data-pax][data-field="gender"]').forEach(r => {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        const paxIndex = Number(r.getAttribute("data-pax"));
+        validatePassengerBlock(paxIndex);
+        queuePaxSave(paxIndex, { gender: r.value });
+      });
+    });
+
+    // initial validation pass
+    validateAllPassengers(paxCount);
+  }
+
+  // ---------- main render ----------
+  function renderSession(data){
+    if (data.paid_at || data.status === "paid") {
+      renderPaid(data);
+      return;
+    }
+
+    const tipPresets = Array.isArray(data.tip_presets) ? data.tip_presets : [];
+    const journeys = Array.isArray(data.journeys) ? data.journeys : [];
+
+    const isExpired =
+      data.status === "expired" ||
+      (data.ui && data.ui.reason_disabled === "expired") ||
+      (data.expires_at && new Date(data.expires_at).getTime() <= Date.now());
+
+    const selectionLocked = !!(data.ui && data.ui.selection_locked);
+
+    // Store agent data (available for future UI display)
+    const agentName = data.agent_name ? String(data.agent_name) : null;
+    const agentPhone = data.agent_phone ? String(data.agent_phone) : null;
+    
+    // Agent photo URLs
+    const agentPhotoUrl = agentName === "Jake" 
+      ? "https://github.com/Business-Airfare/site-assets/blob/main/jake.png?raw=true"
+      : agentName === "Melinda"
+      ? "https://raw.githubusercontent.com/Business-Airfare/site-assets/refs/heads/main/melinda.jpg"
+      : null;
+
+    // Selection UI values from backend (mutable)
+    let careSelected = !!(data.selection && data.selection.care_selected);
+    let tipMode = String(data.selection?.tip_mode || "none");
+    let tipPresetLabel = data.selection?.tip_preset_label ? String(data.selection.tip_preset_label) : "";
+    let tipAmount = Number(data.selection?.tip_amount ?? 0) || 0;
+
+    const tipMin = 0;
+    const tipMax = 100000; // $1000
+
+    // IMPORTANT: keep original payable math for Stripe
+    const ticketCents = Number(data.quote?.ticket ?? 0) || 0;
+    const serviceCents = Number(data.quote?.service ?? 0) || 0;
+    const careCents = Number(data.quote?.care ?? 0) || 0;
+
+    function baseTicketService(){ return ticketCents + serviceCents; }
+    function payableTotalCents(){
+      const base = baseTicketService();
+      const care = careSelected ? careCents : 0;
+      const tip = Number(tipAmount) || 0;
+      return base + care + tip;
+    }
+
+    // PER-PASSENGER DISPLAY price for sticky bar:
+    // Use admin-provided "price per passenger" if your session includes it.
+    // We will not guess a new backend field name — we try a safe list and fallback to ticket+service / paxCount.
+    function pickPerPassengerCents(){
+      const candidates = [
+        data.quote?.per_passenger_total,
+        data.quote?.per_passenger,
+        data.quote?.price_per_passenger,
+        data.quote?.pp_total,
+        data.price_per_passenger,
+        data.per_passenger_price,
+        data.ui?.price_per_passenger
+      ].filter(v => typeof v === "number" && Number.isFinite(v) && v >= 0);
+
+      if (candidates.length) return candidates[0];
+
+      // fallback: compute from ticket + service fee only (NOT including TCS or tip) / paxCount
+      const pdArr = getPassengerDetailsArray(data);
+      const paxCountFallback =
+        (pdArr && pdArr.length) ? pdArr.length :
+        (Array.isArray(data.passengers) && data.passengers.length) ? data.passengers.length :
+        1;
+
+      return Math.round(baseTicketService() / Math.max(1, paxCountFallback));
+    }
+
+    // First airline for sticky bar (logo + name)
+    let firstCarrier = "";
+    if (journeys[0] && Array.isArray(journeys[0].segments) && journeys[0].segments[0]) {
+      firstCarrier = String(journeys[0].segments[0].marketing_carrier || "");
+    }
+    const stickyLogo = firstCarrier ? logoUrl(firstCarrier) : "";
+    const airlineNameFromMap = firstCarrier ? AIRLINE_NAMES[firstCarrier.toUpperCase()] : "";
+    // Only show airline name if we have a full name (not just carrier code/initials)
+    const stickyAirlineName = (airlineNameFromMap && airlineNameFromMap !== firstCarrier) ? airlineNameFromMap : "";
+
+    function applyTipHighlights(){
+      const btns = Array.from(document.querySelectorAll(".baTipBtn"));
+      btns.forEach(b => {
+        const mode = b.getAttribute("data-mode");
+        const label = b.getAttribute("data-label");
+        const amount = Number(b.getAttribute("data-amount") || 0);
+
+        let active = false;
+        if (tipMode === "none" && mode === "none") active = true;
+        if (tipMode === "preset" && mode === "preset" && label === tipPresetLabel && amount === tipAmount) active = true;
+        b.classList.toggle("is-active", active);
+      });
+    }
+
+    let bannerHtml = "";
+    if (isExpired){
+      bannerHtml = `
+        <div class="baBanner baBanner--bad">
+          <div class="baBanner__t">This payment link has expired</div>
+          <div class="baBanner__b">You can still view the itinerary, but payment is disabled. Please contact your agent for a new link.</div>
+        </div>
+      `;
+    } else if (selectionLocked){
+      bannerHtml = `
+        <div class="baBanner baBanner--warn">
+          <div class="baBanner__t">Payment started</div>
+          <div class="baBanner__b">Selection is now locked while payment is in progress.</div>
+        </div>
+      `;
+    }
+
+    // ----------------------------
+    // FLIGHTS
+    // ----------------------------
+    function journeyCardHtml(j){
+      const segs = Array.isArray(j?.segments) ? j.segments : [];
+      if (!segs.length) return "";
+
+      const first = segs[0];
+      const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
+      const headerDate = departDay ? dateHeaderLabel(departDay) : "—";
+
+      const cp = cityPairFromJourney(j);
+      const routeTitle = (cp.fromCity && cp.toCity)
+        ? `${escapeHtml(cp.fromCity)} <span class="baArr">→</span> ${escapeHtml(cp.toCity)}`
+        : `${escapeHtml(cp.fromIata || "—")} <span class="baArr">→</span> ${escapeHtml(cp.toIata || "—")}`;
+
+      const travelTime = minsToHM(j.total_travel_minutes);
+      
+      // Find first segment with next-day arrival to determine which subsequent segments to highlight
+      let firstNextDayIdx = -1;
+      for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        const depDate = (s.depart_local || "").slice(0,10);
+        const arrDate = (s.arrive_local || "").slice(0,10);
+        if (depDate && arrDate && depDate !== arrDate) {
+          firstNextDayIdx = i;
+          break;
+        }
+      }
+
+      return `
+        <article class="baCard">
+          <header class="baCard__head">
+            <div class="baCard__headL">
+              <div class="baCard__route">${routeTitle}</div>
+              <div class="baCard__date">${escapeHtml(headerDate)}</div>
+            </div>
+            <div class="baCard__tt">Travel time: ${escapeHtml(travelTime)}</div>
+          </header>
+
+          <div class="baFlights">
+            ${segs.map((s, idx) => {
+              const carrier = s.marketing_carrier || "";
+              // Use cabin from backend if available, otherwise fall back to cabinFromClass
+              const cabin = s.cabin ? formatCabinName(s.cabin) : cabinFromClass(s.booking_class, carrier);
+
+              const depTime = fmt12(s.depart_local);
+              const arrTime = fmt12(s.arrive_local);
+              const depMD = monthDayLabel(s.depart_local);
+              const arrMD = monthDayLabel(s.arrive_local);
+
+              // Highlight all segments from the first one with next-day arrival onwards
+              const shouldHighlight = firstNextDayIdx >= 0 && idx >= firstNextDayIdx;
+
+              const flightTime = segmentFlightTime(s);
+              const meal = segmentMealText(s);
+
+              const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
+              const operator = String(s.operating_carrier_name || s.operating_carrier || s.operator || "").trim();
+
+              const lo = (Array.isArray(j.layovers) && j.layovers[idx]) ? j.layovers[idx] : null;
+
+              return `
+                <div class="baFlightBlock">
+                  <div class="baFlight">
+                    <div class="baFlight__main">
+                      <div class="baTL" aria-hidden="true">
+                        <span class="baTL__dot"></span>
+                        <span class="baTL__chev"></span>
+                        <span class="baTL__chev"></span>
+                        <span class="baTL__chev"></span>
+                        <span class="baTL__dot baTL__dot--end"></span>
+                      </div>
+
+                      <div class="baLeft">
+                        <div class="baRow">
+                          <div class="baTimeLine">
+                            <span class="baTime">${escapeHtml(depTime)}</span>
+                            <span class="baMD">${escapeHtml(depMD)}</span>
+                          </div>
+                          <div class="baLocLine">
+                            <span class="baCity">${escapeHtml(s.origin_city || "")},</span>
+                            <span class="baIata">${escapeHtml(s.origin || "")}</span>
+                          </div>
+                        </div>
+
+                        <div class="baRow baRow--meta">
+                          ${flightTime ? `<div class="baMetaRow">${escapeHtml(flightTime)}</div>` : ``}
+                          ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
+                        </div>
+
+                        <div class="baRow" style="margin-top:10px">
+                          <div class="baTimeLine">
+                            <span class="baTime">${escapeHtml(arrTime)}</span>
+                            <span class="baMD ${shouldHighlight ? 'baMD--nextDay' : ''}">${escapeHtml(arrMD)}</span>
+                          </div>
+                          <div class="baLocLine">
+                            <span class="baCity">${escapeHtml(s.destination_city || "")},</span>
+                            <span class="baIata">${escapeHtml(s.destination || "")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="baAir">
+                      ${carrier ? `
+                        <img class="baAir__logo" src="${logoUrl(carrier)}" alt="${escapeHtml(carrier)}" onerror="this.style.display='none'">
+                      ` : ""}
+                      <div class="baAir__meta">
+                        <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
+                        <span class="baAir__sep">|</span>
+                        <span class="baAir__cab">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
+                      </div>
+                      ${operator ? `<div class="baAir__op">${escapeHtml(operator)}</div>` : ``}
+                    </div>
+                  </div>
+
+                  ${lo ? `
+                    <div class="baLayRow">
+                      <div class="baLayRow__text">
+                        <span class="baLayRow__dur">${escapeHtml(minsToHM(lo.minutes))} layover</span>
+                        <span class="baLayRow__in"> in ${escapeHtml(lo.at_city || lo.at || "")}</span>
+                      </div>
+                    </div>
+                  ` : ``}
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </article>
+      `;
+    }
+
+    // ----------------------------
+    // PASSENGERS UI
+    // ----------------------------
+    function passengerBlockHtml(idx){
+      const pax = getPassengerFromSession(data, idx);
+      const genderName = `baGender_${idx}`;
+
+      return `
+        <div class="baPaxCard" data-pax-card="${idx}">
+          <div class="baPaxCard__head">Passenger</div>
+
+          <div class="baPaxGrid">
+            <div class="baPaxGender">
+              <div class="baLbl">Gender<span class="baReq">*</span></div>
+              <div class="baRadioRow">
+                <label class="baRadio">
+                  <input type="radio" name="${genderName}" value="male" data-pax="${idx}" data-field="gender" ${pax.gender==="male" ? "checked" : ""}>
+                  <span>Male</span>
+                </label>
+                <label class="baRadio">
+                  <input type="radio" name="${genderName}" value="female" data-pax="${idx}" data-field="gender" ${pax.gender==="female" ? "checked" : ""}>
+                  <span>Female</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="baPaxHelp">
+              The passenger names must match the travel documents. Name changes are not allowed.
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">Last name<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.last_name)}" data-pax="${idx}" data-field="last_name" placeholder="Last name">
+              <div class="baErr">Please enter a valid last name.</div>
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">First name<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.first_name)}" data-pax="${idx}" data-field="first_name" placeholder="First name">
+              <div class="baErr">Please enter a valid first name.</div>
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">Middle name <span style="font-weight:600;opacity:.7">(optional)</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.middle_name)}" data-pax="${idx}" data-field="middle_name" placeholder="Middle name">
+              <div class="baErr">Invalid value.</div>
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">Date of Birth<span class="baReq">*</span></label>
+              <div class="baDateInputWrapper">
+                <input class="baBoxInput" type="text" value="${escapeHtml(pax.dobISO ? formatDobDisplay(pax.dobISO) : "")}" data-pax="${idx}" data-field="date_of_birth" placeholder="01-Jan-1980" readonly>
+                <input type="date" class="baDatePicker" data-pax="${idx}" data-field="date_of_birth_hidden" value="${escapeHtml(pax.dobISO || "")}" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;overflow:hidden;">
+                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date picker">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 2V4M14 2V4M3 8H17M4 4H16C17.1046 4 18 4.89543 18 6V16C18 17.1046 17.1046 18 16 18H4C2.89543 18 2 17.1046 2 16V6C2 4.89543 2.89543 4 4 4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M6 12H6.01M9 12H9.01M12 12H12.01M6 15H6.01M9 15H9.01M12 15H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="baErr">Please enter a valid date of birth.</div>
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">Email<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.email)}" data-pax="${idx}" data-field="email" placeholder="Email">
+              <div class="baErr">Please enter a valid email.</div>
+            </div>
+
+            <div class="baField">
+              <label class="baLbl">Phone<span class="baReq">*</span></label>
+              <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
+                <div style="padding:10px 12px;background:#f7f7f7;border-right:1px solid #e7e7e7;font-weight:700;flex-shrink:0;font-size:15px;line-height:1;display:flex;align-items:center;box-sizing:border-box">+1</div>
+                <input class="baBoxInput" value="${escapeHtml(pax.phone && pax.phone.startsWith('+1') ? pax.phone.slice(2) : (pax.phone || ''))}" data-pax="${idx}" data-field="phone" placeholder="5555555555" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+              </div>
+              <div class="baErr">Please enter a valid phone number.</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const pdArr = getPassengerDetailsArray(data);
+    const paxCount =
+      (pdArr && pdArr.length) ? pdArr.length :
+      (Array.isArray(data.passengers) && data.passengers.length) ? data.passengers.length :
+      1;
+
+    // sticky per pax display
+    const perPaxCents = pickPerPassengerCents();
+
+    root.innerHTML = `
+<style>
+  :root{
+    --ba-bg: #f5f5f5;
+    --ba-card: #ffffff;
+    --ba-border: #e9e9e9;
+    --ba-text: #111;
+    --ba-accent: #d1ad54;
+    --ba-danger: #d92d20;
+    --ba-danger-bg: rgba(217,45,32,.06);
+  }
+
+  /* Header */
+  .baHeader{
+    background: #fff;
+    border-bottom: 1px solid #e9e9e9;
+  }
+  .baHeaderTop{
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 2px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+  }
+  .baHeaderNav{
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex: 1;
+  }
+  .baHeaderNav a{
+    color: #111;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .baHeaderNav a:hover{
+    opacity: 0.7;
+  }
+  .baHeaderRight{
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .baHeaderPhone{
+    font-weight: 700;
+    font-size: 14px;
+    color: #111;
+  }
+  .baHeaderPhone a{
+    color: #111;
+    text-decoration: none;
+  }
+  .baHeaderPhone a:hover{
+    opacity: 0.8;
+  }
+  .baHeaderAgent{
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .baHeaderAgentContent{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 1px;
+  }
+  .baHeaderAgentLabel{
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0px;
+  }
+  .baHeaderAgentName{
+    font-weight: 700;
+    font-size: 16px;
+    color: #111;
+    margin-top: -2px;
+  }
+  .baHeaderAgentAvatar{
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f0f0f0;
+    flex-shrink: 0;
+  }
+  .baHeaderAgentRow{
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .baHeaderProgress{
+    background: #2f2f2f;
+    padding: 12px 18px;
+  }
+  .baHeaderProgressInner{
+    max-width: 1220px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+  }
+  .baHeaderProgressLeft{
+    flex: 1;
+  }
+  .baHeaderProgressTitle{
+    font-weight: 900;
+    font-size: 20px;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .baHeaderProgressSubtitle{
+    font-size: 14px;
+    color: #ccc;
+    opacity: 0.9;
+  }
+  .baHeaderProgressSteps{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .baProgressStep{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .baProgressStepCircle{
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .baProgressStepLabel{
+    font-size: 11px;
+    color: #fff;
+    text-align: center;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .baProgressStepCircle.completed{
+    background: var(--ba-accent);
+    color: #111;
+  }
+  .baProgressStepCircle.active{
+    background: #2f2f2f;
+    border: 2px solid var(--ba-accent);
+    color: var(--ba-accent);
+    box-sizing: border-box;
+  }
+  .baProgressStepCircle.pending{
+    background: #555;
+    color: #fff;
+  }
+  .baProgressStepLine{
+    width: 60px;
+    height: 2px;
+    background: #555;
+    margin-top: 0;
+  }
+  .baProgressStepLine.completed{
+    background: var(--ba-accent);
+  }
+  @media (max-width: 980px){
+    .baHeaderNav{ gap: 16px; }
+    .baHeaderRight{ gap: 16px; }
+    .baHeaderProgressInner{ flex-direction: column; align-items: flex-start; gap: 16px; }
+    .baHeaderProgressSteps{ width: 100%; }
+  }
+
+  .baWrap{
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--ba-bg);
+    color: var(--ba-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .baPage{
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 26px 18px 110px;
+  }
+  .baGrid{
+    display:grid;
+    grid-template-columns: 1.25fr 0.95fr;
+    gap: 18px;
+    align-items:start;
+  }
+  @media (max-width: 980px){
+    .baGrid{ grid-template-columns:1fr; }
+    .baPage{ padding-bottom: 140px; }
+  }
+
+  .baSectionTitle{
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 800;
+    font-size: 34px;
+    margin: 0 0 14px;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  @media (max-width: 980px){
+    .baSectionTitle{ font-size: 28px; }
+  }
+
+  .baBanner{
+    border-radius: 10px; padding: 12px 14px;
+    border: 1px solid var(--ba-border);
+    background: #fff; margin-bottom: 12px;
+  }
+  .baBanner--bad{ border-color:#ffd2d2; background:#fff3f3; color:#8a1f1f; }
+  .baBanner--warn{ border-color:#ffe1a6; background:#fff7e6; color:#6a4b00; }
+  .baBanner__t{ font-weight: 900; margin-bottom: 2px; }
+  .baBanner__b{ opacity:.9; font-weight: 650; }
+
+  .baCard{
+    background: var(--ba-card);
+    border: 1px solid var(--ba-border);
+    border-radius: 10px;
+    overflow:hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+  }
+  .baCard__head{
+    display:flex;
+    justify-content:space-between;
+    gap: 12px;
+    align-items:flex-start;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid #efefef;
+  }
+  .baCard__route{
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 800;
+    font-size: 26px;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .baArr{ margin: 0 10px; }
+  .baCard__date{
+    margin-top: 8px;
+    font-size: 15px;
+    opacity: .75;
+    font-weight: 650;
+  }
+  .baCard__tt{
+    font-size: 13px;
+    opacity:.75;
+    font-weight: 700;
+    white-space:nowrap;
+    padding-top: 8px;
+    margin-right: 20px;
+  }
+
+  .baFlights{ padding: 8px 0; }
+  .baFlightBlock{ padding: 0 20px; }
+
+  .baFlight{
+    display:grid;
+    grid-template-columns: 1fr 250px;
+    gap: 16px;
+    padding: 16px 0;
+    border-top: 1px solid #f1f1f1;
+  }
+  .baFlightBlock:first-child .baFlight{ border-top: 0; }
+
+  .baFlight__main{
+    display:grid;
+    grid-template-columns: 22px 1fr;
+    gap: 14px;
+    align-items:flex-start;
+    min-width:0;
+  }
+
+  .baTL{
+    width: 22px;
+    margin-top: 6px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 7px;
+    opacity:.8;
+  }
+  .baTL__dot{
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #d0d0d0;
+  }
+  .baTL__dot--end{
+    background:#fff;
+    border: 2px solid #d0d0d0;
+    width: 10px; height: 10px;
+  }
+  .baTL__chev{
+    width: 8px; height: 6px;
+    border-left: 2px solid #d7d7d7;
+    border-bottom: 2px solid #d7d7d7;
+    transform: rotate(-45deg);
+    margin-left: 1px;
+  }
+
+  /* move cities closer to times */
+  .baRow{
+    display:grid;
+    grid-template-columns: 150px 1fr;
+    gap: 10px;
+    align-items:baseline;
+    min-width:0;
+  }
+
+  .baTimeLine{
+    display:flex;
+    align-items:baseline;
+    gap: 10px;
+    min-width:0;
+  }
+  .baTime{
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.1;
+    white-space:nowrap;
+  }
+  .baMD{
+    font-size: 13px;
+    font-weight: 700;
+    opacity:.65;
+    white-space:nowrap;
+  }
+  .baMD--nextDay{
+    color: #c56a00;
+    opacity: 0.85;
+  }
+
+  .baLocLine{
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.2;
+    min-width:0;
+    white-space:normal;
+    word-wrap: break-word;
+  }
+  .baCity{
+    display: inline;
+  }
+  .baIata{
+    font-weight: 800;
+    text-decoration: none;
+    margin-left: 5px;
+    opacity: .85;
+    display: inline;
+  }
+
+  /* flight time smaller */
+  .baRow--meta{
+    margin-top: 10px;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .baMetaRow{
+    font-size: 12px;
+    font-weight: 700;
+    opacity:.68;
+    line-height: 1.35;
+  }
+
+  .baAir{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 8px;
+    min-width:0;
+    padding-top: 6px;
+  }
+
+  /* airline logos smaller */
+  .baAir__logo{
+    width: 90px;
+    height: 28px;
+    object-fit: contain;
+  }
+  .baAir__meta{
+    font-size: 14px;
+    opacity: .75;
+    font-weight: 700;
+    white-space:nowrap;
+  }
+  .baAir__fn{ font-weight: 800; opacity:.9; }
+  .baAir__sep{ margin: 0 8px; opacity:.5; }
+  .baAir__op{
+    font-size: 13px;
+    opacity:.6;
+    font-weight: 650;
+    max-width: 100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .baLayRow{
+    border-top: 1px solid #efefef;
+    border-bottom: 1px solid #efefef;
+    padding: 14px 0;
+    margin: 0;
+  }
+  .baLayRow__text{
+    font-size: 14px;
+    font-weight: 700;
+    color: #6b6b6b;
+  }
+  .baLayRow__dur{ font-weight: 800; color:#6b6b6b; }
+
+  /* Passenger panel */
+  .baPaxWrap{ position: sticky; top: 14px; }
+  @media (max-width: 980px){ .baPaxWrap{ position: static; } }
+
+  .baPaxCard{
+    background: var(--ba-card);
+    border: 1px solid var(--ba-border);
+    border-radius: 10px;
+    overflow:hidden;
+    margin-bottom: 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+  }
+  .baPaxCard__head{
+    padding: 18px 18px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 800;
+    font-size: 26px;
+    border-bottom: 1px solid #efefef;
+  }
+
+  .baPaxGrid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 18px;
+    padding: 16px 18px 18px;
+    align-items:start;
+  }
+  .baPaxGender{ grid-column: 1 / 2; }
+  .baPaxHelp{
+    grid-column: 2 / 3;
+    font-size: 12px;
+    font-weight: 650;
+    color: #6a6a6a;
+    line-height: 1.4;
+    padding-top: 12px;
+  }
+
+  .baLbl{
+    display:block;
+    font-size: 13px;
+    font-weight: 800;
+    color: #707070;
+    margin-bottom: 6px;
+    letter-spacing: .02em;
+  }
+  .baReq{ color:#d18a00; font-weight: 900; margin-left: 4px; }
+
+  .baRadioRow{
+    display:flex;
+    align-items:center;
+    gap: 20px;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .baRadio{
+    display:inline-flex;
+    align-items:center;
+    gap: 10px;
+    user-select:none;
+  }
+  .baRadio input{
+    width: 16px;
+    height: 16px;
+    accent-color: var(--ba-accent);
+  }
+
+  /* Rectangular box inputs */
+  .baField{ min-width:0; position:relative; }
+  .baDateInputWrapper{
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .baDateInputWrapper .baBoxInput{
+    padding-right: 42px;
+  }
+  .baDatePickerBtn{
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: 0;
+    padding: 4px;
+    cursor: pointer;
+    color: #666;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+  .baDatePickerBtn:hover{
+    color: #333;
+    background: #f5f5f5;
+  }
+  .baDatePickerBtn:active{
+    background: #e9e9e9;
+  }
+  .baBoxInput{
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e7e7e7;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .baBoxInput:focus{
+    border-color: #bdbdbd;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.04);
+  }
+  .baBoxInput[readonly]{
+    cursor: pointer;
+  }
+  .baBoxInput::placeholder{
+    color: #b1b1b1;
+    font-weight: 650;
+  }
+
+  /* INVALID HIGHLIGHT (red) */
+  .baBoxInput.is-invalid{
+    border-color: var(--ba-danger) !important;
+    background: var(--ba-danger-bg);
+  }
+  .baPhoneWrapper.is-invalid{
+    border-color: var(--ba-danger) !important;
+  }
+  .baPaxGender.is-invalid{
+    border-radius: 10px;
+    padding: 10px 10px 12px;
+    margin: -10px -10px 0;
+    background: var(--ba-danger-bg);
+    outline: 2px solid rgba(217,45,32,.35);
+  }
+  .baErr{
+    display:none;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--ba-danger);
+  }
+  .baField:has(.baBoxInput.is-invalid) .baErr{ display:block; }
+  .baField:has(.baPhoneWrapper.is-invalid) .baErr{ display:block; }
+  .baPaxGender.is-invalid .baErr{ display:block; }
+
+  .baInfoBanner{
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    border: 1px solid #e8e8e8;
+    border-radius: 10px;
+    background: #f7f5ff;
+    color: #3c2f7a;
+    display:flex;
+    gap: 10px;
+    align-items:flex-start;
+    font-weight: 800;
+    font-size: 16px;
+    line-height: 1.35;
+    box-shadow: 0 10px 24px rgba(0,0,0,.04);
+  }
+  .baInfoIcon{
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #3c2f7a;
+    color:#fff;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    font-size: 12px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+  }
+
+  /* Extras */
+  .baExtras{ margin-top: 16px; }
+  .baPanel{
+    background: var(--ba-card);
+    border: 1px solid var(--ba-border);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.04);
+  }
+  .baPanelTitle{ font-weight: 900; margin-bottom: 10px; }
+  .baTipBtn{
+    padding:10px 12px;
+    border-radius: 10px;
+    border:1px solid #ddd;
+    background:#fff;
+    font-weight:900;
+    cursor:pointer
+  }
+  .baTipBtn.is-active{ border-color:#111; background:#111; color:#fff}
+  .baTipRow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .baTipCustom{
+    width:110px; padding:10px 12px; border-radius:10px;
+    border:1px solid #ddd; font-weight:900
+  }
+
+  /* Sticky bottom bar (updated per request) */
+  .baSticky{
+    position:fixed; left:0; right:0; bottom:0; z-index:9999;
+    background:#2f2f2f; color:#fff;
+    padding: 10px 14px;
+    box-shadow: 0 -8px 22px rgba(0,0,0,.18);
+  }
+  .baStickyIn{
+    max-width: 1220px;
+    margin: 0 auto;
+    display:flex;
+    gap: 14px;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .baStickyLeft{
+    display:flex; gap: 12px; align-items:center; min-width:0; margin-left: 40px;
+  }
+  .baStickyMessage{
+    font-weight: 700;
+    font-size: 14px;
+    color: #fff;
+    opacity: 0.9;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  @media (max-width: 560px){
+    .baStickyMessage{ font-size: 12px; }
+  }
+  .baStickyLogo{
+    width: 80px; height: 44px; border-radius: 8px; background:#fff;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+    flex-shrink: 0;
+  }
+  .baStickyLogo img{ width: 72px; height: 36px; object-fit:contain; }
+
+  .baStickyRight{ display:flex; gap: 14px; align-items:center; }
+
+  .baStickyPrice{ text-align:right; line-height: 1.05; }
+  .baStickyPriceTop{ display:flex; justify-content:flex-end; gap: 10px; align-items:baseline; }
+  .baStickyAmt{ font-weight: 1000; font-size: 24px; }
+  .baStickyCur{ opacity:.85; font-weight: 900; font-size: 12px; }
+
+  /* updated label */
+  .baStickySub{ opacity:.82; font-weight: 800; font-size: 12px; margin-top: 2px; }
+  .baStickySmall{ display:none !important; }
+
+  /* CTA: single label "BOOK" + timer on right */
+  .baCTA{
+    border: 0;
+    border-radius: 8px;
+    background: var(--ba-accent);
+    color: #111;
+    font-weight: 1000;
+    letter-spacing: .01em;
+    padding: 10px 16px;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    cursor:pointer;
+    min-width: 240px;
+    justify-content: space-between;
+  }
+  .baCTA[disabled]{ opacity:.55; cursor:not-allowed; }
+
+  .baCTATitle{ font-weight:1000; font-size: 16px; flex: 1; text-align: center; }
+  .baCTARight{
+    font-weight: 1000;
+    font-variant-numeric: tabular-nums;
+    padding-left: 10px;
+    border-left: 1px solid rgba(0,0,0,.25);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 560px){
+    .baSectionTitle{ font-size: 24px; }
+    .baRow{ grid-template-columns: 1fr; }
+    .baAir{ align-items:flex-start; }
+    .baFlight{ grid-template-columns: 1fr; }
+    .baCTA{ min-width: 220px; }
+  }
+</style>
+
+<div class="baHeader">
+  <div class="baHeaderTop">
+    <div class="baHeaderNav">
+      <a href="https://www.business-airfare.com/faqs">FAQs</a>
+      <a href="https://www.business-airfare.com/about">About</a>
+      <a href="https://www.business-airfare.com/privacy-policy">Privacy Policy</a>
+      <a href="https://www.business-airfare.com/terms-and-conditions">Terms & Conditions</a>
+    </div>
+    <div class="baHeaderRight">
+      ${(agentPhone || agentName) ? `
+        <div class="baHeaderAgentRow">
+          ${agentPhone ? `
+            <div class="baHeaderPhone">
+              <a href="tel:${escapeHtml(agentPhone.replace(/[^\d+]/g, ''))}">📞 ${escapeHtml(fmtPhoneDisplay(agentPhone))}</a>
+            </div>
+          ` : ""}
+          ${agentName && agentPhotoUrl ? `
+            <div class="baHeaderAgent">
+              <div class="baHeaderAgentContent">
+                <div class="baHeaderAgentLabel">Travel agent</div>
+                <div class="baHeaderAgentName">${escapeHtml(agentName)}</div>
+              </div>
+              <img src="${agentPhotoUrl}" alt="${escapeHtml(agentName)}" class="baHeaderAgentAvatar" onerror="this.style.display='none'">
+            </div>
+          ` : agentName ? `
+            <div class="baHeaderAgent">
+              <div class="baHeaderAgentContent">
+                <div class="baHeaderAgentLabel">Travel agent</div>
+                <div class="baHeaderAgentName">${escapeHtml(agentName)}</div>
+              </div>
+            </div>
+          ` : ""}
+        </div>
+      ` : ""}
+    </div>
+  </div>
+  <div class="baHeaderProgress">
+    <div class="baHeaderProgressInner">
+      <div class="baHeaderProgressLeft">
+        <div class="baHeaderProgressTitle">Carefully check your flight and passenger details</div>
+        <div class="baHeaderProgressSubtitle">${agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : 'Tickets at a good price are almost in your hands!'}</div>
+      </div>
+      <div class="baHeaderProgressSteps">
+        <div class="baProgressStep">
+          <div class="baProgressStepCircle completed">✓</div>
+          <div class="baProgressStepLabel">Request a quote</div>
+        </div>
+        <div class="baProgressStepLine completed"></div>
+        <div class="baProgressStep">
+          <div class="baProgressStepCircle completed">✓</div>
+          <div class="baProgressStepLabel">Review flight options</div>
+        </div>
+        <div class="baProgressStepLine completed"></div>
+        <div class="baProgressStep">
+          <div class="baProgressStepCircle active">3</div>
+          <div class="baProgressStepLabel">Complete payment</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="baWrap">
+  <div class="baPage">
+    ${bannerHtml}
+
+    <div class="baGrid">
+      <section class="baFlightsPane">
+        <div class="baSectionTitle">Flight Details</div>
+        <div id="baFlightsFlow">
+          ${journeys.map(journeyCardHtml).join("") || `<div class="baPanel">No itinerary found.</div>`}
+        </div>
+      </section>
+
+      <aside class="baPaxPane">
+        <div class="baSectionTitle">Passenger Details</div>
+
+        <div class="baPaxWrap">
+          ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
+
+          <div class="baInfoBanner">
+            <span class="baInfoIcon">i</span>
+            <div>The quoted prices are not guaranteed until the tickets are issued</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="baExtras">
+      <div class="baPanel">
+        <div class="baPanelTitle">Optional services</div>
+
+        <label style="display:flex;align-items:center;gap:10px;font-weight:900">
+          <input id="baCareToggle" type="checkbox" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
+          Add Travel Care Service (optional)
+          <span style="margin-left:auto;opacity:.75;font-weight:900">${fmtMoney(careCents)}</span>
+        </label>
+
+        <div style="height:12px"></div>
+
+        <div style="font-weight:900;margin-bottom:8px">Tip (optional)</div>
+        <div class="baTipRow">
+          <button class="baTipBtn" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>No tip</button>
+
+          ${tipPresets.map(p => `
+            <button class="baTipBtn"
+              data-mode="preset"
+              data-label="${escapeHtml(p.label)}"
+              data-amount="${Number(p.amount)||0}"
+              ${selectionLocked || isExpired ? "disabled" : ""}>
+              ${escapeHtml(p.label)} · $${Math.round((Number(p.amount)||0)/100)}
+            </button>
+          `).join("")}
+
+          <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+            <div style="font-weight:900;opacity:.75">Custom</div>
+            <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="1"
+              value="${tipMode === "custom" ? (tipAmount/100) : ""}"
+              placeholder="0"
+              ${selectionLocked || isExpired ? "disabled" : ""}>
+          </div>
+        </div>
+
+        <div id="baSelMsg" style="margin-top:10px;font-size:13px;opacity:.75"></div>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="margin-bottom:10px;font-size:14px;font-weight:900">
+          Total amount:
+          <span id="baPayableTotal" style="font-weight:900">${fmtMoney(payableTotalCents())} ${escapeHtml(data.currency || "USD")}</span>
+        </div>
+
+        <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
+
+        <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
+          <div style="font-weight:900;margin-bottom:10px">Billing details</div>
+
+          <div style="margin-bottom:12px">
+            <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Email</div>
+            <div id="baLinkAuthMount"></div>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Billing address</div>
+            <div id="baAddressMount"></div>
+          </div>
+
+          <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
+          <div id="baStripeMount"></div>
+
+          <button id="baStripeConfirm"
+            style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
+            disabled>
+            Pay now
+          </button>
+
+          <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="baSticky">
+    <div class="baStickyIn">
+      <div class="baStickyLeft">
+        ${stickyLogo ? `
+        <div class="baStickyLogo">
+          <img src="${stickyLogo}" alt="" onerror="this.style.display='none'">
+        </div>
+        ` : ""}
+        <div class="baStickyMessage"><span>You are almost there</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;transform:rotate(90deg);"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+      </div>
+
+      <div class="baStickyRight">
+        <div class="baStickyPrice">
+          <div class="baStickyPriceTop">
+            <div class="baStickyAmt" id="baStickyPerPax">${fmtMoney(perPaxCents)}</div>
+            <div class="baStickyCur">${escapeHtml(data.currency || "USD")}</div>
+          </div>
+          <div class="baStickySub">Total price per passenger</div>
+          <div class="baStickySmall"></div>
+        </div>
+
+        <button id="baPayBtn" class="baCTA" ${isExpired ? "disabled" : ""}>
+          <span class="baCTATitle">BOOK</span>
+          <span class="baCTARight" id="baStickyClock">${data.expires_at ? escapeHtml(expiresClock(data.expires_at)) : "—"}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+    `;
+
+    // ✅ Wire passenger autosave AFTER HTML exists
+    wirePassengerAutosave(data.public_id, paxCount);
+
+    // ---------- countdown live update ----------
+    let clockTimer = null;
+    function updateButtonState(){
+      if (!data.expires_at) return;
+      const t = expiresClock(data.expires_at);
+      const el1 = document.getElementById("baStickyClock");
+      const payBtn = document.getElementById("baPayBtn");
+      const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+      if (t === "00:00:00") {
+        if (el1) el1.style.display = "none";
+        if (btnTitle) btnTitle.textContent = "CONTACT YOUR AGENT";
+        if (payBtn) {
+          payBtn.disabled = true;
+          payBtn.style.opacity = ".55";
+          payBtn.style.cursor = "not-allowed";
+        }
+      } else {
+        if (el1) {
+          el1.textContent = t;
+          el1.style.display = "";
+        }
+        if (btnTitle) btnTitle.textContent = "BOOK";
+      }
+    }
+    function startClock(){
+      if (!data.expires_at) return;
+      updateButtonState(); // Check initial state
+      if (clockTimer) clearInterval(clockTimer);
+      clockTimer = setInterval(updateButtonState, 1000);
+    }
+    startClock();
+
+    // ---------- selection UX ----------
+    const selMsg = document.getElementById("baSelMsg");
+    const hint = document.getElementById("baPayHint");
+    const wrap = document.getElementById("baStripeWrap");
+    const msg = document.getElementById("baStripeMsg");
+    const confirmBtn = document.getElementById("baStripeConfirm");
+
+    function setSelMsg(t){ if (selMsg) selMsg.textContent = t || ""; }
+
+    let savingTimer = null;
+    function setSaving(on){
+      if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
+      if (on){
+        savingTimer = setTimeout(() => setSelMsg("Saving…"), 250);
+      } else {
+        if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
+      }
+    }
+
+    function updateTotalsUI(){
+      const pay = payableTotalCents();
+      const payEl = document.getElementById("baPayableTotal");
+      if (payEl) payEl.textContent = `${fmtMoney(pay)} ${escapeHtml(data.currency || "USD")}`;
+      // sticky per pax stays as-is
+    }
+
+    updateTotalsUI();
+    applyTipHighlights();
+
+    // Care toggle
+    const careToggle = document.getElementById("baCareToggle");
+    if (careToggle) {
+      careToggle.addEventListener("change", async () => {
+        try {
+          careSelected = !!careToggle.checked;
+          updateTotalsUI();
+          setSaving(true);
+
+          const tip = {
+            mode: tipMode || "none",
+            preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
+            amount: Number.isFinite(tipAmount) ? tipAmount : 0
+          };
+
+          await updateSelection(data.public_id, { care_selected: careSelected, tip });
+
+          setSaving(false);
+          setSelMsg("Updated.");
+        } catch (e) {
+          careSelected = !careSelected;
+          careToggle.checked = careSelected;
+          updateTotalsUI();
+          setSaving(false);
+          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+    }
+
+    // Tip buttons
+    const tipBtns = Array.from(document.querySelectorAll(".baTipBtn"));
+    tipBtns.forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          const mode = btn.getAttribute("data-mode");
+          const prev = { tipMode, tipPresetLabel, tipAmount };
+
+          if (mode === "none") {
+            tipMode = "none";
+            tipPresetLabel = "";
+            tipAmount = 0;
+            const tipCustom = document.getElementById("baTipCustom");
+            if (tipCustom) tipCustom.value = "";
+            applyTipHighlights();
+            updateTotalsUI();
+            setSaving(true);
+
+            try {
+              const tip = { mode: "none", preset_label: null, amount: 0 };
+              await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              setSaving(false);
+              setSelMsg("Updated.");
+            } catch (e) {
+              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
+              applyTipHighlights(); updateTotalsUI();
+              setSaving(false);
+              setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+            }
+            return;
+          }
+
+          if (mode === "preset") {
+            const label = btn.getAttribute("data-label");
+            const amount = Number(btn.getAttribute("data-amount") || 0);
+
+            tipMode = "preset";
+            tipPresetLabel = label || "";
+            tipAmount = amount;
+
+            const tipCustom = document.getElementById("baTipCustom");
+            if (tipCustom) tipCustom.value = "";
+            applyTipHighlights();
+            updateTotalsUI();
+            setSaving(true);
+
+            try {
+              const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
+              await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              setSaving(false);
+              setSelMsg("Updated.");
+            } catch (e) {
+              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
+              applyTipHighlights(); updateTotalsUI();
+              setSaving(false);
+              setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+            }
+            return;
+          }
+        } catch (e) {
+          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+    });
+
+    // Custom tip
+    const tipCustom = document.getElementById("baTipCustom");
+    if (tipCustom) {
+      tipCustom.addEventListener("blur", async () => {
+        try {
+          const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
+          const cents = clampInt(dollars * 100, tipMin, tipMax);
+
+          setSaving(true);
+
+          const tip = {
+            mode: (cents <= 0 ? "none" : "custom"),
+            preset_label: null,
+            amount: (cents <= 0 ? 0 : cents)
+          };
+
+          await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+
+          tipMode = tip.mode;
+          tipPresetLabel = "";
+          tipAmount = tip.amount;
+
+          applyTipHighlights();
+          updateTotalsUI();
+
+          setSaving(false);
+          setSelMsg("Updated.");
+        } catch (e) {
+          setSaving(false);
+          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+    }
+
+    function disablePrimary(reason){
+      const payBtn = document.getElementById("baPayBtn");
+      if (payBtn) {
+        payBtn.disabled = true;
+        payBtn.style.opacity = ".55";
+        payBtn.style.cursor = "not-allowed";
+      }
+      if (hint) hint.textContent = reason || "";
+    }
+
+    if (isExpired || (data.ui && data.ui.payment_enabled === false)) {
+      const reason = isExpired ? "Payment disabled: expired" : ("Payment disabled: " + (data.ui.reason_disabled || "disabled"));
+      disablePrimary(reason);
+      return;
+    }
+
+    // Pay button -> start_payment -> show Stripe
+    const payBtn = document.getElementById("baPayBtn");
+    if (payBtn) {
+      payBtn.addEventListener("click", async () => {
+        try {
+          // require passenger validity before letting them proceed
+          const paxOk = validateAllPassengers(paxCount);
+          if (!paxOk){
+            showPaxToast("Please fix highlighted passenger fields first.", false);
+            // scroll to first invalid
+            const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+            if (firstBad && firstBad.scrollIntoView){
+              try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
+            }
+            return;
+          }
+
+          payBtn.disabled = true;
+          payBtn.style.opacity = ".7";
+          payBtn.style.cursor = "not-allowed";
+          if (hint) hint.textContent = `Preparing secure payment…`;
+
+          const res = await fetch(START_PAYMENT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ public_id: data.public_id })
+          });
+
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
+            throw new Error(m);
+          }
+
+          if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
+
+          if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
+
+          if (wrap) wrap.style.display = "block";
+          await mountStripePaymentElement(payload.client_secret);
+
+          if (msg) msg.textContent = "";
+
+          try { if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+
+        } catch (e) {
+          if (hint) hint.textContent = "Could not start payment: " + (e && e.message ? e.message : String(e));
+          payBtn.disabled = false;
+          payBtn.style.opacity = "1";
+          payBtn.style.cursor = "pointer";
+        }
+      });
+    }
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", async () => {
+        try {
+          confirmBtn.disabled = true;
+          confirmBtn.style.opacity = ".6";
+          confirmBtn.style.cursor = "not-allowed";
+          if (msg) msg.textContent = "Processing payment…";
+
+          const pi = await confirmStripePayment();
+
+          const st = pi && pi.status ? pi.status : "unknown";
+          if (st === "succeeded") {
+            if (msg) msg.textContent = "Payment successful. Thank you!";
+            setTimeout(async () => {
+              try {
+                const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+                const fresh = await res.json();
+                if (fresh && (fresh.paid_at || fresh.status === "paid")) renderSession(fresh);
+              } catch (_) {}
+            }, 1500);
+          } else if (st === "processing") {
+            if (msg) msg.textContent = "Payment processing. Please wait — confirmation will update shortly.";
+          } else {
+            if (msg) msg.textContent = "Payment status: " + st + ". If this looks wrong, contact your agent.";
+          }
+
+        } catch (e) {
+          if (msg) msg.textContent = "Payment error: " + (e && e.message ? e.message : String(e));
+          confirmBtn.disabled = false;
+          confirmBtn.style.opacity = "1";
+          confirmBtn.style.cursor = "pointer";
+        }
+      });
+    }
+  }
+
+  // ---------- boot ----------
+  if (!publicId) {
+    renderError("Missing public_id in URL.");
+    return;
+  }
+
+  renderLoading();
+
+  fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" })
+    .then(async (res) => {
+      const txt = await res.text();
+      let data;
+      try { data = JSON.parse(txt); } catch { throw new Error("Bad JSON response"); }
+      if (!res.ok) throw new Error(data && data.error ? data.error : ("HTTP " + res.status));
+      return data;
+    })
+    .then((data) => renderSession(data))
+    .catch((err) => renderError(err && err.message ? err.message : String(err)));
+})();
+</script>
