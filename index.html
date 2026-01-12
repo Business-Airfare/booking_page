@@ -1225,6 +1225,11 @@
     --ba-danger: #d92d20;
     --ba-danger-bg: rgba(217,45,32,.06);
   }
+  #baPayRoot{
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
 
   /* Header */
   .baHeader{
@@ -1287,7 +1292,7 @@
   }
   .baHeaderAgent{
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 8px;
   }
   .baHeaderAgentContent{
@@ -1312,7 +1317,9 @@
     font-weight: 700;
     font-size: 16px;
     color: #111;
-    margin-top: -2px;
+    margin-top: 0;
+    margin-bottom: 0;
+    line-height: 1;
   }
   .baHeaderAgentAvatar{
     width: 38px;
@@ -1914,12 +1921,15 @@
     overflow: visible;
     pointer-events: none;
     z-index: 0;
+    width: 100%;
   }
   .baStickyMessagePlane{
-    position: relative;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 1;
     flex-shrink: 0;
-    margin-left: auto;
   }
   @media (max-width: 560px){
     .baStickyMessage{ font-size: 12px; }
