@@ -1230,6 +1230,14 @@
     margin: 0;
     padding: 0;
   }
+  body{
+    margin: 0;
+    padding: 0;
+  }
+  html{
+    margin: 0;
+    padding: 0;
+  }
 
   /* Header */
   .baHeader{
@@ -1292,7 +1300,7 @@
   }
   .baHeaderAgent{
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 8px;
   }
   .baHeaderAgentContent{
@@ -1300,8 +1308,10 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 1px;
+    gap: 0;
     padding-top: 0;
+    justify-content: space-between;
+    height: 38px;
   }
   .baHeaderAgentLabel{
     font-size: 11px;
@@ -1317,7 +1327,7 @@
     font-weight: 700;
     font-size: 16px;
     color: #111;
-    margin-top: 0;
+    margin-top: 8px;
     margin-bottom: 0;
     line-height: 1;
   }
@@ -1914,14 +1924,14 @@
   .baStickyMessageTrace{
     position: absolute;
     left: 0;
-    right: 0;
+    right: 14px;
     top: 50%;
     transform: translateY(-50%);
     height: 14px;
     overflow: visible;
     pointer-events: none;
     z-index: 0;
-    width: 100%;
+    width: calc(100% - 14px);
   }
   .baStickyMessagePlane{
     position: absolute;
