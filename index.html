@@ -65,15 +65,15 @@
     if (!phoneStr) return "";
     const digits = String(phoneStr).replace(/\D/g, "");
     if (digits.length === 10) {
-      return "+1 " + digits.slice(0, 3) + "-" + digits.slice(3, 6) + "-" + digits.slice(6);
+      return digits.slice(0, 3) + "-" + digits.slice(3, 6) + "-" + digits.slice(6);
     }
     if (digits.length === 11 && digits.startsWith("1")) {
-      return "+1 " + digits.slice(1, 4) + "-" + digits.slice(4, 7) + "-" + digits.slice(7);
+      return digits.slice(1, 4) + "-" + digits.slice(4, 7) + "-" + digits.slice(7);
     }
     if (phoneStr.startsWith("+1")) {
       const rest = phoneStr.slice(2).replace(/\D/g, "");
       if (rest.length === 10) {
-        return "+1 " + rest.slice(0, 3) + "-" + rest.slice(3, 6) + "-" + rest.slice(6);
+        return rest.slice(0, 3) + "-" + rest.slice(3, 6) + "-" + rest.slice(6);
       }
     }
     return phoneStr;
@@ -1266,17 +1266,28 @@
     font-weight: 700;
     font-size: 14px;
     color: #111;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .baHeaderPhone a{
     color: #111;
     text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .baHeaderPhone a:hover{
     opacity: 0.8;
   }
+  .baHeaderPhoneIcon{
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
   .baHeaderAgent{
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 8px;
   }
   .baHeaderAgentContent{
@@ -1285,6 +1296,7 @@
     align-items: center;
     text-align: center;
     gap: 1px;
+    padding-top: 0;
   }
   .baHeaderAgentLabel{
     font-size: 11px;
@@ -1293,6 +1305,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0px;
+    line-height: 1;
+    padding-top: 0;
   }
   .baHeaderAgentName{
     font-weight: 700;
@@ -1312,6 +1326,12 @@
     display: flex;
     align-items: center;
     gap: 24px;
+  }
+  .baHeaderDivider{
+    width: 1px;
+    height: 24px;
+    background: rgba(0,0,0,0.15);
+    flex-shrink: 0;
   }
   .baHeaderProgress{
     background: #2f2f2f;
@@ -1406,8 +1426,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
   .baPage{
-    max-width: 1220px;
-    margin: 0 auto;
+    width: 100%;
     padding: 26px 18px 110px;
   }
   .baGrid{
@@ -1868,6 +1887,36 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    position: relative;
+  }
+  .baStickyMessageText{
+    flex-shrink: 0;
+  }
+  .baStickyMessageTraceWrapper{
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 14px;
+    flex: 0 0 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+  .baStickyMessageTrace{
+    position: absolute;
+    left: 0;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 14px;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .baStickyMessagePlane{
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    margin-left: auto;
   }
   @media (max-width: 560px){
     .baStickyMessage{ font-size: 12px; }
@@ -1876,6 +1925,8 @@
     width: 80px; height: 44px; border-radius: 8px; background:#fff;
     display:flex; align-items:center; justify-content:center; overflow:hidden;
     flex-shrink: 0;
+    padding: 0 12px;
+    box-sizing: border-box;
   }
   .baStickyLogo img{ width: 72px; height: 36px; object-fit:contain; }
 
@@ -1898,17 +1949,17 @@
     color: #111;
     font-weight: 1000;
     letter-spacing: .01em;
-    padding: 10px 16px;
+    padding: 10px 12px;
     display:flex;
     align-items:center;
     gap: 10px;
     cursor:pointer;
-    min-width: 240px;
+    min-width: auto;
     justify-content: space-between;
   }
   .baCTA[disabled]{ opacity:.55; cursor:not-allowed; }
 
-  .baCTATitle{ font-weight:1000; font-size: 16px; flex: 1; text-align: center; }
+  .baCTATitle{ font-weight:1000; font-size: 16px; text-align: center; padding: 0 8px; }
   .baCTARight{
     font-weight: 1000;
     font-variant-numeric: tabular-nums;
@@ -1922,7 +1973,8 @@
     .baRow{ grid-template-columns: 1fr; }
     .baAir{ align-items:flex-start; }
     .baFlight{ grid-template-columns: 1fr; }
-    .baCTA{ min-width: 220px; }
+    .baCTA{ padding: 10px 10px; }
+    .baCTATitle{ padding: 0 6px; }
   }
 </style>
 
@@ -1939,9 +1991,15 @@
         <div class="baHeaderAgentRow">
           ${agentPhone ? `
             <div class="baHeaderPhone">
-              <a href="tel:${escapeHtml(agentPhone.replace(/[^\d+]/g, ''))}">📞 ${escapeHtml(fmtPhoneDisplay(agentPhone))}</a>
+              <a href="tel:${escapeHtml(agentPhone.replace(/[^\d+]/g, ''))}">
+                <svg class="baHeaderPhoneIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>${escapeHtml(fmtPhoneDisplay(agentPhone))}</span>
+              </a>
             </div>
           ` : ""}
+          ${agentPhone && agentName ? `<div class="baHeaderDivider"></div>` : ""}
           ${agentName && agentPhotoUrl ? `
             <div class="baHeaderAgent">
               <div class="baHeaderAgentContent">
@@ -2096,7 +2154,15 @@
           <img src="${stickyLogo}" alt="" onerror="this.style.display='none'">
         </div>
         ` : ""}
-        <div class="baStickyMessage"><span>You are almost there</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;transform:rotate(90deg);"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+        <div class="baStickyMessage">
+          <span class="baStickyMessageText">You are almost there</span>
+          <div class="baStickyMessageTraceWrapper">
+            <svg class="baStickyMessageTrace" viewBox="0 0 100 14" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M 0 7 Q 25 3 50 7 T 100 7" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+            </svg>
+            <svg class="baStickyMessagePlane" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;transform:rotate(90deg);"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+        </div>
       </div>
 
       <div class="baStickyRight">
