@@ -3460,17 +3460,89 @@
               care_selected: !!careSelected, 
               tip 
             });
+            
+            // CRITICAL: Verify the save was successful
+            if (!saveResult) {
+              throw new Error("update_selection returned no result");
+            }
+            
+            // Verify tip was saved correctly
+            const savedTipAmount = Number(saveResult.selection?.tip_amount ?? saveResult.tip_amount ?? 0) || 0;
+            if (Math.abs(savedTipAmount - currentTipAmount) > 0) {
+              console.error("CRITICAL: Tip amount mismatch after save!", {
+                expected: currentTipAmount,
+                saved: savedTipAmount,
+                saveResult: saveResult
+              });
+              // Don't proceed - payment amount would be wrong
+              if (hint) hint.textContent = "Failed to save tip amount. Please try again.";
+              payBtn.disabled = false;
+              payBtn.style.opacity = "1";
+              payBtn.style.cursor = "pointer";
+              throw new Error(`Tip amount mismatch: expected ${currentTipAmount}, got ${savedTipAmount}`);
+            }
+            
+            // Verify total_amount includes the tip
+            const savedTotalAmount = Number(saveResult.total_amount ?? 0) || 0;
+            const expectedTotal = payableTotalCents();
+            if (Math.abs(savedTotalAmount - expectedTotal) > 0) {
+              console.error("CRITICAL: Total amount mismatch after save!", {
+                expected: expectedTotal,
+                saved: savedTotalAmount,
+                breakdown: {
+                  base: baseTicketService(),
+                  care: careSelected ? careCents : 0,
+                  tip: currentTipAmount,
+                  calculated: expectedTotal
+                }
+              });
+              // Log but continue - backend should use correct total_amount
+            }
+            
             // Update lastSentSelection to reflect what we just sent
             lastSentSelection = selectionKeyForPayment;
             
+            // CRITICAL: Re-fetch session to verify database has correct values
+            // This ensures the database trigger has run and total_amount is correct
+            try {
+              const verifyRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(data.public_id));
+              if (verifyRes.ok) {
+                const verifyData = await verifyRes.json().catch(() => ({}));
+                const verifiedTotal = Number(verifyData.total_amount ?? 0) || 0;
+                const verifiedTip = Number(verifyData.selection?.tip_amount ?? 0) || 0;
+                
+                if (Math.abs(verifiedTip - currentTipAmount) > 0) {
+                  console.error("Database tip mismatch after save:", {
+                    expected: currentTipAmount,
+                    in_db: verifiedTip
+                  });
+                }
+                
+                if (Math.abs(verifiedTotal - expectedTotal) > 0) {
+                  console.warn("Database total mismatch (may be OK if payment started):", {
+                    expected: expectedTotal,
+                    in_db: verifiedTotal
+                  });
+                }
+              }
+            } catch (verifyErr) {
+              console.warn("Could not verify database state:", verifyErr);
+              // Continue anyway
+            }
+            
             // CRITICAL: Wait longer to ensure database trigger has recalculated total_amount
             // The trigger needs to run and update total_amount before start_payment reads it
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Also wait for any database replication/write propagation
+            await new Promise(resolve => setTimeout(resolve, 800));
           } catch (e) {
             console.error("Failed to save selection before payment:", e);
-            // Continue anyway - backend will use whatever is in the database
-            // But wait a bit in case the error was transient
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // This is critical - if we can't save, the payment amount will be wrong
+            // Show error to user and don't proceed
+            if (hint) hint.textContent = "Failed to save selection. Please try again.";
+            payBtn.disabled = false;
+            payBtn.style.opacity = "1";
+            payBtn.style.cursor = "pointer";
+            throw e; // Stop payment process
           }
           
           if (hint) hint.textContent = `Preparing secure payment…`;
