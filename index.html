@@ -3393,6 +3393,49 @@
           payBtn.style.cursor = "not-allowed";
           if (hint) hint.textContent = `Preparing secure payment…`;
 
+          // CRITICAL: Wait for any pending selection updates to complete before starting payment
+          // This ensures the backend has the latest TCS/tip selections before creating PaymentIntent
+          if (updateDebounceTimer || pendingUpdateRequest) {
+            if (hint) hint.textContent = `Saving selections…`;
+            
+            // Wait for debounce timer to fire (if exists)
+            if (updateDebounceTimer) {
+              await new Promise(resolve => {
+                const checkTimer = setInterval(() => {
+                  if (!updateDebounceTimer) {
+                    clearInterval(checkTimer);
+                    // Give it a moment for the request to start
+                    setTimeout(resolve, 100);
+                  }
+                }, 50);
+                // Safety timeout
+                setTimeout(() => {
+                  clearInterval(checkTimer);
+                  resolve(undefined);
+                }, UPDATE_DEBOUNCE_MS + 500);
+              });
+            }
+            
+            // Wait for pending request to complete (if exists)
+            if (pendingUpdateRequest) {
+              await new Promise(resolve => {
+                const checkRequest = setInterval(() => {
+                  if (!pendingUpdateRequest) {
+                    clearInterval(checkRequest);
+                    resolve(undefined);
+                  }
+                }, 100);
+                // Safety timeout after 10 seconds
+                setTimeout(() => {
+                  clearInterval(checkRequest);
+                  resolve(undefined);
+                }, 10000);
+              });
+            }
+            
+            if (hint) hint.textContent = `Preparing secure payment…`;
+          }
+
           const res = await fetch(START_PAYMENT, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
