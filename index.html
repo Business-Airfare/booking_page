@@ -2662,7 +2662,7 @@
               </div>
 
               ${careSelected ? `
-                <div class="baSummaryBox__item">
+                <div class="baSummaryBox__item" data-item="care">
                   <div class="baSummaryBox__itemLabel">Travel Care Service</div>
                   <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
                   <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
@@ -2670,7 +2670,7 @@
               ` : ""}
 
               ${tipAmount > 0 ? `
-                <div class="baSummaryBox__item">
+                <div class="baSummaryBox__item" data-item="tip">
                   <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
                   <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
                   <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
