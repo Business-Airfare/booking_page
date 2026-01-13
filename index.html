@@ -128,6 +128,57 @@
     return `${h}:${String(mm).padStart(2,"0")}`;
   }
 
+  function numberToWords(cents){
+    const ones = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+    const teens = ["ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+    const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+
+    if (cents === 0) return "zero";
+
+    function convertHundreds(n){
+      let result = "";
+      if (n >= 100) {
+        result += ones[Math.floor(n / 100)] + " hundred";
+        n %= 100;
+        if (n > 0) result += " ";
+      }
+      if (n >= 20) {
+        result += tens[Math.floor(n / 10)];
+        n %= 10;
+        if (n > 0) result += "-" + ones[n];
+      } else if (n >= 10) {
+        result += teens[n - 10];
+      } else if (n > 0) {
+        result += ones[n];
+      }
+      return result;
+    }
+
+    const dollars = Math.floor(cents / 100);
+    const centsRem = cents % 100;
+
+    let words = "";
+    if (dollars >= 1000) {
+      const thousands = Math.floor(dollars / 1000);
+      words += convertHundreds(thousands) + " thousand";
+      const hundreds = dollars % 1000;
+      if (hundreds > 0) {
+        words += " " + convertHundreds(hundreds);
+      }
+    } else {
+      words = convertHundreds(dollars);
+    }
+
+    words += " US dollar" + (dollars !== 1 ? "s" : "");
+    if (centsRem > 0) {
+      words += " and " + convertHundreds(centsRem) + " cent" + (centsRem !== 1 ? "s" : "");
+    } else {
+      words += " and zero cents";
+    }
+
+    return words;
+  }
+
   function expiresClock(expiresAtISO){
     const exp = new Date(expiresAtISO).getTime();
     const now = Date.now();
@@ -1999,6 +2050,301 @@
     .baCTA{ padding: 10px 10px; }
     .baCTATitle{ padding: 0 6px; }
   }
+
+  /* Optional Services Two-Column Layout */
+  .baExtrasGrid{
+    display: grid;
+    grid-template-columns: 1.25fr 0.95fr;
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 980px){
+    .baExtrasGrid{ grid-template-columns: 1fr; }
+  }
+
+  /* Travel Care Service Box */
+  .baCareBox{
+    background: #faf9f6;
+    border: 1px solid var(--ba-border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+  }
+  .baCareBox__header{
+    background: #4a4a4a;
+    padding: 16px 20px;
+    color: #fff;
+  }
+  .baCareBox__headerLeft{
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .baCareBox__icon{
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    color: #fff;
+    margin-top: 2px;
+  }
+  .baCareBox__titleWrap{
+    flex: 1;
+  }
+  .baCareBox__title{
+    font-weight: 900;
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .baCareBox__subtitle{
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.4;
+  }
+  .baCareBox__content{
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 768px){
+    .baCareBox__content{ grid-template-columns: 1fr; }
+  }
+  .baCareBox__benefits{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .baCareBox__benefit{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .baCareBox__check{
+    color: #0b6b2f;
+    font-weight: 900;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .baCareBox__image{
+    width: 100%;
+    aspect-ratio: 4/5;
+  }
+  .baCareBox__recommended{
+    background: #4a4a4a;
+    color: #fff;
+    padding: 8px 20px;
+    font-weight: 900;
+    font-size: 13px;
+    text-align: center;
+    border-radius: 0 0 8px 8px;
+  }
+  .baCareBox__options{
+    padding: 18px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .baCareRadio{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    padding: 10px;
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  .baCareRadio:hover{
+    background: rgba(0,0,0,0.03);
+  }
+  .baCareRadio input[type="radio"]{
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--ba-accent);
+    cursor: pointer;
+  }
+  .baCareRadio__text{
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333;
+  }
+  .baCareRadio__text strong{
+    font-weight: 900;
+  }
+  .baCareRadio__link{
+    color: #0066cc;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .baCareRadio__link:hover{
+    color: #0052a3;
+  }
+  .baCareRadio input[type="radio"]:disabled + .baCareRadio__text{
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Summary Box (Sticky) */
+  .baExtrasRight{
+    position: sticky;
+    top: 14px;
+    align-self: start;
+  }
+  @media (max-width: 980px){
+    .baExtrasRight{ position: static; }
+  }
+  .baSummaryBox{
+    background: #fff;
+    border: 1px solid var(--ba-border);
+    border-radius: 10px;
+    padding: 18px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+  }
+  .baSummaryBox__flight{
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .baSummaryBox__flightInfo{
+    flex: 1;
+  }
+  .baSummaryBox__flightLabel{
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .baSummaryBox__flightRoute{
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 2px;
+  }
+  .baSummaryBox__flightDate{
+    font-size: 13px;
+    opacity: 0.75;
+  }
+  .baSummaryBox__divider{
+    height: 1px;
+    background: #e9e9e9;
+    margin: 14px 0;
+  }
+  .baSummaryBox__items{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .baSummaryBox__item{
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 16px;
+    align-items: start;
+  }
+  .baSummaryBox__itemLabel{
+    font-weight: 700;
+    font-size: 14px;
+    grid-column: 1;
+  }
+  .baSummaryBox__itemValue{
+    font-weight: 900;
+    font-size: 16px;
+    text-align: right;
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .baSummaryBox__itemSub{
+    font-size: 12px;
+    opacity: 0.7;
+    grid-column: 1;
+    margin-top: 4px;
+  }
+  .baSummaryBox__itemSubValue{
+    font-size: 12px;
+    opacity: 0.7;
+    text-align: right;
+    grid-column: 2;
+    margin-top: 4px;
+  }
+  .baSummaryBox__total{
+    margin-top: 8px;
+  }
+  .baSummaryBox__totalLabel{
+    font-weight: 900;
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .baSummaryBox__totalValue{
+    font-weight: 1000;
+    font-size: 28px;
+    text-align: right;
+    line-height: 1.1;
+  }
+  .baSummaryBox__totalWords{
+    font-size: 11px;
+    opacity: 0.65;
+    margin-top: 6px;
+    line-height: 1.4;
+    text-align: right;
+    font-style: italic;
+  }
+
+  /* Popup overlay */
+  .baPopupOverlay{
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+  }
+  .baPopupOverlay.active{
+    display: flex;
+  }
+  .baPopup{
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .baPopup__header{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .baPopup__title{
+    font-weight: 900;
+    font-size: 20px;
+  }
+  .baPopup__close{
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  .baPopup__close:hover{
+    background: #f0f0f0;
+  }
 </style>
 
 <div class="baHeader">
@@ -2095,50 +2441,169 @@
       </aside>
     </div>
 
-    <div class="baExtras">
-      <div class="baPanel">
-        <div class="baPanelTitle">Optional services</div>
+    <div class="baExtras" id="baExtras" style="display:none">
+      <div class="baExtrasGrid">
+        <div class="baExtrasLeft">
+          <div class="baCareBox">
+            <div class="baCareBox__header">
+              <div class="baCareBox__headerLeft">
+                <svg class="baCareBox__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+                <div class="baCareBox__titleWrap">
+                  <div class="baCareBox__title">Travel Care Service</div>
+                  <div class="baCareBox__subtitle">For the wise travellers charged by Deluxe Flights in addition to ticket cost</div>
+                </div>
+              </div>
+            </div>
+            <div class="baCareBox__content">
+              <div class="baCareBox__benefits">
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>Change of plans? First exchange 100% free of airline penalties and Deluxe Flights fees!</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>We'll rebook you for FREE if you late due to inclement weather</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>Get 100% refund if you got sick and can't travel</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>Never used your Travel Care Service? Claim Your Voucher for next purchase with Deluxe Flight</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>We'll process your changes for FREE if your Last minute plan changes</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>We'll rebook you for FREE if your flights got canceled or delayed</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>Airline mishandled your baggage? We'll get them back, or we'll pay you $1000 for each bag!</span>
+                </div>
+                <div class="baCareBox__benefit">
+                  <span class="baCareBox__check">✓</span>
+                  <span>Priority access to VIP Concierge Desk 24/7</span>
+                </div>
+              </div>
+              <div class="baCareBox__image">
+                <div style="width:100%;height:100%;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#999">Flight attendant image</div>
+              </div>
+            </div>
+            <div class="baCareBox__recommended">RECOMMENDED</div>
+            <div class="baCareBox__options">
+              <label class="baCareRadio">
+                <input type="radio" name="baCareOption" value="yes" id="baCareYes" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
+                <span class="baCareRadio__text">
+                  <strong>Yes</strong>, I would like to add Travel Care Service to my purchase for <strong>${fmtMoney(careCents)}</strong> and I confirm that I have read and agreed to the <a href="#" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a>
+                </span>
+              </label>
+              <label class="baCareRadio">
+                <input type="radio" name="baCareOption" value="no" id="baCareNo" ${!careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
+                <span class="baCareRadio__text">
+                  <strong>No</strong>, I choose not to protect. Travel Care Service is not available after the booking. <a href="#" class="baCareRadio__link" id="baReadMoreLink">Read more</a>
+                </span>
+              </label>
+            </div>
+          </div>
 
-        <label style="display:flex;align-items:center;gap:10px;font-weight:900">
-          <input id="baCareToggle" type="checkbox" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
-          Add Travel Care Service (optional)
-          <span style="margin-left:auto;opacity:.75;font-weight:900">${fmtMoney(careCents)}</span>
-        </label>
+          <div class="baTipSection" style="margin-top:18px">
+            <div style="font-weight:900;margin-bottom:8px">Tip (optional)</div>
+            <div class="baTipRow">
+              <button class="baTipBtn" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>No tip</button>
 
-        <div style="height:12px"></div>
+              ${tipPresets.map(p => `
+                <button class="baTipBtn"
+                  data-mode="preset"
+                  data-label="${escapeHtml(p.label)}"
+                  data-amount="${Number(p.amount)||0}"
+                  ${selectionLocked || isExpired ? "disabled" : ""}>
+                  ${escapeHtml(p.label)} · $${Math.round((Number(p.amount)||0)/100)}
+                </button>
+              `).join("")}
 
-        <div style="font-weight:900;margin-bottom:8px">Tip (optional)</div>
-        <div class="baTipRow">
-          <button class="baTipBtn" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>No tip</button>
+              <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+                <div style="font-weight:900;opacity:.75">Custom</div>
+                <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="1"
+                  value="${tipMode === "custom" ? (tipAmount/100) : ""}"
+                  placeholder="0"
+                  ${selectionLocked || isExpired ? "disabled" : ""}>
+              </div>
+            </div>
 
-          ${tipPresets.map(p => `
-            <button class="baTipBtn"
-              data-mode="preset"
-              data-label="${escapeHtml(p.label)}"
-              data-amount="${Number(p.amount)||0}"
-              ${selectionLocked || isExpired ? "disabled" : ""}>
-              ${escapeHtml(p.label)} · $${Math.round((Number(p.amount)||0)/100)}
-            </button>
-          `).join("")}
-
-          <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-            <div style="font-weight:900;opacity:.75">Custom</div>
-            <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="1"
-              value="${tipMode === "custom" ? (tipAmount/100) : ""}"
-              placeholder="0"
-              ${selectionLocked || isExpired ? "disabled" : ""}>
+            <div id="baSelMsg" style="margin-top:10px;font-size:13px;opacity:.75"></div>
           </div>
         </div>
 
-        <div id="baSelMsg" style="margin-top:10px;font-size:13px;opacity:.75"></div>
+        <div class="baExtrasRight">
+          <div class="baSummaryBox">
+            <div class="baSummaryBox__flight">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
+                <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              </svg>
+              <div class="baSummaryBox__flightInfo">
+                <div class="baSummaryBox__flightLabel">Flight</div>
+                ${journeys.length > 0 ? (() => {
+                  const cp = cityPairFromJourney(journeys[0]);
+                  const first = journeys[0]?.segments?.[0];
+                  const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
+                  const dateLabel = departDay ? dateHeaderLabel(departDay) : "";
+                  return `
+                    <div class="baSummaryBox__flightRoute">${escapeHtml(cp.fromCity || cp.fromIata || "")} (${escapeHtml(cp.fromIata || "")}) → ${escapeHtml(cp.toCity || cp.toIata || "")} (${escapeHtml(cp.toIata || "")})</div>
+                    <div class="baSummaryBox__flightDate">${escapeHtml(dateLabel)}</div>
+                  `;
+                })() : ""}
+              </div>
+            </div>
+
+            <div class="baSummaryBox__divider"></div>
+
+            <div class="baSummaryBox__items">
+              <div class="baSummaryBox__item">
+                <div class="baSummaryBox__itemLabel">One-Way Flight</div>
+                <div class="baSummaryBox__itemValue">${fmtMoney(baseTicketService())}</div>
+                <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">To be processed by airline</div>
+                <div class="baSummaryBox__itemSubValue" style="grid-column: 2;">${fmtMoney(ticketCents)}</div>
+                <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">To be processed by DXF</div>
+                <div class="baSummaryBox__itemSubValue" style="grid-column: 2;">${fmtMoney(serviceCents)}</div>
+              </div>
+
+              ${careSelected ? `
+                <div class="baSummaryBox__item">
+                  <div class="baSummaryBox__itemLabel">Travel Care Service</div>
+                  <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
+                  <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
+                </div>
+              ` : ""}
+
+              ${tipAmount > 0 ? `
+                <div class="baSummaryBox__item">
+                  <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
+                  <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
+                  <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
+                </div>
+              ` : ""}
+            </div>
+
+            <div class="baSummaryBox__divider"></div>
+
+            <div class="baSummaryBox__total">
+              <div class="baSummaryBox__totalLabel">Total:</div>
+              <div class="baSummaryBox__totalValue">${fmtMoney(payableTotalCents())}</div>
+              <div class="baSummaryBox__totalWords">(${numberToWords(payableTotalCents())})</div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div style="margin-top:14px">
-        <div style="margin-bottom:10px;font-size:14px;font-weight:900">
-          Total amount:
-          <span id="baPayableTotal" style="font-weight:900">${fmtMoney(payableTotalCents())} ${escapeHtml(data.currency || "USD")}</span>
-        </div>
-
+      <div style="margin-top:18px">
         <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
 
         <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
@@ -2266,38 +2731,126 @@
       const pay = payableTotalCents();
       const payEl = document.getElementById("baPayableTotal");
       if (payEl) payEl.textContent = `${fmtMoney(pay)} ${escapeHtml(data.currency || "USD")}`;
+      updateSummaryBox();
       // sticky per pax stays as-is
     }
 
     updateTotalsUI();
     applyTipHighlights();
 
-    // Care toggle
-    const careToggle = document.getElementById("baCareToggle");
-    if (careToggle) {
-      careToggle.addEventListener("change", async () => {
-        try {
-          careSelected = !!careToggle.checked;
-          updateTotalsUI();
-          setSaving(true);
+    function updateSummaryBox(){
+      const summaryBox = root.querySelector(".baSummaryBox");
+      if (!summaryBox) return;
 
-          const tip = {
-            mode: tipMode || "none",
-            preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
-            amount: Number.isFinite(tipAmount) ? tipAmount : 0
-          };
+      // Update Travel Care Service line
+      let careItem = summaryBox.querySelector(".baSummaryBox__item[data-item='care']");
+      if (careSelected) {
+        if (!careItem) {
+          const items = summaryBox.querySelector(".baSummaryBox__items");
+          if (items) {
+            const div = document.createElement("div");
+            div.className = "baSummaryBox__item";
+            div.setAttribute("data-item", "care");
+            div.innerHTML = `
+              <div class="baSummaryBox__itemLabel">Travel Care Service</div>
+              <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
+              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+            `;
+            items.appendChild(div);
+            careItem = div;
+          }
+        } else {
+          const label = careItem.querySelector(".baSummaryBox__itemLabel");
+          const value = careItem.querySelector(".baSummaryBox__itemValue");
+          if (label) label.textContent = "Travel Care Service";
+          if (value) value.textContent = fmtMoney(careCents);
+        }
+      } else {
+        if (careItem) careItem.remove();
+      }
 
-          await updateSelection(data.public_id, { care_selected: careSelected, tip });
+      // Update Tip line
+      let tipItem = summaryBox.querySelector(".baSummaryBox__item[data-item='tip']");
+      if (tipAmount > 0) {
+        if (!tipItem) {
+          const items = summaryBox.querySelector(".baSummaryBox__items");
+          if (items) {
+            const div = document.createElement("div");
+            div.className = "baSummaryBox__item";
+            div.setAttribute("data-item", "tip");
+            div.innerHTML = `
+              <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
+              <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
+              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+            `;
+            items.appendChild(div);
+            tipItem = div;
+          }
+        } else {
+          const label = tipItem.querySelector(".baSummaryBox__itemLabel");
+          const value = tipItem.querySelector(".baSummaryBox__itemValue");
+          if (label) label.textContent = "Token of Appreciation";
+          if (value) value.textContent = fmtMoney(tipAmount);
+        }
+      } else {
+        if (tipItem) tipItem.remove();
+      }
 
+      // Update grand total
+      const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
+      const totalWords = summaryBox.querySelector(".baSummaryBox__totalWords");
+      const total = payableTotalCents();
+      if (totalValue) totalValue.textContent = fmtMoney(total);
+      if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
+    }
+
+    // Travel Care Service radio buttons
+    const careYes = document.getElementById("baCareYes");
+    const careNo = document.getElementById("baCareNo");
+    
+    function handleCareSelection(newSelected) {
+      if (selectionLocked || isExpired) return;
+      
+      const wasSelected = careSelected;
+      careSelected = newSelected;
+      
+      if (careYes) careYes.checked = newSelected;
+      if (careNo) careNo.checked = !newSelected;
+      
+      updateSummaryBox();
+      updateTotalsUI();
+      setSaving(true);
+
+      const tip = {
+        mode: tipMode || "none",
+        preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
+        amount: Number.isFinite(tipAmount) ? tipAmount : 0
+      };
+
+      updateSelection(data.public_id, { care_selected: careSelected, tip })
+        .then(() => {
           setSaving(false);
           setSelMsg("Updated.");
-        } catch (e) {
-          careSelected = !careSelected;
-          careToggle.checked = careSelected;
+        })
+        .catch((e) => {
+          careSelected = wasSelected;
+          if (careYes) careYes.checked = wasSelected;
+          if (careNo) careNo.checked = !wasSelected;
+          updateSummaryBox();
           updateTotalsUI();
           setSaving(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
-        }
+        });
+    }
+
+    if (careYes) {
+      careYes.addEventListener("change", () => {
+        if (careYes.checked) handleCareSelection(true);
+      });
+    }
+    if (careNo) {
+      careNo.addEventListener("change", () => {
+        if (careNo.checked) handleCareSelection(false);
       });
     }
 
@@ -2322,6 +2875,7 @@
             try {
               const tip = { mode: "none", preset_label: null, amount: 0 };
               await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              updateTotalsUI();
               setSaving(false);
               setSelMsg("Updated.");
             } catch (e) {
@@ -2350,6 +2904,7 @@
             try {
               const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
               await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              updateTotalsUI();
               setSaving(false);
               setSelMsg("Updated.");
             } catch (e) {
@@ -2400,6 +2955,54 @@
       });
     }
 
+    // Popup functionality for Terms & Conditions and Read More
+    function createPopup(title, content) {
+      const overlay = document.createElement("div");
+      overlay.className = "baPopupOverlay";
+      overlay.innerHTML = `
+        <div class="baPopup">
+          <div class="baPopup__header">
+            <div class="baPopup__title">${escapeHtml(title)}</div>
+            <button class="baPopup__close" aria-label="Close">&times;</button>
+          </div>
+          <div class="baPopup__content">
+            ${typeof content === "string" ? content : "<p>Content coming soon.</p>"}
+          </div>
+        </div>
+      `;
+
+      const closeBtn = overlay.querySelector(".baPopup__close");
+      const closePopup = () => {
+        overlay.classList.remove("active");
+        setTimeout(() => overlay.remove(), 300);
+      };
+
+      closeBtn.addEventListener("click", closePopup);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) closePopup();
+      });
+
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add("active"));
+    }
+
+    const termsLink = document.getElementById("baTermsLink");
+    const readMoreLink = document.getElementById("baReadMoreLink");
+
+    if (termsLink) {
+      termsLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        createPopup("Terms and Conditions", "<p>Terms and Conditions content will be displayed here.</p>");
+      });
+    }
+
+    if (readMoreLink) {
+      readMoreLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        createPopup("Read More", "<p>Additional information about Travel Care Service will be displayed here.</p>");
+      });
+    }
+
     function disablePrimary(reason){
       const payBtn = document.getElementById("baPayBtn");
       if (payBtn) {
@@ -2416,23 +3019,46 @@
       return;
     }
 
-    // Pay button -> start_payment -> show Stripe
+    // Pay button -> reveal Optional Services (step 1), then start_payment (step 2)
+    let optionalServicesRevealed = false;
     const payBtn = document.getElementById("baPayBtn");
+    const stickyBar = root.querySelector(".baSticky");
+    const extrasSection = document.getElementById("baExtras");
+
     if (payBtn) {
       payBtn.addEventListener("click", async () => {
         try {
-          // require passenger validity before letting them proceed
-          const paxOk = validateAllPassengers(paxCount);
-          if (!paxOk){
-            showPaxToast("Please fix highlighted passenger fields first.", false);
-            // scroll to first invalid
-            const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
-            if (firstBad && firstBad.scrollIntoView){
-              try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
+          // Step 1: If Optional Services not revealed, reveal them
+          if (!optionalServicesRevealed) {
+            // require passenger validity before letting them proceed
+            const paxOk = validateAllPassengers(paxCount);
+            if (!paxOk){
+              showPaxToast("Please fix highlighted passenger fields first.", false);
+              // scroll to first invalid
+              const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+              if (firstBad && firstBad.scrollIntoView){
+                try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
+              }
+              return;
             }
+
+            // Hide sticky bar
+            if (stickyBar) stickyBar.style.display = "none";
+
+            // Show Optional Services section
+            if (extrasSection) {
+              extrasSection.style.display = "block";
+              optionalServicesRevealed = true;
+              // Add Continue to Payment button
+              addContinueToPaymentButton();
+              // Scroll to Optional Services
+              try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+            }
+
             return;
           }
 
+          // Step 2: If Optional Services already revealed, proceed with payment
           payBtn.disabled = true;
           payBtn.style.opacity = ".7";
           payBtn.style.cursor = "not-allowed";
@@ -2468,6 +3094,78 @@
           payBtn.style.cursor = "pointer";
         }
       });
+    }
+
+    // Add a new "Continue to Payment" button in Optional Services section
+    // This will be shown after BOOK is clicked and Optional Services are revealed
+    function addContinueToPaymentButton() {
+      const existingBtn = document.getElementById("baContinueToPayment");
+      if (existingBtn) return; // Already added
+
+      const continueBtn = document.createElement("button");
+      continueBtn.id = "baContinueToPayment";
+      continueBtn.className = "baCTA";
+      continueBtn.style.cssText = "margin-top: 18px; width: 100%; justify-content: center;";
+      continueBtn.innerHTML = `
+        <span class="baCTATitle">CONTINUE TO PAYMENT</span>
+      `;
+
+      continueBtn.addEventListener("click", async () => {
+        try {
+          // require passenger validity
+          const paxOk = validateAllPassengers(paxCount);
+          if (!paxOk){
+            showPaxToast("Please fix highlighted passenger fields first.", false);
+            const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+            if (firstBad && firstBad.scrollIntoView){
+              try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
+            }
+            return;
+          }
+
+          continueBtn.disabled = true;
+          continueBtn.style.opacity = ".7";
+          continueBtn.style.cursor = "not-allowed";
+          if (hint) hint.textContent = `Preparing secure payment…`;
+
+          const res = await fetch(START_PAYMENT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ public_id: data.public_id })
+          });
+
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
+            throw new Error(m);
+          }
+
+          if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
+
+          if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
+
+          if (wrap) wrap.style.display = "block";
+          await mountStripePaymentElement(payload.client_secret);
+
+          if (msg) msg.textContent = "";
+
+          // Hide continue button
+          continueBtn.style.display = "none";
+
+          try { if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+
+        } catch (e) {
+          if (hint) hint.textContent = "Could not start payment: " + (e && e.message ? e.message : String(e));
+          continueBtn.disabled = false;
+          continueBtn.style.opacity = "1";
+          continueBtn.style.cursor = "pointer";
+        }
+      });
+
+      const extrasWrap = extrasSection ? extrasSection.querySelector(".baExtrasGrid")?.parentElement : null;
+      if (extrasWrap) {
+        extrasWrap.appendChild(continueBtn);
+      }
     }
 
     if (confirmBtn) {
