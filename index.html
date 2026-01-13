@@ -2957,58 +2957,44 @@
       const summaryBox = root.querySelector(".baSummaryBox");
       if (!summaryBox) return;
 
+      // Remove ALL existing care items (prevent duplicates)
+      const allCareItems = summaryBox.querySelectorAll(".baSummaryBox__item[data-item='care']");
+      allCareItems.forEach(item => item.remove());
+
       // Update Travel Care Service line
-      let careItem = summaryBox.querySelector(".baSummaryBox__item[data-item='care']");
       if (careSelected) {
-        if (!careItem) {
-          const items = summaryBox.querySelector(".baSummaryBox__items");
-          if (items) {
-            const div = document.createElement("div");
-            div.className = "baSummaryBox__item";
-            div.setAttribute("data-item", "care");
-            div.innerHTML = `
-              <div class="baSummaryBox__itemLabel">Travel Care Service</div>
-              <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
-            `;
-            items.appendChild(div);
-            careItem = div;
-          }
-        } else {
-          const label = careItem.querySelector(".baSummaryBox__itemLabel");
-          const value = careItem.querySelector(".baSummaryBox__itemValue");
-          if (label) label.textContent = "Travel Care Service";
-          if (value) value.textContent = fmtMoney(careCents);
+        const items = summaryBox.querySelector(".baSummaryBox__items");
+        if (items) {
+          const div = document.createElement("div");
+          div.className = "baSummaryBox__item";
+          div.setAttribute("data-item", "care");
+          div.innerHTML = `
+            <div class="baSummaryBox__itemLabel">Travel Care Service</div>
+            <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
+            <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+          `;
+          items.appendChild(div);
         }
-      } else {
-        if (careItem) careItem.remove();
       }
 
+      // Remove ALL existing tip items (prevent duplicates)
+      const allTipItems = summaryBox.querySelectorAll(".baSummaryBox__item[data-item='tip']");
+      allTipItems.forEach(item => item.remove());
+
       // Update Tip line
-      let tipItem = summaryBox.querySelector(".baSummaryBox__item[data-item='tip']");
       if (tipAmount > 0) {
-        if (!tipItem) {
-          const items = summaryBox.querySelector(".baSummaryBox__items");
-          if (items) {
-            const div = document.createElement("div");
-            div.className = "baSummaryBox__item";
-            div.setAttribute("data-item", "tip");
-            div.innerHTML = `
-              <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
-              <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
-            `;
-            items.appendChild(div);
-            tipItem = div;
-          }
-        } else {
-          const label = tipItem.querySelector(".baSummaryBox__itemLabel");
-          const value = tipItem.querySelector(".baSummaryBox__itemValue");
-          if (label) label.textContent = "Token of Appreciation";
-          if (value) value.textContent = fmtMoney(tipAmount);
+        const items = summaryBox.querySelector(".baSummaryBox__items");
+        if (items) {
+          const div = document.createElement("div");
+          div.className = "baSummaryBox__item";
+          div.setAttribute("data-item", "tip");
+          div.innerHTML = `
+            <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
+            <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
+            <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+          `;
+          items.appendChild(div);
         }
-      } else {
-        if (tipItem) tipItem.remove();
       }
 
       // Update grand total
