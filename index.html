@@ -2807,7 +2807,19 @@
     let pendingUpdateRequest = null;
     let updateDebounceTimer = null;
     let lastSentSelection = null; // Track last selection sent to prevent duplicates
+    let isUpdateInFlight = false; // Track if an update is currently being processed
     const UPDATE_DEBOUNCE_MS = 300;
+
+    // Initialize lastSentSelection from current state to prevent duplicates on page load
+    function initializeLastSentSelection() {
+      lastSentSelection = JSON.stringify({
+        care_selected: careSelected,
+        tip_mode: tipMode,
+        tip_preset_label: tipPresetLabel,
+        tip_amount: tipAmount
+      });
+    }
+    initializeLastSentSelection();
 
     function debouncedUpdateSelection(public_id, patch, onComplete) {
       // Create a selection key to detect duplicates
@@ -2823,10 +2835,11 @@
         return; // Same selection, skip
       }
 
-      // Cancel previous pending request if it exists
+      // Cancel previous pending request if it exists (different selection)
       if (pendingUpdateRequest) {
         pendingUpdateRequest.aborted = true;
         pendingUpdateRequest = null;
+        isUpdateInFlight = false; // Clear flag since we're canceling
       }
 
       // Clear existing debounce timer
@@ -2835,8 +2848,9 @@
         updateDebounceTimer = null;
       }
 
-      // Mark this selection as being sent
+      // Mark this selection as being sent and in flight
       lastSentSelection = selectionKey;
+      isUpdateInFlight = true;
 
       // Debounce the actual request
       updateDebounceTimer = setTimeout(async () => {
@@ -2852,24 +2866,27 @@
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
-            // Keep lastSentSelection to prevent immediate duplicate
-            // Clear it after a short delay to allow legitimate changes
-            setTimeout(() => {
-              if (lastSentSelection === selectionKey) {
-                lastSentSelection = null;
-              }
-            }, 500);
+            isUpdateInFlight = false;
+            // Keep lastSentSelection permanently to prevent duplicates
+            // It will only change when a different selection is made
             if (onComplete) onComplete(null, result);
+          } else {
+            // Request was superseded, clear in-flight flag
+            isUpdateInFlight = false;
           }
         } catch (error) {
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
+            isUpdateInFlight = false;
             // On error, clear the sent selection so user can retry
             if (lastSentSelection === selectionKey) {
               lastSentSelection = null;
             }
             if (onComplete) onComplete(error, null);
+          } else {
+            // Request was superseded, clear in-flight flag
+            isUpdateInFlight = false;
           }
         }
       }, UPDATE_DEBOUNCE_MS);
@@ -2997,7 +3014,13 @@
       if (selectionLocked || isExpired) return;
       
       // Prevent duplicate selection - if already in this state, ignore
-      if (careSelected === newSelected) return;
+      // Double-check: also verify the radio button state matches
+      if (careSelected === newSelected) {
+        // Ensure UI is in sync
+        if (careYes) careYes.checked = newSelected;
+        if (careNo) careNo.checked = !newSelected;
+        return;
+      }
       
       const wasSelected = careSelected;
       
@@ -3043,12 +3066,18 @@
 
     if (careYes) {
       careYes.addEventListener("change", () => {
-        if (careYes.checked) handleCareSelection(true);
+        // Only handle if actually checked AND state has changed
+        if (careYes.checked && careSelected !== true) {
+          handleCareSelection(true);
+        }
       });
     }
     if (careNo) {
       careNo.addEventListener("change", () => {
-        if (careNo.checked) handleCareSelection(false);
+        // Only handle if actually checked AND state has changed
+        if (careNo.checked && careSelected !== false) {
+          handleCareSelection(false);
+        }
       });
     }
 
