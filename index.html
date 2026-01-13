@@ -2806,9 +2806,23 @@
     // Debounced update with request cancellation (last-write-wins)
     let pendingUpdateRequest = null;
     let updateDebounceTimer = null;
+    let lastSentSelection = null; // Track last selection sent to prevent duplicates
     const UPDATE_DEBOUNCE_MS = 300;
 
     function debouncedUpdateSelection(public_id, patch, onComplete) {
+      // Create a selection key to detect duplicates
+      const selectionKey = JSON.stringify({
+        care_selected: patch.care_selected,
+        tip_mode: patch.tip?.mode,
+        tip_preset_label: patch.tip?.preset_label,
+        tip_amount: patch.tip?.amount
+      });
+
+      // Prevent duplicate selection - if same selection is already pending or was just sent, ignore
+      if (lastSentSelection === selectionKey) {
+        return; // Same selection, skip
+      }
+
       // Cancel previous pending request if it exists
       if (pendingUpdateRequest) {
         pendingUpdateRequest.aborted = true;
@@ -2821,12 +2835,15 @@
         updateDebounceTimer = null;
       }
 
+      // Mark this selection as being sent
+      lastSentSelection = selectionKey;
+
       // Debounce the actual request
       updateDebounceTimer = setTimeout(async () => {
         updateDebounceTimer = null;
         
         const requestId = Date.now();
-        const request = { id: requestId, aborted: false };
+        const request = { id: requestId, aborted: false, selectionKey };
         pendingUpdateRequest = request;
 
         try {
@@ -2835,12 +2852,23 @@
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
+            // Keep lastSentSelection to prevent immediate duplicate
+            // Clear it after a short delay to allow legitimate changes
+            setTimeout(() => {
+              if (lastSentSelection === selectionKey) {
+                lastSentSelection = null;
+              }
+            }, 500);
             if (onComplete) onComplete(null, result);
           }
         } catch (error) {
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
+            // On error, clear the sent selection so user can retry
+            if (lastSentSelection === selectionKey) {
+              lastSentSelection = null;
+            }
             if (onComplete) onComplete(error, null);
           }
         }
@@ -2968,6 +2996,9 @@
     function handleCareSelection(newSelected) {
       if (selectionLocked || isExpired) return;
       
+      // Prevent duplicate selection - if already in this state, ignore
+      if (careSelected === newSelected) return;
+      
       const wasSelected = careSelected;
       
       // OPTIMISTIC UPDATE: Update UI immediately (no blocking)
@@ -3030,6 +3061,9 @@
           const prev = { tipMode, tipPresetLabel, tipAmount };
 
           if (mode === "none") {
+            // Prevent duplicate selection - if already "none", ignore
+            if (tipMode === "none" && tipAmount === 0) return;
+            
             // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "none";
             tipPresetLabel = "";
@@ -3069,6 +3103,9 @@
           if (mode === "preset") {
             const label = btn.getAttribute("data-label");
             const amount = Number(btn.getAttribute("data-amount") || 0);
+
+            // Prevent duplicate selection - if already this preset, ignore
+            if (tipMode === "preset" && tipPresetLabel === (label || "") && tipAmount === amount) return;
 
             // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "preset";
@@ -3120,12 +3157,17 @@
           const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
           const cents = clampInt(dollars * 100, tipMin, tipMax);
 
+          // Prevent duplicate update - if already this custom amount, ignore
+          const newMode = (cents <= 0 ? "none" : "custom");
+          const newAmount = (cents <= 0 ? 0 : cents);
+          if (tipMode === newMode && tipAmount === newAmount) return;
+
           const prev = { tipMode, tipPresetLabel, tipAmount };
           
           // OPTIMISTIC UPDATE (non-blocking)
-          tipMode = (cents <= 0 ? "none" : "custom");
+          tipMode = newMode;
           tipPresetLabel = "";
-          tipAmount = (cents <= 0 ? 0 : cents);
+          tipAmount = newAmount;
 
           applyTipHighlights();
           updateTotalsUI();
