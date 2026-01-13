@@ -273,6 +273,7 @@
   let paymentElement = null;
   let linkAuthElement = null;
   let addressElement = null;
+  let currentClientSecret = null; // Track current PaymentIntent client_secret
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -299,10 +300,79 @@
     return emailOk && addrOk;
   }
 
-  async function mountStripePaymentElement(clientSecret){
+  async function mountStripePaymentElement(clientSecret, preserveState = false){
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
+    // If we already have elements and the client_secret hasn't changed, don't remount
+    if (preserveState && elements && currentClientSecret === clientSecret) {
+      return; // No need to remount - same PaymentIntent
+    }
+
+    // If elements exist and we're updating, preserve scroll position and add loading overlay
+    const wasMounted = !!elements;
+    const stripeWrap = document.getElementById("baStripeWrap");
+    const scrollPos = wasMounted ? window.scrollY : null;
+    let loadingOverlay = null;
+
+    if (wasMounted && preserveState) {
+      // Add subtle loading overlay instead of clearing everything
+      loadingOverlay = document.createElement("div");
+      loadingOverlay.id = "baStripeLoadingOverlay";
+      loadingOverlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255,255,255,0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 12px;
+      `;
+      loadingOverlay.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:24px;height:24px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:13px;color:#666;font-weight:700">Updating payment amount...</div>
+        </div>
+      `;
+      if (stripeWrap) {
+        const existingOverlay = stripeWrap.querySelector("#baStripeLoadingOverlay");
+        if (existingOverlay) existingOverlay.remove();
+        stripeWrap.style.position = "relative";
+        stripeWrap.appendChild(loadingOverlay);
+      }
+    }
+
+    // Unmount old elements if they exist (Stripe requires this before mounting new ones)
+    if (wasMounted) {
+      try {
+        if (linkAuthElement) {
+          try { linkAuthElement.unmount(); } catch(e) {}
+        }
+        if (addressElement) {
+          try { addressElement.unmount(); } catch(e) {}
+        }
+        if (paymentElement) {
+          try { paymentElement.unmount(); } catch(e) {}
+        }
+      } catch (e) {
+        // Ignore unmount errors - elements might already be unmounted
+      }
+    }
+
+    // Clear mount containers
+    const linkMount = document.getElementById("baLinkAuthMount");
+    const addrMount = document.getElementById("baAddressMount");
+    const payMount = document.getElementById("baStripeMount");
+    
+    if (linkMount) linkMount.innerHTML = "";
+    if (addrMount) addrMount.innerHTML = "";
+    if (payMount) payMount.innerHTML = "";
+
+    // Create new elements
     elements = stripe.elements({
       clientSecret,
       appearance: { theme: "stripe" },
@@ -310,9 +380,7 @@
     });
 
     linkAuthElement = elements.create("linkAuthentication");
-    const linkMount = document.getElementById("baLinkAuthMount");
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
-    linkMount.innerHTML = "";
     linkAuthElement.mount("#baLinkAuthMount");
 
     linkAuthElement.on("change", (event) => {
@@ -329,9 +397,7 @@
       defaultValues: { address: { country: "US" } }
     });
 
-    const addrMount = document.getElementById("baAddressMount");
     if (!addrMount) throw new Error("Missing baAddressMount container");
-    addrMount.innerHTML = "";
     addressElement.mount("#baAddressMount");
 
     addressElement.on("change", (event) => {
@@ -343,10 +409,33 @@
     });
 
     paymentElement = elements.create("payment", { layout: "tabs" });
-    const payMount = document.getElementById("baStripeMount");
     if (!payMount) throw new Error("Missing baStripeMount container");
-    payMount.innerHTML = "";
     paymentElement.mount("#baStripeMount");
+
+    // Store current client_secret
+    currentClientSecret = clientSecret;
+
+    // Remove loading overlay after a short delay to allow elements to render
+    if (loadingOverlay) {
+      setTimeout(() => {
+        if (loadingOverlay && loadingOverlay.parentNode) {
+          loadingOverlay.style.opacity = "0";
+          loadingOverlay.style.transition = "opacity 0.2s ease";
+          setTimeout(() => {
+            if (loadingOverlay && loadingOverlay.parentNode) {
+              loadingOverlay.remove();
+            }
+          }, 200);
+        }
+      }, 400);
+    }
+
+    // Restore scroll position if we had one
+    if (scrollPos !== null) {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollPos);
+      });
+    }
 
     setConfirmEnabled(validateBillingUI());
   }
@@ -2812,18 +2901,31 @@
     const careYes = document.getElementById("baCareYes");
     const careNo = document.getElementById("baCareNo");
     
+    function setControlsDisabled(disabled) {
+      if (careYes) careYes.disabled = disabled;
+      if (careNo) careNo.disabled = disabled;
+      const tipBtns = Array.from(document.querySelectorAll(".baTipBtn"));
+      tipBtns.forEach(btn => { btn.disabled = disabled; });
+      const tipCustom = document.getElementById("baTipCustom");
+      if (tipCustom) tipCustom.disabled = disabled;
+    }
+    
     function handleCareSelection(newSelected) {
       if (selectionLocked || isExpired) return;
       
       const wasSelected = careSelected;
-      careSelected = newSelected;
       
+      // OPTIMISTIC UPDATE: Update UI immediately
+      careSelected = newSelected;
       if (careYes) careYes.checked = newSelected;
       if (careNo) careNo.checked = !newSelected;
-      
       updateSummaryBox();
       updateTotalsUI();
+      
+      // Disable controls to prevent double-clicks
+      setControlsDisabled(true);
       setSaving(true);
+      setSelMsg("Updating...");
 
       const tip = {
         mode: tipMode || "none",
@@ -2835,25 +2937,29 @@
         .then(async (result) => {
           setSaving(false);
           setSelMsg("Updated.");
+          setControlsDisabled(false);
           
-          // If a new client_secret was returned (PaymentIntent was updated/recreated), remount Stripe Elements
+          // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret);
-              setSelMsg("Updated. Payment form refreshed with new amount.");
+              // Use preserveState=true to avoid full remount if possible
+              await mountStripePaymentElement(result.client_secret, true);
+              // Don't show message - it's disruptive
             } catch (e) {
-              console.error("Failed to remount Stripe Elements:", e);
+              console.error("Failed to update Stripe Elements:", e);
               // Don't fail the update - selection was saved successfully
             }
           }
         })
         .catch((e) => {
+          // REVERT on error
           careSelected = wasSelected;
           if (careYes) careYes.checked = wasSelected;
           if (careNo) careNo.checked = !wasSelected;
           updateSummaryBox();
           updateTotalsUI();
           setSaving(false);
+          setControlsDisabled(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
         });
     }
@@ -2878,6 +2984,7 @@
           const prev = { tipMode, tipPresetLabel, tipAmount };
 
           if (mode === "none") {
+            // OPTIMISTIC UPDATE
             tipMode = "none";
             tipPresetLabel = "";
             tipAmount = 0;
@@ -2885,28 +2992,33 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
+            
+            setControlsDisabled(true);
             setSaving(true);
+            setSelMsg("Updating...");
 
             try {
               const tip = { mode: "none", preset_label: null, amount: 0 };
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
+              setControlsDisabled(false);
               setSelMsg("Updated.");
               
-              // If a new client_secret was returned, remount Stripe Elements
+              // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret);
-                  setSelMsg("Updated. Payment form refreshed with new amount.");
+                  await mountStripePaymentElement(result.client_secret, true);
                 } catch (remountErr) {
-                  console.error("Failed to remount Stripe Elements:", remountErr);
+                  console.error("Failed to update Stripe Elements:", remountErr);
                 }
               }
             } catch (e) {
+              // REVERT on error
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
+              setControlsDisabled(false);
               setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
             }
             return;
@@ -2916,6 +3028,7 @@
             const label = btn.getAttribute("data-label");
             const amount = Number(btn.getAttribute("data-amount") || 0);
 
+            // OPTIMISTIC UPDATE
             tipMode = "preset";
             tipPresetLabel = label || "";
             tipAmount = amount;
@@ -2924,34 +3037,40 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
+            
+            setControlsDisabled(true);
             setSaving(true);
+            setSelMsg("Updating...");
 
             try {
               const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
+              setControlsDisabled(false);
               setSelMsg("Updated.");
               
-              // If a new client_secret was returned, remount Stripe Elements
+              // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret);
-                  setSelMsg("Updated. Payment form refreshed with new amount.");
+                  await mountStripePaymentElement(result.client_secret, true);
                 } catch (remountErr) {
-                  console.error("Failed to remount Stripe Elements:", remountErr);
+                  console.error("Failed to update Stripe Elements:", remountErr);
                 }
               }
             } catch (e) {
+              // REVERT on error
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
+              setControlsDisabled(false);
               setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
             }
             return;
           }
         } catch (e) {
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+          setControlsDisabled(false);
         }
       });
     });
@@ -2964,37 +3083,52 @@
           const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
           const cents = clampInt(dollars * 100, tipMin, tipMax);
 
+          const prev = { tipMode, tipPresetLabel, tipAmount };
+          
+          // OPTIMISTIC UPDATE
+          tipMode = (cents <= 0 ? "none" : "custom");
+          tipPresetLabel = "";
+          tipAmount = (cents <= 0 ? 0 : cents);
+
+          applyTipHighlights();
+          updateTotalsUI();
+          
+          setControlsDisabled(true);
           setSaving(true);
+          setSelMsg("Updating...");
 
           const tip = {
-            mode: (cents <= 0 ? "none" : "custom"),
+            mode: tipMode,
             preset_label: null,
-            amount: (cents <= 0 ? 0 : cents)
+            amount: tipAmount
           };
 
           const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-
-          tipMode = tip.mode;
-          tipPresetLabel = "";
-          tipAmount = tip.amount;
 
           applyTipHighlights();
           updateTotalsUI();
 
           setSaving(false);
+          setControlsDisabled(false);
           setSelMsg("Updated.");
           
-          // If a new client_secret was returned, remount Stripe Elements
+          // If a new client_secret was returned, update Stripe Elements gracefully
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret);
-              setSelMsg("Updated. Payment form refreshed with new amount.");
+              await mountStripePaymentElement(result.client_secret, true);
             } catch (remountErr) {
-              console.error("Failed to remount Stripe Elements:", remountErr);
+              console.error("Failed to update Stripe Elements:", remountErr);
             }
           }
         } catch (e) {
+          // REVERT on error
+          tipMode = prev.tipMode;
+          tipPresetLabel = prev.tipPresetLabel;
+          tipAmount = prev.tipAmount;
+          applyTipHighlights();
+          updateTotalsUI();
           setSaving(false);
+          setControlsDisabled(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
         }
       });
@@ -3126,7 +3260,7 @@
           if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
 
           if (wrap) wrap.style.display = "block";
-          await mountStripePaymentElement(payload.client_secret);
+          await mountStripePaymentElement(payload.client_secret, false);
 
           if (msg) msg.textContent = "";
 
@@ -3190,7 +3324,7 @@
           if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
 
           if (wrap) wrap.style.display = "block";
-          await mountStripePaymentElement(payload.client_secret);
+          await mountStripePaymentElement(payload.client_secret, false);
 
           if (msg) msg.textContent = "";
 
