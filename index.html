@@ -3424,11 +3424,25 @@
           
           // CRITICAL: Send current selection state to backend RIGHT NOW before starting payment
           // This ensures the database has the latest state even if previous updates failed
+          // IMPORTANT: Use actual current values, not potentially stale ones
+          const currentTipMode = tipMode || "none";
+          const currentTipPresetLabel = (currentTipMode === "preset" ? (tipPresetLabel || null) : null);
+          const currentTipAmount = Number.isFinite(tipAmount) && tipAmount > 0 ? tipAmount : 0;
+          
           const tip = {
-            mode: tipMode || "none",
-            preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
-            amount: Number.isFinite(tipAmount) ? tipAmount : 0
+            mode: currentTipMode,
+            preset_label: currentTipPresetLabel,
+            amount: currentTipAmount
           };
+          
+          // Debug: Log what we're sending (remove in production if desired)
+          console.log("Saving selection before payment:", {
+            care_selected: !!careSelected,
+            tip_mode: tip.mode,
+            tip_preset_label: tip.preset_label,
+            tip_amount: tip.amount,
+            tipAmount_var: tipAmount
+          });
           
           const selectionKeyForPayment = JSON.stringify({
             care_selected: !!careSelected,
@@ -3437,25 +3451,26 @@
             tip_amount: tip.amount
           });
           
-          // Only send if different from what was last sent
-          if (lastSentSelection !== selectionKeyForPayment) {
-            try {
-              // Send synchronous update (no debounce) to ensure state is saved
-              await updateSelection(data.public_id, { 
-                care_selected: !!careSelected, 
-                tip 
-              });
-              // Update lastSentSelection to reflect what we just sent
-              lastSentSelection = selectionKeyForPayment;
-              // Small delay to ensure database write is committed
-              await new Promise(resolve => setTimeout(resolve, 200));
-            } catch (e) {
-              console.error("Failed to save selection before payment:", e);
-              // Continue anyway - backend will use whatever is in the database
-            }
-          } else {
-            // Already saved, just wait a moment for any pending writes
-            await new Promise(resolve => setTimeout(resolve, 100));
+          // Always send current state before payment to ensure database is up-to-date
+          // This is critical - even if we think it's already saved, the database trigger
+          // needs to recalculate total_amount which includes tip_amount
+          try {
+            // Send synchronous update (no debounce) to ensure state is saved
+            const saveResult = await updateSelection(data.public_id, { 
+              care_selected: !!careSelected, 
+              tip 
+            });
+            // Update lastSentSelection to reflect what we just sent
+            lastSentSelection = selectionKeyForPayment;
+            
+            // CRITICAL: Wait longer to ensure database trigger has recalculated total_amount
+            // The trigger needs to run and update total_amount before start_payment reads it
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (e) {
+            console.error("Failed to save selection before payment:", e);
+            // Continue anyway - backend will use whatever is in the database
+            // But wait a bit in case the error was transient
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
           
           if (hint) hint.textContent = `Preparing secure payment…`;
