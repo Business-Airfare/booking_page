@@ -2830,9 +2830,22 @@
         tip_amount: patch.tip?.amount
       });
 
-      // Prevent duplicate selection - if same selection is already pending or was just sent, ignore
+      // Prevent duplicate selection - check against both lastSentSelection AND current state
       if (lastSentSelection === selectionKey) {
-        return; // Same selection, skip
+        return; // Same selection already sent, skip
+      }
+
+      // Also check if this matches the current state (double-check to prevent duplicates after refresh)
+      const currentStateKey = JSON.stringify({
+        care_selected: careSelected,
+        tip_mode: tipMode,
+        tip_preset_label: tipPresetLabel,
+        tip_amount: tipAmount
+      });
+      if (currentStateKey === selectionKey) {
+        // This selection already matches current state - update lastSentSelection and skip
+        lastSentSelection = selectionKey;
+        return; // Already in this state, skip
       }
 
       // Cancel previous pending request if it exists (different selection)
@@ -3024,18 +3037,32 @@
       
       const wasSelected = careSelected;
       
+      // Create selection key with the NEW state we're about to set (before optimistic update)
+      const tip = {
+        mode: tipMode || "none",
+        preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
+        amount: Number.isFinite(tipAmount) ? tipAmount : 0
+      };
+      
+      const selectionKeyForNewState = JSON.stringify({
+        care_selected: newSelected, // The NEW value we're about to set
+        tip_mode: tip.mode,
+        tip_preset_label: tip.preset_label,
+        tip_amount: tip.amount
+      });
+
+      // Double-check: if this new state matches lastSentSelection, we've already sent this exact state
+      if (lastSentSelection === selectionKeyForNewState) {
+        // Already in this state, skip
+        return;
+      }
+      
       // OPTIMISTIC UPDATE: Update UI immediately (no blocking)
       careSelected = newSelected;
       if (careYes) careYes.checked = newSelected;
       if (careNo) careNo.checked = !newSelected;
       updateSummaryBox();
       updateTotalsUI();
-
-      const tip = {
-        mode: tipMode || "none",
-        preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
-        amount: Number.isFinite(tipAmount) ? tipAmount : 0
-      };
 
       // Debounced update with cancellation (non-blocking)
       debouncedUpdateSelection(data.public_id, { care_selected: careSelected, tip }, async (error, result) => {
@@ -3093,6 +3120,19 @@
             // Prevent duplicate selection - if already "none", ignore
             if (tipMode === "none" && tipAmount === 0) return;
             
+            // Check against lastSentSelection BEFORE optimistic update
+            const tip = { mode: "none", preset_label: null, amount: 0 };
+            const selectionKeyForNewState = JSON.stringify({
+              care_selected: !!careSelected,
+              tip_mode: tip.mode,
+              tip_preset_label: tip.preset_label,
+              tip_amount: tip.amount
+            });
+            if (lastSentSelection === selectionKeyForNewState) {
+              // Already in this state, skip
+              return;
+            }
+            
             // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "none";
             tipPresetLabel = "";
@@ -3101,8 +3141,7 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
-
-            const tip = { mode: "none", preset_label: null, amount: 0 };
+            
             debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
               if (error) {
                 // REVERT on error (only if still relevant - last-write-wins)
@@ -3136,6 +3175,19 @@
             // Prevent duplicate selection - if already this preset, ignore
             if (tipMode === "preset" && tipPresetLabel === (label || "") && tipAmount === amount) return;
 
+            // Check against lastSentSelection BEFORE optimistic update
+            const tip = { mode: "preset", preset_label: label || null, amount };
+            const selectionKeyForNewState = JSON.stringify({
+              care_selected: !!careSelected,
+              tip_mode: tip.mode,
+              tip_preset_label: tip.preset_label,
+              tip_amount: tip.amount
+            });
+            if (lastSentSelection === selectionKeyForNewState) {
+              // Already in this state, skip
+              return;
+            }
+
             // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "preset";
             tipPresetLabel = label || "";
@@ -3145,8 +3197,7 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
-
-            const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
+            
             debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
               if (error) {
                 // REVERT on error (only if still relevant - last-write-wins)
@@ -3193,6 +3244,23 @@
 
           const prev = { tipMode, tipPresetLabel, tipAmount };
           
+          // Check against lastSentSelection BEFORE optimistic update
+          const tip = {
+            mode: newMode,
+            preset_label: null,
+            amount: newAmount
+          };
+          const selectionKeyForNewState = JSON.stringify({
+            care_selected: !!careSelected,
+            tip_mode: tip.mode,
+            tip_preset_label: tip.preset_label,
+            tip_amount: tip.amount
+          });
+          if (lastSentSelection === selectionKeyForNewState) {
+            // Already in this state, skip
+            return;
+          }
+          
           // OPTIMISTIC UPDATE (non-blocking)
           tipMode = newMode;
           tipPresetLabel = "";
@@ -3200,12 +3268,6 @@
 
           applyTipHighlights();
           updateTotalsUI();
-
-          const tip = {
-            mode: tipMode,
-            preset_label: null,
-            amount: tipAmount
-          };
 
           debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
             if (error) {
