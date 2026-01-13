@@ -309,40 +309,31 @@
       return; // No need to remount - same PaymentIntent
     }
 
-    // If elements exist and we're updating, preserve scroll position and add loading overlay
+    // If elements exist and we're updating, preserve scroll position (no blocking overlay)
     const wasMounted = !!elements;
     const stripeWrap = document.getElementById("baStripeWrap");
     const scrollPos = wasMounted ? window.scrollY : null;
-    let loadingOverlay = null;
 
-    if (wasMounted && preserveState) {
-      // Add subtle loading overlay instead of clearing everything
-      loadingOverlay = document.createElement("div");
-      loadingOverlay.id = "baStripeLoadingOverlay";
-      loadingOverlay.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(255,255,255,0.9);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10;
-        border-radius: 12px;
-      `;
-      loadingOverlay.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-          <div style="width:24px;height:24px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
-          <div style="font-size:13px;color:#666;font-weight:700">Updating payment amount...</div>
-        </div>
-      `;
-      if (stripeWrap) {
-        const existingOverlay = stripeWrap.querySelector("#baStripeLoadingOverlay");
-        if (existingOverlay) existingOverlay.remove();
-        stripeWrap.style.position = "relative";
-        stripeWrap.appendChild(loadingOverlay);
+    // Preserve container heights to prevent layout shift/blinking
+    let preservedHeights = null;
+    if (wasMounted && preserveState && stripeWrap) {
+      const linkMount = document.getElementById("baLinkAuthMount");
+      const addrMount = document.getElementById("baAddressMount");
+      const payMount = document.getElementById("baStripeMount");
+      preservedHeights = {
+        linkAuth: linkMount ? linkMount.offsetHeight : 0,
+        address: addrMount ? addrMount.offsetHeight : 0,
+        payment: payMount ? payMount.offsetHeight : 0
+      };
+      // Set min-heights to prevent collapse during remount
+      if (linkMount && preservedHeights.linkAuth > 0) {
+        linkMount.style.minHeight = preservedHeights.linkAuth + "px";
+      }
+      if (addrMount && preservedHeights.address > 0) {
+        addrMount.style.minHeight = preservedHeights.address + "px";
+      }
+      if (payMount && preservedHeights.payment > 0) {
+        payMount.style.minHeight = preservedHeights.payment + "px";
       }
     }
 
@@ -363,7 +354,7 @@
       }
     }
 
-    // Clear mount containers
+    // Clear mount containers (but preserve min-heights if set)
     const linkMount = document.getElementById("baLinkAuthMount");
     const addrMount = document.getElementById("baAddressMount");
     const payMount = document.getElementById("baStripeMount");
@@ -389,6 +380,10 @@
       const m = document.getElementById("baStripeMsg");
       if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
       setConfirmEnabled(ok);
+      // Remove min-height once content is loaded
+      if (linkMount && preservedHeights) {
+        linkMount.style.minHeight = "";
+      }
     });
 
     addressElement = elements.create("address", {
@@ -406,6 +401,10 @@
       const m = document.getElementById("baStripeMsg");
       if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
       setConfirmEnabled(ok);
+      // Remove min-height once content is loaded
+      if (addrMount && preservedHeights) {
+        addrMount.style.minHeight = "";
+      }
     });
 
     paymentElement = elements.create("payment", { layout: "tabs" });
@@ -415,19 +414,13 @@
     // Store current client_secret
     currentClientSecret = clientSecret;
 
-    // Remove loading overlay after a short delay to allow elements to render
-    if (loadingOverlay) {
+    // Remove preserved min-heights after a short delay (allows elements to render naturally)
+    if (preservedHeights) {
       setTimeout(() => {
-        if (loadingOverlay && loadingOverlay.parentNode) {
-          loadingOverlay.style.opacity = "0";
-          loadingOverlay.style.transition = "opacity 0.2s ease";
-          setTimeout(() => {
-            if (loadingOverlay && loadingOverlay.parentNode) {
-              loadingOverlay.remove();
-            }
-          }, 200);
-        }
-      }, 400);
+        if (linkMount) linkMount.style.minHeight = "";
+        if (addrMount) addrMount.style.minHeight = "";
+        if (payMount) payMount.style.minHeight = "";
+      }, 300);
     }
 
     // Restore scroll position if we had one
@@ -2810,14 +2803,141 @@
 
     function setSelMsg(t){ if (selMsg) selMsg.textContent = t || ""; }
 
-    let savingTimer = null;
-    function setSaving(on){
-      if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
-      if (on){
-        savingTimer = setTimeout(() => setSelMsg("Saving…"), 250);
-      } else {
-        if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
+    // Debounced update with request cancellation (last-write-wins)
+    let pendingUpdateRequest = null;
+    let updateDebounceTimer = null;
+    const UPDATE_DEBOUNCE_MS = 300;
+
+    function debouncedUpdateSelection(public_id, patch, onComplete) {
+      // Cancel previous pending request if it exists
+      if (pendingUpdateRequest) {
+        pendingUpdateRequest.aborted = true;
+        pendingUpdateRequest = null;
       }
+
+      // Clear existing debounce timer
+      if (updateDebounceTimer) {
+        clearTimeout(updateDebounceTimer);
+        updateDebounceTimer = null;
+      }
+
+      // Show tiny loading indicator near total (non-blocking)
+      showUpdateIndicator(true);
+
+      // Debounce the actual request
+      updateDebounceTimer = setTimeout(async () => {
+        updateDebounceTimer = null;
+        
+        const requestId = Date.now();
+        const request = { id: requestId, aborted: false };
+        pendingUpdateRequest = request;
+
+        try {
+          const result = await updateSelection(public_id, patch);
+          
+          // Only process if this is still the latest request
+          if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
+            pendingUpdateRequest = null;
+            showUpdateIndicator(false);
+            if (onComplete) onComplete(null, result);
+          }
+        } catch (error) {
+          // Only process if this is still the latest request
+          if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
+            pendingUpdateRequest = null;
+            showUpdateIndicator(false);
+            if (onComplete) onComplete(error, null);
+          }
+        }
+      }, UPDATE_DEBOUNCE_MS);
+    }
+
+    // Tiny non-blocking indicator near the total
+    function showUpdateIndicator(show) {
+      const summaryBox = root.querySelector(".baSummaryBox");
+      if (!summaryBox) return;
+
+      let indicator = summaryBox.querySelector("#baUpdateIndicator");
+      
+      if (show && !indicator) {
+        indicator = document.createElement("span");
+        indicator.id = "baUpdateIndicator";
+        indicator.style.cssText = `
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          border: 2px solid #f0f0f0;
+          border-top-color: #d1ad54;
+          border-radius: 50%;
+          animation: spin 0.6s linear infinite;
+          margin-left: 8px;
+          vertical-align: middle;
+        `;
+        const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
+        if (totalValue) {
+          // Add indicator after the text
+          const textContent = totalValue.textContent;
+          // If totalValue only has text node, add indicator after it
+          if (totalValue.childNodes.length === 1 && totalValue.firstChild.nodeType === Node.TEXT_NODE) {
+            // Insert space before indicator for spacing
+            totalValue.appendChild(document.createTextNode(" "));
+            totalValue.appendChild(indicator);
+          } else {
+            // If structure is different, just append
+            totalValue.appendChild(indicator);
+          }
+        }
+      } else if (!show && indicator) {
+        // Remove the indicator and preceding space if it's a text node
+        const prev = indicator.previousSibling;
+        if (prev && prev.nodeType === Node.TEXT_NODE && prev.textContent === " ") {
+          prev.remove();
+        }
+        indicator.remove();
+      }
+
+      // Show/hide inline error message
+      let errorMsg = summaryBox.querySelector("#baUpdateError");
+      if (!show && errorMsg) {
+        errorMsg.remove();
+      }
+    }
+
+    function showUpdateError(message) {
+      const summaryBox = root.querySelector(".baSummaryBox");
+      if (!summaryBox) return;
+
+      let errorMsg = summaryBox.querySelector("#baUpdateError");
+      if (!errorMsg) {
+        errorMsg = document.createElement("div");
+        errorMsg.id = "baUpdateError";
+        errorMsg.style.cssText = `
+          font-size: 12px;
+          color: #d32f2f;
+          margin-top: 8px;
+          margin-bottom: 4px;
+          font-weight: 600;
+          text-align: right;
+        `;
+        const totalContainer = summaryBox.querySelector(".baSummaryBox__total");
+        if (totalContainer && totalContainer.parentNode) {
+          totalContainer.parentNode.insertBefore(errorMsg, totalContainer);
+        }
+      }
+      errorMsg.textContent = message;
+      
+      // Auto-hide after 5 seconds
+      setTimeout(() => {
+        if (errorMsg && errorMsg.parentNode) {
+          errorMsg.style.opacity = "0";
+          errorMsg.style.transition = "opacity 0.3s ease";
+          setTimeout(() => {
+            if (errorMsg && errorMsg.parentNode) {
+              errorMsg.remove();
+            }
+          }, 300);
+        }
+      }, 5000);
     }
 
     function updateTotalsUI(){
@@ -2889,11 +3009,35 @@
         if (tipItem) tipItem.remove();
       }
 
-      // Update grand total
+      // Update grand total (preserve indicator if present)
       const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
       const totalWords = summaryBox.querySelector(".baSummaryBox__totalWords");
       const total = payableTotalCents();
-      if (totalValue) totalValue.textContent = fmtMoney(total);
+      
+      if (totalValue) {
+        // Preserve the indicator if it exists
+        const indicator = totalValue.querySelector("#baUpdateIndicator");
+        const text = fmtMoney(total);
+        
+        if (indicator) {
+          // Find and update the text node (first child is usually the text)
+          const textNode = Array.from(totalValue.childNodes).find(node => 
+            node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ""
+          );
+          if (textNode) {
+            // Update the text node content (preserving indicator)
+            const parts = textNode.textContent.split(/\s+/);
+            textNode.textContent = text + " ";
+          } else {
+            // No text node found, create one before indicator
+            totalValue.insertBefore(document.createTextNode(text + " "), indicator);
+          }
+        } else {
+          // No indicator, safe to use textContent
+          totalValue.textContent = text;
+        }
+      }
+      
       if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
     }
 
@@ -2901,31 +3045,17 @@
     const careYes = document.getElementById("baCareYes");
     const careNo = document.getElementById("baCareNo");
     
-    function setControlsDisabled(disabled) {
-      if (careYes) careYes.disabled = disabled;
-      if (careNo) careNo.disabled = disabled;
-      const tipBtns = Array.from(document.querySelectorAll(".baTipBtn"));
-      tipBtns.forEach(btn => { btn.disabled = disabled; });
-      const tipCustom = document.getElementById("baTipCustom");
-      if (tipCustom) tipCustom.disabled = disabled;
-    }
-    
     function handleCareSelection(newSelected) {
       if (selectionLocked || isExpired) return;
       
       const wasSelected = careSelected;
       
-      // OPTIMISTIC UPDATE: Update UI immediately
+      // OPTIMISTIC UPDATE: Update UI immediately (no blocking)
       careSelected = newSelected;
       if (careYes) careYes.checked = newSelected;
       if (careNo) careNo.checked = !newSelected;
       updateSummaryBox();
       updateTotalsUI();
-      
-      // Disable controls to prevent double-clicks
-      setControlsDisabled(true);
-      setSaving(true);
-      setSelMsg("Updating...");
 
       const tip = {
         mode: tipMode || "none",
@@ -2933,35 +3063,31 @@
         amount: Number.isFinite(tipAmount) ? tipAmount : 0
       };
 
-      updateSelection(data.public_id, { care_selected: careSelected, tip })
-        .then(async (result) => {
-          setSaving(false);
-          setSelMsg("Updated.");
-          setControlsDisabled(false);
-          
-          // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
+      // Debounced update with cancellation (non-blocking)
+      debouncedUpdateSelection(data.public_id, { care_selected: careSelected, tip }, async (error, result) => {
+        if (error) {
+          // REVERT on error (only if still relevant - last-write-wins)
+          if (careSelected === newSelected) {
+            careSelected = wasSelected;
+            if (careYes) careYes.checked = wasSelected;
+            if (careNo) careNo.checked = !wasSelected;
+            updateSummaryBox();
+            updateTotalsUI();
+            showUpdateError("Could not update: " + (error && error.message ? error.message : String(error)));
+          }
+        } else if (result) {
+          // Success - reconcile totals if needed
+          // If a new client_secret was returned, update Stripe Elements gracefully
           if (result.client_secret && paymentElement) {
             try {
-              // Use preserveState=true to avoid full remount if possible
               await mountStripePaymentElement(result.client_secret, true);
-              // Don't show message - it's disruptive
             } catch (e) {
               console.error("Failed to update Stripe Elements:", e);
               // Don't fail the update - selection was saved successfully
             }
           }
-        })
-        .catch((e) => {
-          // REVERT on error
-          careSelected = wasSelected;
-          if (careYes) careYes.checked = wasSelected;
-          if (careNo) careNo.checked = !wasSelected;
-          updateSummaryBox();
-          updateTotalsUI();
-          setSaving(false);
-          setControlsDisabled(false);
-          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
-        });
+        }
+      });
     }
 
     if (careYes) {
@@ -2978,13 +3104,13 @@
     // Tip buttons
     const tipBtns = Array.from(document.querySelectorAll(".baTipBtn"));
     tipBtns.forEach(btn => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => {
         try {
           const mode = btn.getAttribute("data-mode");
           const prev = { tipMode, tipPresetLabel, tipAmount };
 
           if (mode === "none") {
-            // OPTIMISTIC UPDATE
+            // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "none";
             tipPresetLabel = "";
             tipAmount = 0;
@@ -2992,35 +3118,31 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
-            
-            setControlsDisabled(true);
-            setSaving(true);
-            setSelMsg("Updating...");
 
-            try {
-              const tip = { mode: "none", preset_label: null, amount: 0 };
-              const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-              updateTotalsUI();
-              setSaving(false);
-              setControlsDisabled(false);
-              setSelMsg("Updated.");
-              
-              // If a new client_secret was returned, update Stripe Elements gracefully
-              if (result.client_secret && paymentElement) {
-                try {
-                  await mountStripePaymentElement(result.client_secret, true);
-                } catch (remountErr) {
-                  console.error("Failed to update Stripe Elements:", remountErr);
+            const tip = { mode: "none", preset_label: null, amount: 0 };
+            debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
+              if (error) {
+                // REVERT on error (only if still relevant - last-write-wins)
+                if (tipMode === "none" && tipAmount === 0) {
+                  tipMode = prev.tipMode;
+                  tipPresetLabel = prev.tipPresetLabel;
+                  tipAmount = prev.tipAmount;
+                  applyTipHighlights();
+                  updateTotalsUI();
+                  showUpdateError("Could not update: " + (error && error.message ? error.message : String(error)));
+                }
+              } else if (result) {
+                // Success - reconcile totals if needed
+                // If a new client_secret was returned, update Stripe Elements gracefully
+                if (result.client_secret && paymentElement) {
+                  try {
+                    await mountStripePaymentElement(result.client_secret, true);
+                  } catch (remountErr) {
+                    console.error("Failed to update Stripe Elements:", remountErr);
+                  }
                 }
               }
-            } catch (e) {
-              // REVERT on error
-              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
-              applyTipHighlights(); updateTotalsUI();
-              setSaving(false);
-              setControlsDisabled(false);
-              setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
-            }
+            });
             return;
           }
 
@@ -3028,7 +3150,7 @@
             const label = btn.getAttribute("data-label");
             const amount = Number(btn.getAttribute("data-amount") || 0);
 
-            // OPTIMISTIC UPDATE
+            // OPTIMISTIC UPDATE (non-blocking)
             tipMode = "preset";
             tipPresetLabel = label || "";
             tipAmount = amount;
@@ -3037,19 +3159,76 @@
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
-            
-            setControlsDisabled(true);
-            setSaving(true);
-            setSelMsg("Updating...");
 
-            try {
-              const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
-              const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-              updateTotalsUI();
-              setSaving(false);
-              setControlsDisabled(false);
-              setSelMsg("Updated.");
-              
+            const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
+            debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
+              if (error) {
+                // REVERT on error (only if still relevant - last-write-wins)
+                if (tipMode === "preset" && tipPresetLabel === label && tipAmount === amount) {
+                  tipMode = prev.tipMode;
+                  tipPresetLabel = prev.tipPresetLabel;
+                  tipAmount = prev.tipAmount;
+                  applyTipHighlights();
+                  updateTotalsUI();
+                  showUpdateError("Could not update: " + (error && error.message ? error.message : String(error)));
+                }
+              } else if (result) {
+                // Success - reconcile totals if needed
+                // If a new client_secret was returned, update Stripe Elements gracefully
+                if (result.client_secret && paymentElement) {
+                  try {
+                    await mountStripePaymentElement(result.client_secret, true);
+                  } catch (remountErr) {
+                    console.error("Failed to update Stripe Elements:", remountErr);
+                  }
+                }
+              }
+            });
+            return;
+          }
+        } catch (e) {
+          showUpdateError("Could not update: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+    });
+
+    // Custom tip
+    const tipCustom = document.getElementById("baTipCustom");
+    if (tipCustom) {
+      tipCustom.addEventListener("blur", () => {
+        try {
+          const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
+          const cents = clampInt(dollars * 100, tipMin, tipMax);
+
+          const prev = { tipMode, tipPresetLabel, tipAmount };
+          
+          // OPTIMISTIC UPDATE (non-blocking)
+          tipMode = (cents <= 0 ? "none" : "custom");
+          tipPresetLabel = "";
+          tipAmount = (cents <= 0 ? 0 : cents);
+
+          applyTipHighlights();
+          updateTotalsUI();
+
+          const tip = {
+            mode: tipMode,
+            preset_label: null,
+            amount: tipAmount
+          };
+
+          debouncedUpdateSelection(data.public_id, { care_selected: !!careSelected, tip }, async (error, result) => {
+            if (error) {
+              // REVERT on error (only if still relevant - last-write-wins)
+              if (tipMode === (cents <= 0 ? "none" : "custom") && tipAmount === (cents <= 0 ? 0 : cents)) {
+                tipMode = prev.tipMode;
+                tipPresetLabel = prev.tipPresetLabel;
+                tipAmount = prev.tipAmount;
+                applyTipHighlights();
+                updateTotalsUI();
+                showUpdateError("Could not update: " + (error && error.message ? error.message : String(error)));
+              }
+            } else if (result) {
+              // Success - reconcile totals if needed
               // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
                 try {
@@ -3058,78 +3237,10 @@
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
               }
-            } catch (e) {
-              // REVERT on error
-              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
-              applyTipHighlights(); updateTotalsUI();
-              setSaving(false);
-              setControlsDisabled(false);
-              setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
             }
-            return;
-          }
+          });
         } catch (e) {
-          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
-          setControlsDisabled(false);
-        }
-      });
-    });
-
-    // Custom tip
-    const tipCustom = document.getElementById("baTipCustom");
-    if (tipCustom) {
-      tipCustom.addEventListener("blur", async () => {
-        try {
-          const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
-          const cents = clampInt(dollars * 100, tipMin, tipMax);
-
-          const prev = { tipMode, tipPresetLabel, tipAmount };
-          
-          // OPTIMISTIC UPDATE
-          tipMode = (cents <= 0 ? "none" : "custom");
-          tipPresetLabel = "";
-          tipAmount = (cents <= 0 ? 0 : cents);
-
-          applyTipHighlights();
-          updateTotalsUI();
-          
-          setControlsDisabled(true);
-          setSaving(true);
-          setSelMsg("Updating...");
-
-          const tip = {
-            mode: tipMode,
-            preset_label: null,
-            amount: tipAmount
-          };
-
-          const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-
-          applyTipHighlights();
-          updateTotalsUI();
-
-          setSaving(false);
-          setControlsDisabled(false);
-          setSelMsg("Updated.");
-          
-          // If a new client_secret was returned, update Stripe Elements gracefully
-          if (result.client_secret && paymentElement) {
-            try {
-              await mountStripePaymentElement(result.client_secret, true);
-            } catch (remountErr) {
-              console.error("Failed to update Stripe Elements:", remountErr);
-            }
-          }
-        } catch (e) {
-          // REVERT on error
-          tipMode = prev.tipMode;
-          tipPresetLabel = prev.tipPresetLabel;
-          tipAmount = prev.tipAmount;
-          applyTipHighlights();
-          updateTotalsUI();
-          setSaving(false);
-          setControlsDisabled(false);
-          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+          showUpdateError("Could not update: " + (e && e.message ? e.message : String(e)));
         }
       });
     }
