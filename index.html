@@ -394,7 +394,11 @@
       body: JSON.stringify({ public_id, ...patch })
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || ("HTTP " + res.status));
+    if (!res.ok) {
+      const errorMsg = data?.error || ("HTTP " + res.status);
+      const details = data?.details ? `: ${data.details}` : "";
+      throw new Error(errorMsg + details);
+    }
     return data;
   }
 
@@ -2828,9 +2832,20 @@
       };
 
       updateSelection(data.public_id, { care_selected: careSelected, tip })
-        .then(() => {
+        .then(async (result) => {
           setSaving(false);
           setSelMsg("Updated.");
+          
+          // If a new client_secret was returned (PaymentIntent was updated/recreated), remount Stripe Elements
+          if (result.client_secret && paymentElement) {
+            try {
+              await mountStripePaymentElement(result.client_secret);
+              setSelMsg("Updated. Payment form refreshed with new amount.");
+            } catch (e) {
+              console.error("Failed to remount Stripe Elements:", e);
+              // Don't fail the update - selection was saved successfully
+            }
+          }
         })
         .catch((e) => {
           careSelected = wasSelected;
@@ -2874,10 +2889,20 @@
 
             try {
               const tip = { mode: "none", preset_label: null, amount: 0 };
-              await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
               setSelMsg("Updated.");
+              
+              // If a new client_secret was returned, remount Stripe Elements
+              if (result.client_secret && paymentElement) {
+                try {
+                  await mountStripePaymentElement(result.client_secret);
+                  setSelMsg("Updated. Payment form refreshed with new amount.");
+                } catch (remountErr) {
+                  console.error("Failed to remount Stripe Elements:", remountErr);
+                }
+              }
             } catch (e) {
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
@@ -2903,10 +2928,20 @@
 
             try {
               const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
-              await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
               setSelMsg("Updated.");
+              
+              // If a new client_secret was returned, remount Stripe Elements
+              if (result.client_secret && paymentElement) {
+                try {
+                  await mountStripePaymentElement(result.client_secret);
+                  setSelMsg("Updated. Payment form refreshed with new amount.");
+                } catch (remountErr) {
+                  console.error("Failed to remount Stripe Elements:", remountErr);
+                }
+              }
             } catch (e) {
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
@@ -2937,7 +2972,7 @@
             amount: (cents <= 0 ? 0 : cents)
           };
 
-          await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+          const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
 
           tipMode = tip.mode;
           tipPresetLabel = "";
@@ -2948,6 +2983,16 @@
 
           setSaving(false);
           setSelMsg("Updated.");
+          
+          // If a new client_secret was returned, remount Stripe Elements
+          if (result.client_secret && paymentElement) {
+            try {
+              await mountStripePaymentElement(result.client_secret);
+              setSelMsg("Updated. Payment form refreshed with new amount.");
+            } catch (remountErr) {
+              console.error("Failed to remount Stripe Elements:", remountErr);
+            }
+          }
         } catch (e) {
           setSaving(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
