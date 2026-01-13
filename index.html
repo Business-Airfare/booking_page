@@ -2821,9 +2821,6 @@
         updateDebounceTimer = null;
       }
 
-      // Show tiny loading indicator near total (non-blocking)
-      showUpdateIndicator(true);
-
       // Debounce the actual request
       updateDebounceTimer = setTimeout(async () => {
         updateDebounceTimer = null;
@@ -2838,69 +2835,16 @@
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
-            showUpdateIndicator(false);
             if (onComplete) onComplete(null, result);
           }
         } catch (error) {
           // Only process if this is still the latest request
           if (!request.aborted && pendingUpdateRequest && pendingUpdateRequest.id === requestId) {
             pendingUpdateRequest = null;
-            showUpdateIndicator(false);
             if (onComplete) onComplete(error, null);
           }
         }
       }, UPDATE_DEBOUNCE_MS);
-    }
-
-    // Tiny non-blocking indicator near the total
-    function showUpdateIndicator(show) {
-      const summaryBox = root.querySelector(".baSummaryBox");
-      if (!summaryBox) return;
-
-      let indicator = summaryBox.querySelector("#baUpdateIndicator");
-      
-      if (show && !indicator) {
-        indicator = document.createElement("span");
-        indicator.id = "baUpdateIndicator";
-        indicator.style.cssText = `
-          display: inline-block;
-          width: 12px;
-          height: 12px;
-          border: 2px solid #f0f0f0;
-          border-top-color: #d1ad54;
-          border-radius: 50%;
-          animation: spin 0.6s linear infinite;
-          margin-left: 8px;
-          vertical-align: middle;
-        `;
-        const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
-        if (totalValue) {
-          // Add indicator after the text
-          const textContent = totalValue.textContent;
-          // If totalValue only has text node, add indicator after it
-          if (totalValue.childNodes.length === 1 && totalValue.firstChild.nodeType === Node.TEXT_NODE) {
-            // Insert space before indicator for spacing
-            totalValue.appendChild(document.createTextNode(" "));
-            totalValue.appendChild(indicator);
-          } else {
-            // If structure is different, just append
-            totalValue.appendChild(indicator);
-          }
-        }
-      } else if (!show && indicator) {
-        // Remove the indicator and preceding space if it's a text node
-        const prev = indicator.previousSibling;
-        if (prev && prev.nodeType === Node.TEXT_NODE && prev.textContent === " ") {
-          prev.remove();
-        }
-        indicator.remove();
-      }
-
-      // Show/hide inline error message
-      let errorMsg = summaryBox.querySelector("#baUpdateError");
-      if (!show && errorMsg) {
-        errorMsg.remove();
-      }
     }
 
     function showUpdateError(message) {
@@ -3009,35 +2953,11 @@
         if (tipItem) tipItem.remove();
       }
 
-      // Update grand total (preserve indicator if present)
+      // Update grand total
       const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
       const totalWords = summaryBox.querySelector(".baSummaryBox__totalWords");
       const total = payableTotalCents();
-      
-      if (totalValue) {
-        // Preserve the indicator if it exists
-        const indicator = totalValue.querySelector("#baUpdateIndicator");
-        const text = fmtMoney(total);
-        
-        if (indicator) {
-          // Find and update the text node (first child is usually the text)
-          const textNode = Array.from(totalValue.childNodes).find(node => 
-            node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ""
-          );
-          if (textNode) {
-            // Update the text node content (preserving indicator)
-            const parts = textNode.textContent.split(/\s+/);
-            textNode.textContent = text + " ";
-          } else {
-            // No text node found, create one before indicator
-            totalValue.insertBefore(document.createTextNode(text + " "), indicator);
-          }
-        } else {
-          // No indicator, safe to use textContent
-          totalValue.textContent = text;
-        }
-      }
-      
+      if (totalValue) totalValue.textContent = fmtMoney(total);
       if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
     }
 
