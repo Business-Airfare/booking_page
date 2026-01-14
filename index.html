@@ -2667,22 +2667,6 @@
                 <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">To be processed by DXF</div>
                 <div class="baSummaryBox__itemSubValue" style="grid-column: 2;">${fmtMoney(serviceCents)}</div>
               </div>
-
-              ${careSelected ? `
-                <div class="baSummaryBox__item">
-                  <div class="baSummaryBox__itemLabel">Travel Care Service</div>
-                  <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
-                  <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
-                </div>
-              ` : ""}
-
-              ${tipAmount > 0 ? `
-                <div class="baSummaryBox__item">
-                  <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
-                  <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
-                  <div class="baSummaryBox__itemSub">Non-refundable charge by DXF</div>
-                </div>
-              ` : ""}
             </div>
 
             <div class="baSummaryBox__divider"></div>
