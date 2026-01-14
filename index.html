@@ -429,6 +429,60 @@
         }
       }, 400);
     }
+  }
+
+  // Wait for Stripe Elements to be fully mounted and visible
+  // Returns a promise that resolves when Stripe is ready, or rejects after timeout
+  function waitForStripeReady(timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      
+      // Check if already ready
+      if (paymentElement && elements) {
+        const payMount = document.getElementById("baStripeMount");
+        if (payMount) {
+          // Check if container has iframes (Stripe Elements render as iframes)
+          const hasIframes = payMount.querySelector("iframe") !== null;
+          if (hasIframes) {
+            resolve();
+            return;
+          }
+        }
+      }
+
+      const checkInterval = 50; // Poll every 50ms
+      const checkId = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        
+        if (elapsed > timeoutMs) {
+          clearInterval(checkId);
+          reject(new Error("Stripe Elements failed to load within timeout"));
+          return;
+        }
+
+        // Check if paymentElement exists and mount container has content
+        if (paymentElement && elements) {
+          const payMount = document.getElementById("baStripeMount");
+          const linkMount = document.getElementById("baLinkAuthMount");
+          const addrMount = document.getElementById("baAddressMount");
+          
+          if (payMount && linkMount && addrMount) {
+            // Check for iframes (Stripe Elements render as iframes)
+            const hasPaymentIframe = payMount.querySelector("iframe") !== null;
+            const hasLinkIframe = linkMount.querySelector("iframe") !== null;
+            const hasAddrIframe = addrMount.querySelector("iframe") !== null;
+            
+            // All three elements should have iframes when ready
+            if (hasPaymentIframe && hasLinkIframe && hasAddrIframe) {
+              clearInterval(checkId);
+              // Small additional delay to ensure iframes are fully rendered
+              setTimeout(() => resolve(), 100);
+              return;
+            }
+          }
+        }
+      }, checkInterval);
+    });
 
     // Restore scroll position if we had one
     if (scrollPos !== null) {
@@ -2518,26 +2572,8 @@
         <div id="baFlightsFlow">
           ${journeys.map(journeyCardHtml).join("") || `<div class="baPanel">No itinerary found.</div>`}
         </div>
-      </section>
 
-      <aside class="baPaxPane">
-        <div class="baSectionTitle">Passenger Details</div>
-
-        <div class="baPaxWrap">
-          ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
-
-          <div class="baInfoBanner">
-            <span class="baInfoIcon">i</span>
-            <div>The quoted prices are not guaranteed until the tickets are issued</div>
-          </div>
-        </div>
-      </aside>
-    </div>
-
-    <div class="baExtras" id="baExtras" style="display:none">
-      <div class="baExtrasGrid">
-        <div class="baExtrasLeft">
-          <div class="baCareBox">
+        <div class="baCareBox">
             <div class="baCareBox__header">
               <div class="baCareBox__headerLeft">
                 <svg class="baCareBox__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2633,6 +2669,56 @@
 
             <div id="baSelMsg" style="margin-top:10px;font-size:13px;opacity:.75"></div>
           </div>
+
+          <div style="margin-top:18px">
+            <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
+
+            <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
+              <div style="font-weight:900;margin-bottom:10px">Billing details</div>
+
+              <div style="margin-bottom:12px">
+                <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Email</div>
+                <div id="baLinkAuthMount"></div>
+              </div>
+
+              <div style="margin-bottom:14px">
+                <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Billing address</div>
+                <div id="baAddressMount"></div>
+              </div>
+
+              <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
+              <div id="baStripeMount"></div>
+
+              <button id="baStripeConfirm"
+                style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
+                disabled>
+                Pay now
+              </button>
+
+              <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="baPaxPane">
+        <div class="baSectionTitle">Passenger Details</div>
+
+        <div class="baPaxWrap">
+          ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
+
+          <div class="baInfoBanner">
+            <span class="baInfoIcon">i</span>
+            <div>The quoted prices are not guaranteed until the tickets are issued</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="baExtras" id="baExtras" style="display:none">
+      <div class="baExtrasGrid">
+        <div class="baExtrasLeft">
+          <!-- TCS, Tips, and Stripe have been moved to baFlightsPane (left column) -->
         </div>
 
         <div class="baExtrasRight">
@@ -2677,35 +2763,6 @@
               <div class="baSummaryBox__totalWords">(${numberToWords(payableTotalCents())})</div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div style="margin-top:18px">
-        <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
-
-        <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
-          <div style="font-weight:900;margin-bottom:10px">Billing details</div>
-
-          <div style="margin-bottom:12px">
-            <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Email</div>
-            <div id="baLinkAuthMount"></div>
-          </div>
-
-          <div style="margin-bottom:14px">
-            <div style="font-weight:900;font-size:13px;opacity:.8;margin-bottom:6px">Billing address</div>
-            <div id="baAddressMount"></div>
-          </div>
-
-          <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
-          <div id="baStripeMount"></div>
-
-          <button id="baStripeConfirm"
-            style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
-            disabled>
-            Pay now
-          </button>
-
-          <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
         </div>
       </div>
     </div>
@@ -3197,97 +3254,88 @@
     const stickyBar = root.querySelector(".baSticky");
     const extrasSection = document.getElementById("baExtras");
 
-    if (payBtn) {
-      payBtn.addEventListener("click", async () => {
-        try {
-          // Step 1: If Optional Services not revealed, reveal them
-          if (!optionalServicesRevealed) {
-            // require passenger validity before letting them proceed
-            const paxOk = validateAllPassengers(paxCount);
-            if (!paxOk){
-              showPaxToast("Please fix highlighted passenger fields first.", false);
-              // scroll to first invalid
-              const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
-              if (firstBad && firstBad.scrollIntoView){
-                try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
-              }
-              return;
-            }
-
-            // Hide sticky bar
-            if (stickyBar) stickyBar.style.display = "none";
-
-            // Show Optional Services section
-            if (extrasSection) {
-              extrasSection.style.display = "block";
-              optionalServicesRevealed = true;
-              // Add Continue to Payment button
-              addContinueToPaymentButton();
-              // Scroll to Optional Services
-              try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
-            }
-
-            return;
-          }
-
-          // Step 2: If Optional Services already revealed, proceed with payment
-          payBtn.disabled = true;
-          payBtn.style.opacity = ".7";
-          payBtn.style.cursor = "not-allowed";
-          if (hint) hint.textContent = `Preparing secure payment…`;
-
-          const res = await fetch(START_PAYMENT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_id: data.public_id })
-          });
-
-          const payload = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
-            throw new Error(m);
-          }
-
-          if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
-
-          if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
-
+    // Shared function to enter payment step (previously triggered by "Continue to Payment" button)
+    // This function is idempotent - it will not re-initialize Stripe if already mounted
+    // Returns a promise that resolves when Stripe Elements are fully ready
+    async function enterPaymentStep() {
+      // Guard: If Stripe Elements are already mounted and ready, ensure wrap is visible and return
+      if (paymentElement && elements) {
+        const payMount = document.getElementById("baStripeMount");
+        if (payMount && payMount.querySelector("iframe")) {
+          // Already mounted and ready - ensure wrap is visible
           if (wrap) wrap.style.display = "block";
-          await mountStripePaymentElement(payload.client_secret, false);
-
           if (msg) msg.textContent = "";
-
-          try { if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
-
-        } catch (e) {
-          if (hint) hint.textContent = "Could not start payment: " + (e && e.message ? e.message : String(e));
-          payBtn.disabled = false;
-          payBtn.style.opacity = "1";
-          payBtn.style.cursor = "pointer";
+          return Promise.resolve();
         }
-      });
+      }
+
+      try {
+        // require passenger validity
+        const paxOk = validateAllPassengers(paxCount);
+        if (!paxOk){
+          showPaxToast("Please fix highlighted passenger fields first.", false);
+          const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+          if (firstBad && firstBad.scrollIntoView){
+            try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
+          }
+          return Promise.reject(new Error("Passenger validation failed"));
+        }
+
+        const res = await fetch(START_PAYMENT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_id: data.public_id })
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
+          throw new Error(m);
+        }
+
+        if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
+
+        // Mount Stripe Elements (but don't show wrap yet - caller will reveal after ready)
+        await mountStripePaymentElement(payload.client_secret, false);
+
+        // Wait for Stripe Elements to be fully ready
+        await waitForStripeReady(8000);
+
+        // Now show the wrap and clear message
+        if (wrap) wrap.style.display = "block";
+        if (msg) msg.textContent = "";
+
+        return Promise.resolve();
+
+      } catch (e) {
+        // Error will be handled by caller
+        throw e;
+      }
     }
 
-    // Add a new "Continue to Payment" button in Optional Services section
-    // This will be shown after BOOK is clicked and Optional Services are revealed
-    function addContinueToPaymentButton() {
-      const existingBtn = document.getElementById("baContinueToPayment");
-      if (existingBtn) return; // Already added
+    // Retry function for failed Stripe initialization
+    async function retryPaymentStep() {
+      // Clear any previous error state
+      if (hint) hint.textContent = "";
+      
+      // Remove any retry button that might exist
+      const existingRetry = document.getElementById("baRetryPaymentBtn");
+      if (existingRetry) existingRetry.remove();
+      
+      // Try again
+      await handleBookClick();
+    }
 
-      const continueBtn = document.createElement("button");
-      continueBtn.id = "baContinueToPayment";
-      continueBtn.className = "baCTA";
-      continueBtn.style.cssText = "margin-top: 18px; width: 100%; justify-content: center;";
-      continueBtn.innerHTML = `
-        <span class="baCTATitle">CONTINUE TO PAYMENT</span>
-      `;
-
-      continueBtn.addEventListener("click", async () => {
-        try {
-          // require passenger validity
+    // Main handler for Book button click
+    async function handleBookClick() {
+      try {
+        // Step 1: If Optional Services not revealed, initialize payment first
+        if (!optionalServicesRevealed) {
+          // require passenger validity before letting them proceed
           const paxOk = validateAllPassengers(paxCount);
           if (!paxOk){
             showPaxToast("Please fix highlighted passenger fields first.", false);
+            // scroll to first invalid
             const firstBad = root.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
             if (firstBad && firstBad.scrollIntoView){
               try { firstBad.scrollIntoView({ behavior:"smooth", block:"center" }); } catch(_) {}
@@ -3295,50 +3343,141 @@
             return;
           }
 
-          continueBtn.disabled = true;
-          continueBtn.style.opacity = ".7";
-          continueBtn.style.cursor = "not-allowed";
-          if (hint) hint.textContent = `Preparing secure payment…`;
+          // Show loading state on Book button (keep sticky bar visible)
+          const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+          const originalBtnText = btnTitle ? btnTitle.innerHTML : "BOOK";
+          
+          if (payBtn) {
+            payBtn.disabled = true;
+            payBtn.style.opacity = ".7";
+            payBtn.style.cursor = "not-allowed";
+            
+            // Add spinner to button
+            if (btnTitle) {
+              btnTitle.innerHTML = `
+                <span style="display:inline-flex;align-items:center;gap:8px">
+                  <span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:rgba(255,255,255,0.9);border-radius:50%;animation:spin 0.8s linear infinite"></span>
+                  Preparing...
+                </span>
+              `;
+            }
+          }
+          if (hint) hint.textContent = "Preparing secure payment…";
 
-          const res = await fetch(START_PAYMENT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_id: data.public_id })
-          });
+          // DO NOT hide sticky bar yet - keep it visible during loading
 
-          const payload = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
-            throw new Error(m);
+          try {
+            // Initialize payment step and wait for Stripe to be ready
+            await enterPaymentStep();
+
+            // Stripe is now ready - NOW hide sticky bar and reveal section
+            if (stickyBar) stickyBar.style.display = "none";
+
+            // Reveal the section and scroll to it
+            if (extrasSection) {
+              extrasSection.style.display = "block";
+              optionalServicesRevealed = true;
+              
+              // Update hint message
+              if (hint) hint.textContent = "Selection locked. Enter your payment details below.";
+              
+              // Scroll to Charges Summary section (TCS/Tips/Stripe are already visible in left column)
+              try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+            }
+
+            // Re-enable button and restore text (though it won't be used again in normal flow)
+            if (payBtn) {
+              payBtn.disabled = false;
+              payBtn.style.opacity = "1";
+              payBtn.style.cursor = "pointer";
+            }
+            if (btnTitle) btnTitle.innerHTML = originalBtnText;
+
+          } catch (e) {
+            // Payment initialization failed - show error with retry
+            // Keep sticky bar visible on error
+            const errorMsg = e && e.message ? e.message : String(e);
+            if (hint) hint.textContent = "Could not load payment form: " + errorMsg;
+            
+            // Restore button text and re-enable
+            if (btnTitle) btnTitle.innerHTML = originalBtnText;
+            if (payBtn) {
+              payBtn.disabled = false;
+              payBtn.style.opacity = "1";
+              payBtn.style.cursor = "pointer";
+            }
+            
+            // Create retry button
+            const retryBtn = document.createElement("button");
+            retryBtn.id = "baRetryPaymentBtn";
+            retryBtn.textContent = "Retry";
+            retryBtn.style.cssText = "margin-top: 10px; padding: 8px 16px; border-radius: 8px; border: 1px solid #d1ad54; background: #d1ad54; color: #fff; font-weight: 700; cursor: pointer; font-size: 13px;";
+            retryBtn.addEventListener("click", () => {
+              retryPaymentStep().catch((err) => {
+                console.error("Retry failed:", err);
+              });
+            });
+            
+            // Insert retry button after hint
+            if (hint && hint.parentNode) {
+              const existingRetry = document.getElementById("baRetryPaymentBtn");
+              if (existingRetry) existingRetry.remove();
+              hint.parentNode.insertBefore(retryBtn, hint.nextSibling);
+            }
           }
 
-          if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
-
-          if (hint) hint.textContent = `Selection locked. Enter your payment details below.`;
-
-          if (wrap) wrap.style.display = "block";
-          await mountStripePaymentElement(payload.client_secret, false);
-
-          if (msg) msg.textContent = "";
-
-          // Hide continue button
-          continueBtn.style.display = "none";
-
-          try { if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
-
-        } catch (e) {
-          if (hint) hint.textContent = "Could not start payment: " + (e && e.message ? e.message : String(e));
-          continueBtn.disabled = false;
-          continueBtn.style.opacity = "1";
-          continueBtn.style.cursor = "pointer";
+          return;
         }
-      });
 
-      const extrasWrap = extrasSection ? extrasSection.querySelector(".baExtrasGrid")?.parentElement : null;
-      if (extrasWrap) {
-        extrasWrap.appendChild(continueBtn);
+        // Step 2: If Optional Services already revealed, proceed with payment
+        // This path should rarely be hit now, but kept for safety
+        if (payBtn) {
+          payBtn.disabled = true;
+          payBtn.style.opacity = ".7";
+          payBtn.style.cursor = "not-allowed";
+        }
+        if (hint) hint.textContent = "Preparing secure payment…";
+
+        try {
+          await enterPaymentStep();
+          
+          if (hint) hint.textContent = "Selection locked. Enter your payment details below.";
+          if (wrap) {
+            try { wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+          }
+        } catch (e) {
+          const errorMsg = e && e.message ? e.message : String(e);
+          if (hint) hint.textContent = "Could not start payment: " + errorMsg;
+        } finally {
+          if (payBtn) {
+            payBtn.disabled = false;
+            payBtn.style.opacity = "1";
+            payBtn.style.cursor = "pointer";
+          }
+        }
+
+      } catch (e) {
+        // Fallback error handling
+        console.error("Unexpected error in handleBookClick:", e);
+        if (hint) hint.textContent = "An unexpected error occurred. Please try again.";
+        if (payBtn) {
+          payBtn.disabled = false;
+          payBtn.style.opacity = "1";
+          payBtn.style.cursor = "pointer";
+        }
       }
     }
+
+    if (payBtn) {
+      payBtn.addEventListener("click", () => {
+        handleBookClick().catch((e) => {
+          console.error("Error in Book button handler:", e);
+        });
+      });
+    }
+
+    // "Continue to Payment" button functionality has been merged into the Book button
+    // The enterPaymentStep() function now handles payment initialization directly
 
     if (confirmBtn) {
       confirmBtn.addEventListener("click", async () => {
