@@ -2885,13 +2885,22 @@
     const careYes = document.getElementById("baCareYes");
     const careNo = document.getElementById("baCareNo");
     
-    function setControlsDisabled(disabled) {
-      if (careYes) careYes.disabled = disabled;
-      if (careNo) careNo.disabled = disabled;
-      const tipBtns = Array.from(document.querySelectorAll(".baTipBtn"));
-      tipBtns.forEach(btn => { btn.disabled = disabled; });
-      const tipCustom = document.getElementById("baTipCustom");
-      if (tipCustom) tipCustom.disabled = disabled;
+    // Disable only payment buttons while totals are being updated
+    // This prevents proceeding with stale totals while keeping TCS/tip inputs interactive
+    function setPaymentButtonsDisabled(disabled) {
+      const continueBtn = document.getElementById("baContinueToPayment");
+      const confirmBtn = document.getElementById("baStripeConfirm");
+      
+      if (continueBtn) {
+        continueBtn.disabled = disabled;
+        continueBtn.style.opacity = disabled ? ".6" : "1";
+        continueBtn.style.cursor = disabled ? "not-allowed" : "pointer";
+      }
+      if (confirmBtn) {
+        confirmBtn.disabled = disabled;
+        confirmBtn.style.opacity = disabled ? ".6" : "1";
+        confirmBtn.style.cursor = disabled ? "not-allowed" : "pointer";
+      }
     }
     
     function handleCareSelection(newSelected) {
@@ -2906,10 +2915,10 @@
       updateSummaryBox();
       updateTotalsUI();
       
-      // Disable controls to prevent double-clicks
-      setControlsDisabled(true);
+      // Disable payment buttons to prevent proceeding with stale totals
+      setPaymentButtonsDisabled(true);
       setSaving(true);
-      setSelMsg("Updating...");
+      setSelMsg("Updating total...");
 
       const tip = {
         mode: tipMode || "none",
@@ -2921,7 +2930,7 @@
         .then(async (result) => {
           setSaving(false);
           setSelMsg("Updated.");
-          setControlsDisabled(false);
+          setPaymentButtonsDisabled(false);
           
           // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
           if (result.client_secret && paymentElement) {
@@ -2943,7 +2952,7 @@
           updateSummaryBox();
           updateTotalsUI();
           setSaving(false);
-          setControlsDisabled(false);
+          setPaymentButtonsDisabled(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
         });
     }
@@ -2977,16 +2986,16 @@
             applyTipHighlights();
             updateTotalsUI();
             
-            setControlsDisabled(true);
+            setPaymentButtonsDisabled(true);
             setSaving(true);
-            setSelMsg("Updating...");
+            setSelMsg("Updating total...");
 
             try {
               const tip = { mode: "none", preset_label: null, amount: 0 };
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
-              setControlsDisabled(false);
+              setPaymentButtonsDisabled(false);
               setSelMsg("Updated.");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
@@ -3002,7 +3011,7 @@
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
-              setControlsDisabled(false);
+              setPaymentButtonsDisabled(false);
               setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
             }
             return;
@@ -3022,16 +3031,16 @@
             applyTipHighlights();
             updateTotalsUI();
             
-            setControlsDisabled(true);
+            setPaymentButtonsDisabled(true);
             setSaving(true);
-            setSelMsg("Updating...");
+            setSelMsg("Updating total...");
 
             try {
               const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
-              setControlsDisabled(false);
+              setPaymentButtonsDisabled(false);
               setSelMsg("Updated.");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
@@ -3047,14 +3056,14 @@
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
-              setControlsDisabled(false);
+              setPaymentButtonsDisabled(false);
               setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
             }
             return;
           }
         } catch (e) {
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
-          setControlsDisabled(false);
+          setPaymentButtonsDisabled(false);
         }
       });
     });
@@ -3077,9 +3086,9 @@
           applyTipHighlights();
           updateTotalsUI();
           
-          setControlsDisabled(true);
+          setPaymentButtonsDisabled(true);
           setSaving(true);
-          setSelMsg("Updating...");
+          setSelMsg("Updating total...");
 
           const tip = {
             mode: tipMode,
@@ -3093,7 +3102,7 @@
           updateTotalsUI();
 
           setSaving(false);
-          setControlsDisabled(false);
+          setPaymentButtonsDisabled(false);
           setSelMsg("Updated.");
           
           // If a new client_secret was returned, update Stripe Elements gracefully
@@ -3112,7 +3121,7 @@
           applyTipHighlights();
           updateTotalsUI();
           setSaving(false);
-          setControlsDisabled(false);
+          setPaymentButtonsDisabled(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
         }
       });
