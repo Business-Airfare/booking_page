@@ -2572,8 +2572,27 @@
         <div id="baFlightsFlow">
           ${journeys.map(journeyCardHtml).join("") || `<div class="baPanel">No itinerary found.</div>`}
         </div>
+      </section>
 
-        <div class="baCareBox">
+      <aside class="baPaxPane">
+        <div class="baSectionTitle">Passenger Details</div>
+
+        <div class="baPaxWrap">
+          ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
+
+          <div class="baInfoBanner">
+            <span class="baInfoIcon">i</span>
+            <div>The quoted prices are not guaranteed until the tickets are issued</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="baExtras" id="baExtras" style="display:none">
+      <div class="baExtrasGrid">
+        <div class="baExtrasLeft">
+          
+          <div class="baCareBox">
             <div class="baCareBox__header">
               <div class="baCareBox__headerLeft">
                 <svg class="baCareBox__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2698,27 +2717,6 @@
               <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <aside class="baPaxPane">
-        <div class="baSectionTitle">Passenger Details</div>
-
-        <div class="baPaxWrap">
-          ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
-
-          <div class="baInfoBanner">
-            <span class="baInfoIcon">i</span>
-            <div>The quoted prices are not guaranteed until the tickets are issued</div>
-          </div>
-        </div>
-      </aside>
-    </div>
-
-    <div class="baExtras" id="baExtras" style="display:none">
-      <div class="baExtrasGrid">
-        <div class="baExtrasLeft">
-          <!-- TCS, Tips, and Stripe have been moved to baFlightsPane (left column) -->
         </div>
 
         <div class="baExtrasRight">
@@ -3381,7 +3379,7 @@
               // Update hint message
               if (hint) hint.textContent = "Selection locked. Enter your payment details below.";
               
-              // Scroll to Charges Summary section (TCS/Tips/Stripe are already visible in left column)
+              // Scroll to Optional Services section (Stripe is already visible inside)
               try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
             }
 
