@@ -829,6 +829,75 @@
     return ok;
   }
 
+  let expandedPassengerIndex = 0;
+
+  function setExpandedPassenger(index){
+    const cards = Array.from(root.querySelectorAll(".baPaxCard[data-pax-card]"));
+    if (!cards.length) return;
+    const safeIndex = Math.max(0, Math.min(index, cards.length - 1));
+    expandedPassengerIndex = safeIndex;
+    cards.forEach(card => {
+      const idx = Number(card.getAttribute("data-pax-card"));
+      const isExpanded = idx === expandedPassengerIndex;
+      card.classList.toggle("is-expanded", isExpanded);
+      card.classList.toggle("is-collapsed", !isExpanded);
+    });
+  }
+
+  function updatePaxSummary(paxIndex){
+    const card = root.querySelector(`.baPaxCard[data-pax-card="${paxIndex}"]`);
+    if (!card) return;
+    const first = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="first_name"]`);
+    const last  = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="last_name"]`);
+    const dob   = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="date_of_birth"]`);
+    const nameEl = card.querySelector("[data-pax-summary-name]");
+    const dobEl = card.querySelector("[data-pax-summary-dob]");
+    const genderEl = card.querySelector("[data-pax-summary-gender]");
+
+    const firstVal = String(first?.value || "").trim();
+    const lastVal = String(last?.value || "").trim();
+    const full = `${firstVal} ${lastVal}`.trim();
+    const displayName = full || `Passenger ${paxIndex + 1}`;
+    if (nameEl) nameEl.textContent = displayName;
+
+    let dobDisplay = "";
+    const dobVal = String(dob?.value || "").trim();
+    if (dobVal){
+      const iso = /^\d{4}-\d{2}-\d{2}$/.test(dobVal) ? dobVal : parseDobInput(dobVal);
+      dobDisplay = (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) ? formatDobDisplay(iso) : dobVal;
+    }
+    const male = card.querySelector(`input[type="radio"][data-pax="${paxIndex}"][data-field="gender"][value="male"]`);
+    const female = card.querySelector(`input[type="radio"][data-pax="${paxIndex}"][data-field="gender"][value="female"]`);
+    let genderText = "—";
+    if (male?.checked) genderText = "Male";
+    if (female?.checked) genderText = "Female";
+    if (genderEl) genderEl.textContent = genderText;
+    if (dobEl) dobEl.textContent = `DOB ${dobDisplay || "—"}`;
+  }
+
+  function wirePassengerAccordion(paxCount){
+    expandedPassengerIndex = 0;
+    const cards = root.querySelectorAll(".baPaxCard[data-pax-card]");
+    cards.forEach(card => {
+      const idx = Number(card.getAttribute("data-pax-card"));
+      updatePaxSummary(idx);
+      card.addEventListener("click", () => {
+        if (card.classList.contains("is-collapsed")){
+          setExpandedPassenger(idx);
+        }
+      });
+      const toggle = card.querySelector(".baPaxCard__toggle");
+      if (toggle){
+        toggle.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (idx !== expandedPassengerIndex) setExpandedPassenger(idx);
+        });
+      }
+    });
+    setExpandedPassenger(expandedPassengerIndex);
+  }
+
   // ---------- passenger autosave ----------
   function showPaxToast(text, ok=true){
     let el = document.getElementById("baPaxToast");
@@ -872,8 +941,19 @@
     // live validation on input
     root.querySelectorAll('.baBoxInput[data-pax][data-field]').forEach(inp => {
       const paxIndex = Number(inp.getAttribute("data-pax"));
-      inp.addEventListener("input", () => validatePassengerBlock(paxIndex));
-      inp.addEventListener("change", () => validatePassengerBlock(paxIndex));
+      const field = inp.getAttribute("data-field");
+      inp.addEventListener("input", () => {
+        validatePassengerBlock(paxIndex);
+        if (field === "first_name" || field === "last_name" || field === "date_of_birth") {
+          updatePaxSummary(paxIndex);
+        }
+      });
+      inp.addEventListener("change", () => {
+        validatePassengerBlock(paxIndex);
+        if (field === "first_name" || field === "last_name" || field === "date_of_birth") {
+          updatePaxSummary(paxIndex);
+        }
+      });
     });
     root.querySelectorAll('input[type="radio"][data-pax][data-field="gender"]').forEach(r => {
       r.addEventListener("change", () => validatePassengerBlock(Number(r.getAttribute("data-pax"))));
@@ -959,6 +1039,7 @@
             validatePassengerBlock(paxIndex);
             const isoDate = parseDobInput(formatted);
             queuePaxSave(paxIndex, { date_of_birth: isoDate || null });
+            updatePaxSummary(paxIndex);
           }
         }
       });
@@ -1013,6 +1094,9 @@
           if (formatted !== inp.value) {
             inp.value = formatted;
           }
+          if (field === "first_name" || field === "last_name") {
+            updatePaxSummary(paxIndex);
+          }
         });
       }
 
@@ -1064,6 +1148,7 @@
         const paxIndex = Number(r.getAttribute("data-pax"));
         validatePassengerBlock(paxIndex);
         queuePaxSave(paxIndex, { gender: r.value });
+        updatePaxSummary(paxIndex);
       });
     });
 
@@ -1324,15 +1409,57 @@
     // ----------------------------
     // PASSENGERS UI
     // ----------------------------
+    function toRoman(num){
+      const map = [
+        [1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],
+        [100,"C"],[90,"XC"],[50,"L"],[40,"XL"],
+        [10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]
+      ];
+      let n = num;
+      let out = "";
+      for (const [v, sym] of map){
+        while (n >= v){ out += sym; n -= v; }
+      }
+      return out || "I";
+    }
+
     function passengerBlockHtml(idx){
       const pax = getPassengerFromSession(data, idx);
       const genderName = `baGender_${idx}`;
+      const fullName = [pax.first_name, pax.last_name].filter(Boolean).join(" ").trim();
+      const displayName = fullName || `Passenger ${idx + 1}`;
+      const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "";
+      const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
+      const romanIdx = toRoman(idx + 1);
 
       return `
-        <div class="baPaxCard" data-pax-card="${idx}">
-          <div class="baPaxCard__head">Passenger</div>
+        <div class="baPaxCard ${idx === 0 ? "is-expanded" : "is-collapsed"}" data-pax-card="${idx}">
+          <div class="baPaxCard__head">
+            <div class="baPaxCard__title">
+              Passenger <span class="baPaxHeadNum">${romanIdx}</span>
+            </div>
+            <div class="baPaxHeadRight">
+              <span class="baPaxHeadNote">(check passenger details)<span class="baReq">*</span></span>
+              <button type="button" class="baPaxCard__toggle" aria-label="Expand passenger details">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M9 3H3v6M3 3l7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M15 21h6v-6M21 21l-7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
 
-          <div class="baPaxGrid">
+          <div class="baPaxCard__summary">
+            <div class="baPaxSummaryName" data-pax-summary-name>${escapeHtml(displayName)}</div>
+            <div class="baPaxSummaryMeta" data-pax-summary-meta>
+              <span class="baPaxSummaryGender" data-pax-summary-gender>${escapeHtml(displayGender)}</span>
+              <span class="baPaxSummaryDot">·</span>
+              <span class="baPaxSummaryDob" data-pax-summary-dob>DOB ${escapeHtml(displayDob || "—")}</span>
+            </div>
+          </div>
+
+          <div class="baPaxCard__details">
+            <div class="baPaxGrid">
             <div class="baPaxGender">
               <div class="baLbl">Gender<span class="baReq">*</span></div>
               <div class="baRadioRow">
@@ -1397,6 +1524,7 @@
                 <input class="baBoxInput" value="${escapeHtml(pax.phone && pax.phone.startsWith('+1') ? pax.phone.slice(2) : (pax.phone || ''))}" data-pax="${idx}" data-field="phone" placeholder="5555555555" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
               </div>
               <div class="baErr">Please enter a valid phone number.</div>
+            </div>
             </div>
           </div>
         </div>
@@ -1888,12 +2016,119 @@
     margin-bottom: 14px;
     box-shadow: 0 10px 24px rgba(0,0,0,.05);
   }
+  .baPaxCard.is-collapsed{ cursor:pointer; }
   .baPaxCard__head{
     padding: 18px 18px;
     font-family: Georgia, "Times New Roman", serif;
     font-weight: 800;
     font-size: 26px;
     border-bottom: 1px solid #efefef;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+  }
+  .baPaxCard__title{ min-width: 0; }
+  .baPaxHeadNum{ margin-left: 6px; font-weight: 900; }
+  .baPaxHeadRight{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+  }
+  .baPaxHeadNote{
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+    color: #8a8a8a;
+    display: none;
+  }
+  .baPaxCard.is-collapsed .baPaxHeadNote{
+    display: inline-flex;
+    color:#7b7b7b;
+  }
+  .baPaxCard__toggle{
+    background: transparent;
+    border: 0;
+    padding: 4px;
+    color: #8a8a8a;
+    cursor: pointer;
+    border-radius: 4px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .baPaxCard__toggle:hover{
+    color: #4b4b4b;
+    background: #f5f5f5;
+  }
+  .baPaxCard__summary{
+    padding: 6px 18px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 20px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #4b4b4b;
+    border-bottom: 1px solid #efefef;
+    white-space: nowrap;
+  }
+  .baPaxSummaryName{
+    flex: 1 1 auto;
+    max-width: 65%;
+    font-size: 16px;
+    font-weight: 800;
+    padding: 10px 12px;
+    border: 1px solid #e7e7e7;
+    border-radius: 6px;
+    background: #fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    line-height: 1.1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .baPaxSummaryMeta{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    flex: 0 1 auto;
+    min-width:0;
+    color:#6a6a6a;
+    font-weight:600;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .baPaxSummaryGender{
+    display:inline-block;
+    min-width: 64px;
+    text-align:center;
+  }
+  .baPaxSummaryDot{ opacity:.6; }
+  .baPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
+  .baPaxCard__details{
+    overflow:hidden;
+    max-height: 1200px;
+    transition: max-height .25s ease, opacity .2s ease;
+  }
+  .baPaxCard.is-collapsed .baPaxCard__details{
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .baPaxCard.is-expanded .baPaxCard__summary{ display:none; }
+  .baPaxCard.is-collapsed .baPaxCard__head{
+    padding: 12px 18px;
+    font-size: 20px;
+    border-bottom: 0;
+  }
+  @media (max-width: 620px){
+    .baPaxCard__summary{ flex-direction:column; align-items:flex-start; }
   }
 
   .baPaxGrid{
@@ -2804,6 +3039,8 @@
   </div>
 </div>
     `;
+
+    wirePassengerAccordion(paxCount);
 
     // ✅ Wire passenger autosave AFTER HTML exists
     wirePassengerAutosave(data.public_id, paxCount);
