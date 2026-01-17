@@ -850,15 +850,17 @@
     const first = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="first_name"]`);
     const last  = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="last_name"]`);
     const dob   = card.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="date_of_birth"]`);
-    const nameEl = card.querySelector("[data-pax-summary-name]");
+    const firstEl = card.querySelector("[data-pax-summary-first]");
+    const lastEl = card.querySelector("[data-pax-summary-last]");
     const dobEl = card.querySelector("[data-pax-summary-dob]");
     const genderEl = card.querySelector("[data-pax-summary-gender]");
 
     const firstVal = String(first?.value || "").trim();
     const lastVal = String(last?.value || "").trim();
-    const full = `${firstVal} ${lastVal}`.trim();
-    const displayName = full || `Passenger ${paxIndex + 1}`;
-    if (nameEl) nameEl.textContent = displayName;
+    const displayFirst = firstVal || "Passenger";
+    const displayLast = lastVal || String(paxIndex + 1);
+    if (firstEl) firstEl.textContent = displayFirst;
+    if (lastEl) lastEl.textContent = displayLast;
 
     let dobDisplay = "";
     const dobVal = String(dob?.value || "").trim();
@@ -1189,6 +1191,7 @@
     let tipMode = String(data.selection?.tip_mode || "none");
     let tipPresetLabel = data.selection?.tip_preset_label ? String(data.selection.tip_preset_label) : "";
     let tipAmount = Number(data.selection?.tip_amount ?? 0) || 0;
+    let tipAgreed = (Number(tipAmount) || 0) > 0;
 
     const tipMin = 0;
     const tipMax = 100000; // $1000
@@ -1199,10 +1202,26 @@
     const careCents = Number(data.quote?.care ?? 0) || 0;
 
     function baseTicketService(){ return ticketCents + serviceCents; }
+    function selectedTipAmount(){
+      return Number(tipAmount) || 0;
+    }
+    function resolvedPreset(){
+      return tipPresets.find(p => String(p.label) === String(tipPresetLabel || "")) || null;
+    }
+    function resolvedPresetAmount(){
+      const preset = resolvedPreset();
+      const amount = preset ? Number(preset.amount) : 0;
+      return Number.isFinite(amount) ? Math.round(amount) : 0;
+    }
+    function appliedTipAmount(){
+      if (!tipAgreed) return 0;
+      if (tipMode === "preset") return resolvedPresetAmount();
+      return selectedTipAmount();
+    }
     function payableTotalCents(){
       const base = baseTicketService();
       const care = careSelected ? careCents : 0;
-      const tip = Number(tipAmount) || 0;
+      const tip = appliedTipAmount();
       return base + care + tip;
     }
 
@@ -1409,37 +1428,23 @@
     // ----------------------------
     // PASSENGERS UI
     // ----------------------------
-    function toRoman(num){
-      const map = [
-        [1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],
-        [100,"C"],[90,"XC"],[50,"L"],[40,"XL"],
-        [10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]
-      ];
-      let n = num;
-      let out = "";
-      for (const [v, sym] of map){
-        while (n >= v){ out += sym; n -= v; }
-      }
-      return out || "I";
-    }
-
     function passengerBlockHtml(idx){
       const pax = getPassengerFromSession(data, idx);
       const genderName = `baGender_${idx}`;
-      const fullName = [pax.first_name, pax.last_name].filter(Boolean).join(" ").trim();
-      const displayName = fullName || `Passenger ${idx + 1}`;
+      const displayFirst = pax.first_name || "Passenger";
+      const displayLast = pax.last_name || String(idx + 1);
       const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "";
       const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
-      const romanIdx = toRoman(idx + 1);
+      const paxNumber = idx + 1;
 
       return `
         <div class="baPaxCard ${idx === 0 ? "is-expanded" : "is-collapsed"}" data-pax-card="${idx}">
           <div class="baPaxCard__head">
             <div class="baPaxCard__title">
-              Passenger <span class="baPaxHeadNum">${romanIdx}</span>
+              Passenger <span class="baPaxHeadNum">${paxNumber}</span>
             </div>
             <div class="baPaxHeadRight">
-              <span class="baPaxHeadNote">(check passenger details)<span class="baReq">*</span></span>
+              <span class="baPaxHeadNote">check this passenger's details <span class="baReq">*</span></span>
               <button type="button" class="baPaxCard__toggle" aria-label="Expand passenger details">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M9 3H3v6M3 3l7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1450,7 +1455,11 @@
           </div>
 
           <div class="baPaxCard__summary">
-            <div class="baPaxSummaryName" data-pax-summary-name>${escapeHtml(displayName)}</div>
+            <div class="baPaxSummaryName" data-pax-summary-name>
+              <span class="baPaxSummaryFirst" data-pax-summary-first>${escapeHtml(displayFirst)}</span>
+              <span class="baPaxSummaryNameDivider" aria-hidden="true"></span>
+              <span class="baPaxSummaryLast" data-pax-summary-last>${escapeHtml(displayLast)}</span>
+            </div>
             <div class="baPaxSummaryMeta" data-pax-summary-meta>
               <span class="baPaxSummaryGender" data-pax-summary-gender>${escapeHtml(displayGender)}</span>
               <span class="baPaxSummaryDot">·</span>
@@ -2067,12 +2076,16 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
-    gap: 20px;
+    gap: 14px;
     font-size: 15px;
     font-weight: 700;
     color: #4b4b4b;
     border-bottom: 1px solid #efefef;
     white-space: nowrap;
+  }
+  .baPaxCard.is-collapsed .baPaxCard__summary{
+    border-bottom: 0;
+    padding-top: 10px;
   }
   .baPaxSummaryName{
     flex: 1 1 auto;
@@ -2088,14 +2101,31 @@
     justify-content:center;
     text-align:center;
     line-height: 1.1;
+    gap: 10px;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
   }
+  .baPaxCard.is-collapsed .baPaxSummaryName{
+    line-height: 1.25;
+    padding-bottom: 11px;
+  }
+  .baPaxSummaryFirst,
+  .baPaxSummaryLast{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .baPaxSummaryNameDivider{
+    width: 1px;
+    height: 60%;
+    background: #dcdcdc;
+    display: inline-block;
+  }
   .baPaxSummaryMeta{
     display:flex;
     align-items:center;
-    gap: 12px;
+    gap: 6px;
     flex: 0 1 auto;
     min-width:0;
     color:#6a6a6a;
@@ -2106,7 +2136,7 @@
   }
   .baPaxSummaryGender{
     display:inline-block;
-    min-width: 64px;
+    min-width: 52px;
     text-align:center;
   }
   .baPaxSummaryDot{ opacity:.6; }
@@ -2125,7 +2155,7 @@
   .baPaxCard.is-collapsed .baPaxCard__head{
     padding: 12px 18px;
     font-size: 20px;
-    border-bottom: 0;
+    border-bottom: 1px solid #efefef;
   }
   @media (max-width: 620px){
     .baPaxCard__summary{ flex-direction:column; align-items:flex-start; }
@@ -2299,19 +2329,254 @@
     box-shadow: 0 10px 24px rgba(0,0,0,.04);
   }
   .baPanelTitle{ font-weight: 900; margin-bottom: 10px; }
-  .baTipBtn{
-    padding:10px 12px;
-    border-radius: 10px;
-    border:1px solid #ddd;
-    background:#fff;
-    font-weight:900;
-    cursor:pointer
+  .baTipSection{ margin-top: 18px; }
+  .baTipCard{
+    background: var(--ba-card);
+    border: 1px solid var(--ba-border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.04);
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 18px;
+    align-items: start;
   }
-  .baTipBtn.is-active{ border-color:#111; background:#111; color:#fff}
-  .baTipRow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .baTipHeader{
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .baTipHeader .baTipAgreeWarning{
+    width: calc(100% + 18px);
+    margin-left: -9px;
+    margin-right: -9px;
+  }
+  .baTipTitle{
+    font-weight: 900;
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  .baTipSubtitle{
+    font-size: 13px;
+    opacity: 0.7;
+    line-height: 1.5;
+  }
+  .baTipControls{
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .baTipFooter{
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    column-gap: 18px;
+    row-gap: 0;
+  }
+  .baTipFooterLeft{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-top: -4px;
+  }
+  .baTipFooterRight{
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .baTipRow{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .baTipBtn{
+    padding: 7px 8px;
+    border-radius: 999px;
+    border: 1px solid #ddd;
+    background: #fff;
+    font-weight: 800;
+    font-size: 12px;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    flex: 0 0 calc((100% - 12px) / 3);
+    order: 1;
+    text-align: center;
+  }
+  .baTipBtn--perfect{
+    flex: 0 0 calc((100% - 6px) / 2);
+    order: 2;
+  }
+  .baTipBtn--exceptional{
+    flex: 0 0 calc((100% - 6px) / 2);
+    order: 2;
+  }
+  .baTipBtn--compact{
+    padding: 6px 12px;
+    min-width: auto;
+    height: 30px;
+    gap: 2px;
+  }
+  .baTipBtnLabel{
+    white-space: nowrap;
+    font-weight: 800;
+    font-size: 12px;
+  }
+  .baTipBtnAmount{
+    font-weight: 700;
+    font-size: 11px;
+    opacity: 0.75;
+  }
+  .baTipBtn:hover{
+    border-color: #bbb;
+  }
+  .baTipBtn.is-active{
+    border-color: #111;
+    background: #111;
+    color: #fff;
+  }
+  .baTipBtn:disabled{
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .baTipBottomRow{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    justify-content: center;
+    margin-top: auto;
+    width: 100%;
+  }
+  .baTipCustomWrap{
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: 30px;
+    padding: 0 4px;
+    border-radius: 999px;
+    border: 1px solid #ddd;
+    background: #fff;
+    width: 78px;
+    justify-content: center;
+    margin: 0 3px;
+  }
+  .baTipCustomField{
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .baTipCustomField::before{
+    content: "$";
+    position: absolute;
+    left: 6px;
+    font-weight: 900;
+    font-size: 12px;
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .baTipCustomBtn{
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid #ddd;
+    background: #f5f5f5;
+    font-weight: 900;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .baTipBottomRow .baTipBtn--compact{
+    margin-left: 10px;
+  }
+  .baTipCustomBtn:disabled{
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
   .baTipCustom{
-    width:110px; padding:10px 12px; border-radius:10px;
-    border:1px solid #ddd; font-weight:900
+    width: 100%;
+    padding: 4px 4px 4px 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-weight: 800;
+    text-align: center;
+    background: transparent;
+  }
+  .baTipCustom::-webkit-outer-spin-button,
+  .baTipCustom::-webkit-inner-spin-button{
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .baTipCustom{
+    -moz-appearance: textfield;
+  }
+  .baTipBottomRow .baTipBtn--compact{
+    width: 120px;
+    justify-content: center;
+  }
+  .baTipAgreeRow{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--ba-border);
+    background: #f7f7f9;
+    margin-bottom: 0;
+  }
+  .baTipAgreeRow.is-warn{
+    background: #fde8e8;
+    border-color: #f5b5b5;
+  }
+  .baTipAgreeCheck{
+    width: 18px;
+    height: 18px;
+    accent-color: var(--ba-accent);
+    flex-shrink: 0;
+  }
+  .baTipAgreeText{
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .baTipAgreeWarning{
+    margin-top: 1px;
+    padding: 8px 10px 4px;
+    border-radius: 8px;
+    background: #fde8e8;
+    color: #b00020;
+    font-size: 11px;
+    line-height: 1.4;
+    display: none;
+    width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 100%;
+  }
+  .baTipHelper{
+    font-size: 12px;
+    opacity: 0.7;
+  }
+  @media (max-width: 720px){
+    .baTipCard{ flex-direction: column; }
+    .baTipControls{ width: 100%; }
+    .baTipBottomRow{ flex-wrap: wrap; }
   }
 
   /* Sticky bottom bar (updated per request) */
@@ -2897,31 +3162,54 @@
             </div>
           </div>
 
-          <div class="baTipSection" style="margin-top:18px">
-            <div style="font-weight:900;margin-bottom:8px">Tip (optional)</div>
-            <div class="baTipRow">
-              <button class="baTipBtn" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>No tip</button>
-
-              ${tipPresets.map(p => `
-                <button class="baTipBtn"
-                  data-mode="preset"
-                  data-label="${escapeHtml(p.label)}"
-                  data-amount="${Number(p.amount)||0}"
-                  ${selectionLocked || isExpired ? "disabled" : ""}>
-                  ${escapeHtml(p.label)} · $${Math.round((Number(p.amount)||0)/100)}
-                </button>
-              `).join("")}
-
-              <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-                <div style="font-weight:900;opacity:.75">Custom</div>
-                <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="1"
-                  value="${tipMode === "custom" ? (tipAmount/100) : ""}"
-                  placeholder="0"
-                  ${selectionLocked || isExpired ? "disabled" : ""}>
+          <div class="baTipSection">
+            <div class="baTipCard">
+              <div class="baTipHeader">
+                <div class="baTipTitle">Did I meet your expectations?</div>
+                <div class="baTipSubtitle">If you feel that the service provided was exceptional, you can express your gratitude (optional).</div>
+              </div>
+              <div class="baTipControls">
+                <div class="baTipRow">
+                  ${tipPresets.map(p => `
+                    <button class="baTipBtn ${String(p.label).toLowerCase() === "perfect" ? "baTipBtn--perfect" : ""} ${String(p.label).toLowerCase() === "exceptional" ? "baTipBtn--exceptional" : ""}"
+                      data-mode="preset"
+                      data-label="${escapeHtml(p.label)}"
+                      data-amount="${Number(p.amount)||0}"
+                      ${selectionLocked || isExpired ? "disabled" : ""}>
+                      <div class="baTipBtnLabel">${escapeHtml(p.label)}</div>
+                      <div class="baTipBtnAmount">$${((Number(p.amount)||0)/100).toFixed(2)}</div>
+                    </button>
+                  `).join("")}
+                </div>
+                <div id="baSelMsg" class="baTipHelper"></div>
+              </div>
+              <div class="baTipFooter">
+                <div class="baTipFooterLeft">
+                  <div class="baTipAgreeRow">
+                    <input id="baTipAgree" class="baTipAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
+                    <label class="baTipAgreeText" for="baTipAgree">I agree, that this amount will be charged in addition to the cost of the airline ticket(s)</label>
+                  </div>
+                </div>
+                <div class="baTipFooterRight">
+                  <div class="baTipBottomRow">
+                    <button class="baTipCustomBtn" type="button" data-tip-step="-5" ${selectionLocked || isExpired ? "disabled" : ""}>−</button>
+                    <div class="baTipCustomWrap">
+                      <div class="baTipCustomField">
+                      <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="0.01"
+                          value="${tipMode === "custom" ? (tipAmount/100) : ""}"
+                        placeholder="0.00"
+                          ${selectionLocked || isExpired ? "disabled" : ""}>
+                      </div>
+                    </div>
+                    <button class="baTipCustomBtn" type="button" data-tip-step="5" ${selectionLocked || isExpired ? "disabled" : ""}>+</button>
+                    <button class="baTipBtn baTipBtn--compact" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>
+                      <div class="baTipBtnLabel">No tip</div>
+                    </button>
+                  </div>
+                </div>
+                <div id="baTipAgreeMsg" class="baTipAgreeWarning"></div>
               </div>
             </div>
-
-            <div id="baSelMsg" style="margin-top:10px;font-size:13px;opacity:.75"></div>
           </div>
 
           <div style="margin-top:18px">
@@ -3090,10 +3378,39 @@
     function setSaving(on){
       if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
       if (on){
-        savingTimer = setTimeout(() => setSelMsg("Saving…"), 250);
+        savingTimer = setTimeout(() => setSelMsg(""), 250);
       } else {
         if (savingTimer) { clearTimeout(savingTimer); savingTimer = null; }
       }
+    }
+
+    function updateTipAgreementUI(){
+      const tipAgree = document.getElementById("baTipAgree");
+      const tipAgreeRow = document.querySelector(".baTipAgreeRow");
+      const tipAgreeMsg = document.getElementById("baTipAgreeMsg");
+      const shouldWarn = selectedTipAmount() > 0 && !tipAgreed;
+      if (tipAgree) tipAgree.checked = !!tipAgreed;
+      if (tipAgreeRow) tipAgreeRow.classList.toggle("is-warn", shouldWarn);
+      if (tipAgreeMsg) {
+        tipAgreeMsg.textContent = shouldWarn
+          ? "Please check this box if you agree that this amount will be charged in addition to the cost of the airline ticket(s), or choose the \"no tip\" box."
+          : "";
+        tipAgreeMsg.style.display = shouldWarn ? "block" : "none";
+      }
+    }
+
+    function buildTipPayload(){
+      const selected = selectedTipAmount();
+      const applied = appliedTipAmount();
+      if (!tipAgreed || applied <= 0 || tipMode === "none") {
+        return { mode: "none", preset_label: null, amount: 0 };
+      }
+      const preset = tipMode === "preset" ? resolvedPreset() : null;
+      return {
+        mode: tipMode || "none",
+        preset_label: (tipMode === "preset" ? ((preset && preset.label) || tipPresetLabel || null) : null),
+        amount: Number.isFinite(applied) ? applied : 0
+      };
     }
 
     function updateTotalsUI(){
@@ -3101,6 +3418,7 @@
       const payEl = document.getElementById("baPayableTotal");
       if (payEl) payEl.textContent = `${fmtMoney(pay)} ${escapeHtml(data.currency || "USD")}`;
       updateSummaryBox();
+      updateTipAgreementUI();
       // sticky per pax stays as-is
     }
 
@@ -3140,7 +3458,8 @@
 
       // Update Tip line
       let tipItem = summaryBox.querySelector(".baSummaryBox__item[data-item='tip']");
-      if (tipAmount > 0) {
+      const effectiveTip = appliedTipAmount();
+      if (effectiveTip > 0) {
         if (!tipItem) {
           const items = summaryBox.querySelector(".baSummaryBox__items");
           if (items) {
@@ -3149,7 +3468,7 @@
             div.setAttribute("data-item", "tip");
             div.innerHTML = `
               <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
-              <div class="baSummaryBox__itemValue">${fmtMoney(tipAmount)}</div>
+              <div class="baSummaryBox__itemValue">${fmtMoney(effectiveTip)}</div>
               <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
             `;
             items.appendChild(div);
@@ -3159,7 +3478,7 @@
           const label = tipItem.querySelector(".baSummaryBox__itemLabel");
           const value = tipItem.querySelector(".baSummaryBox__itemValue");
           if (label) label.textContent = "Token of Appreciation";
-          if (value) value.textContent = fmtMoney(tipAmount);
+          if (value) value.textContent = fmtMoney(effectiveTip);
         }
       } else {
         if (tipItem) tipItem.remove();
@@ -3210,18 +3529,14 @@
       // Disable payment buttons to prevent proceeding with stale totals
       setPaymentButtonsDisabled(true);
       setSaving(true);
-      setSelMsg("Updating total...");
+      setSelMsg("");
 
-      const tip = {
-        mode: tipMode || "none",
-        preset_label: (tipMode === "preset" ? (tipPresetLabel || null) : null),
-        amount: Number.isFinite(tipAmount) ? tipAmount : 0
-      };
+      const tip = buildTipPayload();
 
       updateSelection(data.public_id, { care_selected: careSelected, tip })
         .then(async (result) => {
           setSaving(false);
-          setSelMsg("Updated.");
+          setSelMsg("");
           setPaymentButtonsDisabled(false);
           
           // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
@@ -3266,21 +3581,27 @@
       btn.addEventListener("click", async () => {
         try {
           const mode = btn.getAttribute("data-mode");
-          const prev = { tipMode, tipPresetLabel, tipAmount };
+          const prev = { tipMode, tipPresetLabel, tipAmount, tipAgreed };
 
           if (mode === "none") {
             // OPTIMISTIC UPDATE
             tipMode = "none";
             tipPresetLabel = "";
             tipAmount = 0;
+            tipAgreed = false;
             const tipCustom = document.getElementById("baTipCustom");
             if (tipCustom) tipCustom.value = "";
             applyTipHighlights();
             updateTotalsUI();
             
+            if (!tipAgreed && tipAmount > 0) {
+              setSelMsg("");
+              return;
+            }
+
             setPaymentButtonsDisabled(true);
             setSaving(true);
-            setSelMsg("Updating total...");
+            setSelMsg("");
 
             try {
               const tip = { mode: "none", preset_label: null, amount: 0 };
@@ -3288,7 +3609,7 @@
               updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
-              setSelMsg("Updated.");
+              setSelMsg("");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
@@ -3300,7 +3621,7 @@
               }
             } catch (e) {
               // REVERT on error
-              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
+              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
@@ -3311,12 +3632,14 @@
 
           if (mode === "preset") {
             const label = btn.getAttribute("data-label");
-            const amount = Number(btn.getAttribute("data-amount") || 0);
+            const preset = tipPresets.find(p => String(p.label) === String(label || ""));
+            const amount = Math.round(Number(preset ? preset.amount : btn.getAttribute("data-amount")) || 0);
 
             // OPTIMISTIC UPDATE
             tipMode = "preset";
             tipPresetLabel = label || "";
             tipAmount = amount;
+            tipAgreed = false;
 
             const tipCustom = document.getElementById("baTipCustom");
             if (tipCustom) tipCustom.value = "";
@@ -3325,15 +3648,15 @@
             
             setPaymentButtonsDisabled(true);
             setSaving(true);
-            setSelMsg("Updating total...");
+            setSelMsg("");
 
             try {
-              const tip = { mode: "preset", preset_label: tipPresetLabel || null, amount };
+              const tip = buildTipPayload();
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
               updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
-              setSelMsg("Updated.");
+              setSelMsg("");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
@@ -3345,7 +3668,7 @@
               }
             } catch (e) {
               // REVERT on error
-              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount;
+              tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
@@ -3367,26 +3690,29 @@
         try {
           const dollars = tipCustom.value === "" ? 0 : Number(tipCustom.value);
           const cents = clampInt(dollars * 100, tipMin, tipMax);
+          tipCustom.value = cents > 0 ? (cents / 100).toFixed(2) : "";
 
-          const prev = { tipMode, tipPresetLabel, tipAmount };
+          const prev = { tipMode, tipPresetLabel, tipAmount, tipAgreed };
           
           // OPTIMISTIC UPDATE
           tipMode = (cents <= 0 ? "none" : "custom");
           tipPresetLabel = "";
           tipAmount = (cents <= 0 ? 0 : cents);
+          tipAgreed = false;
 
           applyTipHighlights();
           updateTotalsUI();
           
+          if (!tipAgreed && tipAmount > 0) {
+            setSelMsg("");
+            return;
+          }
+
           setPaymentButtonsDisabled(true);
           setSaving(true);
-          setSelMsg("Updating total...");
+          setSelMsg("");
 
-          const tip = {
-            mode: tipMode,
-            preset_label: null,
-            amount: tipAmount
-          };
+          const tip = buildTipPayload();
 
           const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
 
@@ -3395,7 +3721,7 @@
 
           setSaving(false);
           setPaymentButtonsDisabled(false);
-          setSelMsg("Updated.");
+          setSelMsg("");
           
           // If a new client_secret was returned, update Stripe Elements gracefully
           if (result.client_secret && paymentElement) {
@@ -3410,7 +3736,54 @@
           tipMode = prev.tipMode;
           tipPresetLabel = prev.tipPresetLabel;
           tipAmount = prev.tipAmount;
+          tipAgreed = prev.tipAgreed;
           applyTipHighlights();
+          updateTotalsUI();
+          setSaving(false);
+          setPaymentButtonsDisabled(false);
+          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+    }
+
+    const tipStepButtons = Array.from(document.querySelectorAll(".baTipCustomBtn"));
+    if (tipCustom && tipStepButtons.length) {
+      tipStepButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          if (tipCustom.disabled) return;
+          const step = Number(btn.getAttribute("data-tip-step") || 0);
+          const current = tipCustom.value === "" ? 0 : Number(tipCustom.value);
+          const next = Math.max(0, Math.min(1000, current + step));
+          tipCustom.value = String(next);
+          tipCustom.dispatchEvent(new Event("blur"));
+        });
+      });
+    }
+
+    const tipAgree = document.getElementById("baTipAgree");
+    if (tipAgree) {
+      tipAgree.addEventListener("change", async () => {
+        if (selectionLocked || isExpired) return;
+        tipAgreed = !!tipAgree.checked;
+        updateTotalsUI();
+        setPaymentButtonsDisabled(true);
+        setSaving(true);
+        setSelMsg("");
+        try {
+          const tip = buildTipPayload();
+          const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+          updateTotalsUI();
+          setSaving(false);
+          setPaymentButtonsDisabled(false);
+          setSelMsg("");
+          if (result.client_secret && paymentElement) {
+            try {
+              await mountStripePaymentElement(result.client_secret, true);
+            } catch (remountErr) {
+              console.error("Failed to update Stripe Elements:", remountErr);
+            }
+          }
+        } catch (e) {
           updateTotalsUI();
           setSaving(false);
           setPaymentButtonsDisabled(false);
@@ -3614,7 +3987,7 @@
               optionalServicesRevealed = true;
               
               // Update hint message
-              if (hint) hint.textContent = "Selection locked. Enter your payment details below.";
+              if (hint) hint.textContent = "";
               
               // Scroll to Optional Services section (Stripe is already visible inside)
               try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
@@ -3676,7 +4049,7 @@
         try {
           await enterPaymentStep();
           
-          if (hint) hint.textContent = "Selection locked. Enter your payment details below.";
+          if (hint) hint.textContent = "";
           if (wrap) {
             try { wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
           }
