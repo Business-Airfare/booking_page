@@ -289,6 +289,8 @@
     confirmBtn.disabled = !enabled;
     confirmBtn.style.opacity = enabled ? "1" : ".6";
     confirmBtn.style.cursor = enabled ? "pointer" : "not-allowed";
+    // Use pointer-events to truly prevent clicks when disabled
+    confirmBtn.style.pointerEvents = enabled ? "auto" : "none";
     if (!enabled && msg && !msg.textContent) {
       msg.textContent = "Please enter billing details to continue.";
     }
@@ -297,7 +299,19 @@
   function validateBillingUI(){
     const emailOk = !!(billingEmail && billingEmail.includes("@"));
     const addrOk = !!billingAddressComplete;
-    return emailOk && addrOk;
+    
+    // Check terms and conditions checkbox - ALWAYS required
+    const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+    const termsOk = termsCheckbox ? termsCheckbox.checked : false;
+    
+    // Check tips agreement checkbox - required if a tip is selected
+    // Check if any tip button is active (has tip selected)
+    const tipAgreeCheckbox = document.getElementById("baTipAgree");
+    const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
+    const hasTipSelected = tipBtns.length > 0;
+    const tipsOk = !hasTipSelected || (tipAgreeCheckbox ? tipAgreeCheckbox.checked : false);
+    
+    return emailOk && addrOk && termsOk && tipsOk;
   }
 
   async function mountStripePaymentElement(clientSecret, preserveState = false){
@@ -451,6 +465,11 @@
       }
 
       const checkInterval = 50; // Poll every 50ms
+      let readyCheckCount = 0; // Track consecutive ready checks
+      const requiredReadyChecks = 10; // Require 10 consecutive checks (500ms) to ensure stability
+      let firstStableDetectionTime = null; // Track when we first detected stable iframes
+      const MIN_TIME_AFTER_STABLE = 3500; // Wait at least 3.5 seconds after iframes are stable
+      
       const checkId = setInterval(() => {
         const elapsed = Date.now() - startTime;
         
@@ -468,16 +487,57 @@
           
           if (payMount && linkMount && addrMount) {
             // Check for iframes (Stripe Elements render as iframes)
-            const hasPaymentIframe = payMount.querySelector("iframe") !== null;
-            const hasLinkIframe = linkMount.querySelector("iframe") !== null;
-            const hasAddrIframe = addrMount.querySelector("iframe") !== null;
+            const paymentIframe = payMount.querySelector("iframe");
+            const linkIframe = linkMount.querySelector("iframe");
+            const addrIframe = addrMount.querySelector("iframe");
+            
+            const hasPaymentIframe = paymentIframe !== null;
+            const hasLinkIframe = linkIframe !== null;
+            const hasAddrIframe = addrIframe !== null;
             
             // All three elements should have iframes when ready
             if (hasPaymentIframe && hasLinkIframe && hasAddrIframe) {
-              clearInterval(checkId);
-              // Small additional delay to ensure iframes are fully rendered
-              setTimeout(() => resolve(), 100);
-              return;
+              // Verify iframes are actually loaded (not just present)
+              // Check if iframes have dimensions (loaded iframes have width/height)
+              const paymentLoaded = paymentIframe.offsetWidth > 0 && paymentIframe.offsetHeight > 0;
+              const linkLoaded = linkIframe.offsetWidth > 0 && linkIframe.offsetHeight > 0;
+              const addrLoaded = addrIframe.offsetWidth > 0 && addrIframe.offsetHeight > 0;
+              
+              // All iframes must be loaded for consecutive checks to count
+              if (paymentLoaded && linkLoaded && addrLoaded) {
+                // Track when we first detected stable iframes
+                if (firstStableDetectionTime === null) {
+                  firstStableDetectionTime = Date.now();
+                }
+                
+                readyCheckCount++;
+                // Require multiple consecutive ready checks to ensure stability (500ms)
+                if (readyCheckCount >= requiredReadyChecks) {
+                  // Calculate how long we've waited since first stable detection
+                  const timeSinceStable = Date.now() - firstStableDetectionTime;
+                  const remainingWait = Math.max(0, MIN_TIME_AFTER_STABLE - timeSinceStable);
+                  
+                  if (remainingWait === 0) {
+                    // We've waited long enough - resolve immediately
+                    clearInterval(checkId);
+                    resolve();
+                    return;
+                  } else {
+                    // Wait a bit longer
+                    clearInterval(checkId);
+                    setTimeout(() => resolve(), remainingWait);
+                    return;
+                  }
+                }
+              } else {
+                // Reset counter if any iframe is not ready
+                readyCheckCount = 0;
+                firstStableDetectionTime = null;
+              }
+            } else {
+              // Reset counter if iframes not present
+              readyCheckCount = 0;
+              firstStableDetectionTime = null;
             }
           }
         }
@@ -496,6 +556,20 @@
 
   async function confirmStripePayment(){
     if (!stripe || !elements) throw new Error("Stripe Elements not initialized");
+
+    // HARD VALIDATION: Check all required checkboxes before proceeding
+    const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+    if (!termsCheckbox || !termsCheckbox.checked) {
+      throw new Error("Please accept the Terms and Conditions to proceed with payment.");
+    }
+    
+    // Check tips agreement if tip is selected
+    const tipAgreeCheckbox = document.getElementById("baTipAgree");
+    const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
+    const hasTipSelected = tipBtns.length > 0;
+    if (hasTipSelected && (!tipAgreeCheckbox || !tipAgreeCheckbox.checked)) {
+      throw new Error("Please accept the tip agreement to proceed with payment.");
+    }
 
     if (!linkAuthElement) throw new Error("Email element not initialized.");
     if (!billingEmail) throw new Error("Please enter a valid billing email.");
@@ -2566,6 +2640,60 @@
     line-height: 1.4;
     display: none;
     width: 100%;
+  }
+
+  .baTermsAgreeSection{
+    margin-top: 20px;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: #fff;
+    transition: all 0.2s ease;
+  }
+  .baTermsAgreeSection.is-warn{
+    background: #FDE8E8;
+    border-color: #D0A7A7;
+  }
+  .baTermsAgreeLabel{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .baTermsAgreeCheck{
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: #d1ad54;
+  }
+  .baTermsAgreeSection.is-warn .baTermsAgreeCheck{
+    border: 2px solid #C34A4A;
+  }
+  .baTermsAgreeText{
+    font-size: 13px;
+    line-height: 1.6;
+    color: #333;
+  }
+  .baTermsLink{
+    color: #0000FF;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .baTermsAgreeWarning{
+    margin-top: 12px;
+    padding: 10px;
+    background: #C34A4A;
+    color: #fff;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    display: none;
+  }
+  .baTermsAgreeSection.is-warn .baTermsAgreeWarning{
+    display: block;
     box-sizing: border-box;
     flex: 0 0 100%;
   }
@@ -3238,6 +3366,16 @@
               </button>
 
               <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
+
+              <div id="baTermsAgreeSection" class="baTermsAgreeSection">
+                <label class="baTermsAgreeLabel">
+                  <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
+                  <span class="baTermsAgreeText">
+                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="#" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="#" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="#" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
+                  </span>
+                </label>
+                <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
+              </div>
             </div>
           </div>
         </div>
@@ -3341,9 +3479,17 @@
       const el1 = document.getElementById("baStickyClock");
       const payBtn = document.getElementById("baPayBtn");
       const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+      
+      // Don't update button text if it's in "Preparing..." state or if sticky bar is hidden (sections revealed)
+      const stickyBar = root.querySelector(".baSticky");
+      const isStickyBarHidden = stickyBar && stickyBar.style.display === "none";
+      const currentBtnText = btnTitle ? (btnTitle.textContent || btnTitle.innerHTML || "") : "";
+      const isPreparing = currentBtnText.includes("Preparing") || currentBtnText.includes("Preparing...");
+      const shouldSkipButtonUpdate = isPreparing || isStickyBarHidden;
+      
       if (t === "00:00:00") {
         if (el1) el1.style.display = "none";
-        if (btnTitle) btnTitle.textContent = "CONTACT YOUR AGENT";
+        if (btnTitle && !shouldSkipButtonUpdate) btnTitle.textContent = "CONTACT YOUR AGENT";
         if (payBtn) {
           payBtn.disabled = true;
           payBtn.style.opacity = ".55";
@@ -3354,7 +3500,8 @@
           el1.textContent = t;
           el1.style.display = "";
         }
-        if (btnTitle) btnTitle.textContent = "BOOK";
+        // Only update button text to "BOOK" if not in "Preparing..." state and sticky bar is still visible
+        if (btnTitle && !shouldSkipButtonUpdate) btnTitle.textContent = "BOOK";
       }
     }
     function startClock(){
@@ -3397,6 +3544,8 @@
           : "";
         tipAgreeMsg.style.display = shouldWarn ? "block" : "none";
       }
+      // Update Pay Now button state when tip agreement changes
+      setConfirmEnabled(validateBillingUI());
     }
 
     function buildTipPayload(){
@@ -3642,7 +3791,7 @@
             tipAgreed = false;
 
             const tipCustom = document.getElementById("baTipCustom");
-            if (tipCustom) tipCustom.value = "";
+            if (tipCustom) tipCustom.value = amount > 0 ? (amount / 100).toFixed(2) : "";
             applyTipHighlights();
             updateTotalsUI();
             
@@ -3766,6 +3915,7 @@
         if (selectionLocked || isExpired) return;
         tipAgreed = !!tipAgree.checked;
         updateTotalsUI();
+        updateTipAgreementUI(); // This now also updates Pay Now button state
         setPaymentButtonsDisabled(true);
         setSaving(true);
         setSelMsg("");
@@ -3773,6 +3923,7 @@
           const tip = buildTipPayload();
           const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
           updateTotalsUI();
+          updateTipAgreementUI(); // Update button state after save
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
@@ -3785,12 +3936,63 @@
           }
         } catch (e) {
           updateTotalsUI();
+          updateTipAgreementUI(); // Update button state on error
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
         }
       });
     }
+
+    // Terms agreement checkbox handler
+    function updateTermsAgreementUI() {
+      const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+      const termsSection = document.getElementById("baTermsAgreeSection");
+      const termsWarning = document.getElementById("baTermsAgreeWarning");
+      
+      if (!termsCheckbox || !termsSection) return;
+      
+      const isChecked = termsCheckbox.checked;
+      const shouldWarn = !isChecked;
+      
+      // Update section styling
+      if (shouldWarn) {
+        termsSection.classList.add("is-warn");
+      } else {
+        termsSection.classList.remove("is-warn");
+      }
+      
+      // Update button state
+      setConfirmEnabled(validateBillingUI());
+    }
+
+    const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+    if (termsCheckbox) {
+      termsCheckbox.addEventListener("change", () => {
+        updateTermsAgreementUI();
+      });
+    }
+
+    // Wire up terms links (if they exist in the new section)
+    const termsLinks = document.querySelectorAll(".baTermsLink");
+    termsLinks.forEach(link => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        const linkText = link.textContent.trim();
+        if (linkText.includes("Terms and Conditions")) {
+          createPopup("Terms and Conditions", "<p>Terms and Conditions content will be displayed here.</p>");
+        } else if (linkText.includes("Privacy Policy")) {
+          createPopup("Privacy Policy", "<p>Privacy Policy content will be displayed here.</p>");
+        } else if (linkText.includes("airline liability limitations")) {
+          createPopup("Airline Liability Limitations", "<p>Airline liability limitations content will be displayed here.</p>");
+        } else if (linkText.includes("valid travel document")) {
+          createPopup("Valid Travel Documents", "<p>Information about valid travel documents will be displayed here.</p>");
+        }
+      });
+    });
+
+    // Initialize terms UI state
+    updateTermsAgreementUI();
 
     // Popup functionality for Terms & Conditions and Read More
     function createPopup(title, content) {
@@ -3873,6 +4075,8 @@
           // Already mounted and ready - ensure wrap is visible
           if (wrap) wrap.style.display = "block";
           if (msg) msg.textContent = "";
+          // Ensure terms checkbox validation is applied (button disabled if unchecked)
+          updateTermsAgreementUI();
           return Promise.resolve();
         }
       }
@@ -3906,11 +4110,11 @@
         // Mount Stripe Elements (but don't show wrap yet - caller will reveal after ready)
         await mountStripePaymentElement(payload.client_secret, false);
 
-        // Wait for Stripe Elements to be fully ready
+        // Wait for Stripe Elements iframes to appear (basic check)
         await waitForStripeReady(8000);
 
-        // Now show the wrap and clear message
-        if (wrap) wrap.style.display = "block";
+        // Don't show wrap yet - wait longer for internal content to load
+        // The wrap will be shown after sections are revealed and we've waited additional time
         if (msg) msg.textContent = "";
 
         return Promise.resolve();
@@ -3975,31 +4179,65 @@
           // DO NOT hide sticky bar yet - keep it visible during loading
 
           try {
-            // Initialize payment step and wait for Stripe to be ready
+            // Initialize payment step and wait for Stripe iframes to appear
+            // Note: Don't reveal any sections yet - we'll reveal everything together after Stripe is fully loaded
             await enterPaymentStep();
 
-            // Stripe is now ready - NOW hide sticky bar and reveal section
-            if (stickyBar) stickyBar.style.display = "none";
+            // Wait additional time for Stripe Elements' internal content to fully load
+            // This ensures when we reveal sections, Stripe content is ready (not loading skeletons)
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            // Reveal the section and scroll to it
+            // NOW reveal everything at once: TCS section, Tips section, and Stripe payment elements
+            // All sections are revealed together after Stripe is fully loaded
             if (extrasSection) {
               extrasSection.style.display = "block";
               optionalServicesRevealed = true;
               
+              // Preselect "Excellent" tip and uncheck "I agree" checkbox
+              const excellentPreset = tipPresets.find(p => String(p.label).toLowerCase() === "excellent");
+              if (excellentPreset) {
+                const excellentAmount = Math.round(Number(excellentPreset.amount) || 0);
+                tipMode = "preset";
+                tipPresetLabel = excellentPreset.label;
+                tipAmount = excellentAmount;
+                tipAgreed = false;
+                
+                // Update custom tip input to show the amount
+                const tipCustom = document.getElementById("baTipCustom");
+                if (tipCustom) {
+                  tipCustom.value = excellentAmount > 0 ? (excellentAmount / 100).toFixed(2) : "";
+                }
+                
+                // Uncheck "I agree" checkbox
+                const tipAgree = document.getElementById("baTipAgree");
+                if (tipAgree) {
+                  tipAgree.checked = false;
+                }
+                
+                // Update UI highlights and totals
+                applyTipHighlights();
+                updateTipAgreementUI();
+                updateTotalsUI();
+              }
+              
               // Update hint message
               if (hint) hint.textContent = "";
               
-              // Scroll to Optional Services section (Stripe is already visible inside)
+              // Scroll to Optional Services section (all sections now visible)
               try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
             }
 
-            // Re-enable button and restore text (though it won't be used again in normal flow)
-            if (payBtn) {
-              payBtn.disabled = false;
-              payBtn.style.opacity = "1";
-              payBtn.style.cursor = "pointer";
-            }
-            if (btnTitle) btnTitle.innerHTML = originalBtnText;
+            // Show the Stripe wrap - elements should be fully loaded by now
+            if (wrap) wrap.style.display = "block";
+            
+            // Initialize terms checkbox UI state now that the wrap is visible
+            // This ensures the button state is correct based on checkbox (disabled if unchecked)
+            updateTermsAgreementUI();
+
+            // NOW hide sticky bar while button is still in "Preparing..." state
+            // This ensures the button never shows "BOOK" again - it disappears in "Preparing..." state
+            // Note: We don't restore button state here since sticky bar disappears, so button is not visible anyway
+            if (stickyBar) stickyBar.style.display = "none";
 
           } catch (e) {
             // Payment initialization failed - show error with retry
@@ -4088,11 +4326,25 @@
     // The enterPaymentStep() function now handles payment initialization directly
 
     if (confirmBtn) {
-      confirmBtn.addEventListener("click", async () => {
+      confirmBtn.addEventListener("click", async (e) => {
+        // HARD VALIDATION: Prevent payment if button is disabled or validation fails
+        if (confirmBtn.disabled || !validateBillingUI()) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        
         try {
+          // Double-check validation before proceeding
+          if (!validateBillingUI()) {
+            if (msg) msg.textContent = "Please complete all required fields and accept the terms.";
+            return;
+          }
+          
           confirmBtn.disabled = true;
           confirmBtn.style.opacity = ".6";
           confirmBtn.style.cursor = "not-allowed";
+          confirmBtn.style.pointerEvents = "none";
           if (msg) msg.textContent = "Processing payment…";
 
           const pi = await confirmStripePayment();
@@ -4115,9 +4367,12 @@
 
         } catch (e) {
           if (msg) msg.textContent = "Payment error: " + (e && e.message ? e.message : String(e));
-          confirmBtn.disabled = false;
-          confirmBtn.style.opacity = "1";
-          confirmBtn.style.cursor = "pointer";
+          // Only re-enable if validation passes
+          const isValid = validateBillingUI();
+          confirmBtn.disabled = !isValid;
+          confirmBtn.style.opacity = isValid ? "1" : ".6";
+          confirmBtn.style.cursor = isValid ? "pointer" : "not-allowed";
+          confirmBtn.style.pointerEvents = isValid ? "auto" : "none";
         }
       });
     }
