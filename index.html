@@ -16,6 +16,7 @@
   const UPDATE_SELECTION = SUPABASE_FUNCTIONS_BASE + "/update_selection";
   const START_PAYMENT = SUPABASE_FUNCTIONS_BASE + "/start_payment";
   const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
+  const RECORD_ACCEPTANCE = SUPABASE_FUNCTIONS_BASE + "/record_acceptance";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -277,6 +278,11 @@
 
   let billingEmail = "";
   let billingAddressComplete = false;
+  
+  // ---------- Acceptance state (global scope so validateBillingUI can access it) ----------
+  let acceptanceCompleted = false;
+  let acceptanceInProgress = false;
+  let tipSaveError = null; // Track if tip save failed (global scope for validateBillingUI)
 
   function normalizePhone(s){
     return String(s || "").trim();
@@ -311,7 +317,31 @@
     const hasTipSelected = tipBtns.length > 0;
     const tipsOk = !hasTipSelected || (tipAgreeCheckbox ? tipAgreeCheckbox.checked : false);
     
-    return emailOk && addrOk && termsOk && tipsOk;
+    // Check if tip save failed - block payment if there's a tip save error
+    // Only block if tip is selected (hasTipSelected), not if tip is zero
+    const tipSaveOk = !hasTipSelected || !tipSaveError;
+    
+    // Acceptance must be completed before payment can proceed
+    // Note: acceptanceCompleted is set by updateTermsAgreementUI/updateTipAgreementUI
+    const acceptanceOk = acceptanceCompleted;
+    
+    const result = emailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
+    
+    // Debug logging - always log to help diagnose issues
+    console.log("[BOOK_FLOW] validateBillingUI result:", {
+      result,
+      emailOk,
+      addrOk,
+      termsOk,
+      tipsOk,
+      acceptanceOk,
+      acceptanceCompleted,
+      billingEmail: billingEmail ? (billingEmail.substring(0, 3) + "***") : null,
+      billingAddressComplete,
+      timestamp: new Date().toISOString()
+    });
+    
+    return result;
   }
 
   async function mountStripePaymentElement(clientSecret, preserveState = false){
@@ -555,8 +585,8 @@
   }
 
   async function confirmStripePayment(){
-    if (!stripe || !elements) throw new Error("Stripe Elements not initialized");
-
+    console.log("[BOOK_FLOW] Pay button clicked - will record acceptance, call start_payment, then confirm with Stripe");
+    
     // HARD VALIDATION: Check all required checkboxes before proceeding
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     if (!termsCheckbox || !termsCheckbox.checked) {
@@ -571,6 +601,64 @@
       throw new Error("Please accept the tip agreement to proceed with payment.");
     }
 
+    // Ensure Stripe Elements are initialized
+    if (!stripe || !elements || !paymentElement) {
+      console.log("[BOOK_FLOW] Stripe Elements not initialized, calling initializePayment");
+      await initializePayment();
+    } else {
+      console.log("[BOOK_FLOW] Stripe Elements already initialized, checking acceptance state");
+      // If Stripe is already initialized but acceptance not recorded, record it now
+      if (!acceptanceCompleted) {
+        console.log("[BOOK_FLOW] Acceptance not completed, recording now");
+        try {
+          const acceptRes = await fetch(RECORD_ACCEPTANCE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              public_id: publicId, 
+              tip_ack: true, 
+              terms_accepted: true 
+            })
+          });
+          const acceptPayload = await acceptRes.json().catch(() => ({}));
+          console.log("[BOOK_FLOW] record_acceptance response", {
+            status: acceptRes.status,
+            ok: acceptRes.ok,
+            payload: acceptPayload
+          });
+          if (!acceptRes.ok) {
+            throw new Error(`Failed to record acceptance: ${acceptPayload?.error || acceptRes.status}`);
+          }
+          acceptanceCompleted = true;
+          
+          // Update PaymentIntent metadata with acceptance info
+          // This ensures the PaymentIntent has correct acceptance metadata before confirmation
+          console.log("[BOOK_FLOW] Updating PaymentIntent metadata with acceptance info");
+          try {
+            const updateRes = await fetch(START_PAYMENT, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ public_id: publicId })
+            });
+            const updatePayload = await updateRes.json().catch(() => ({}));
+            if (updateRes.ok && updatePayload.client_secret) {
+              // PaymentIntent was updated, but we don't need to remount Stripe Elements
+              // The client_secret should be the same, so existing elements will work
+              console.log("[BOOK_FLOW] PaymentIntent metadata updated successfully");
+            } else {
+              console.warn("[BOOK_FLOW] Could not update PaymentIntent metadata, but continuing with payment");
+            }
+          } catch (updateErr) {
+            console.warn("[BOOK_FLOW] Error updating PaymentIntent metadata:", updateErr);
+            // Don't throw - we can still proceed with payment
+          }
+        } catch (acceptErr) {
+          console.error("[BOOK_FLOW] record_acceptance error", acceptErr);
+          throw new Error(`Acceptance required: ${acceptErr.message}`);
+        }
+      }
+    }
+
     if (!linkAuthElement) throw new Error("Email element not initialized.");
     if (!billingEmail) throw new Error("Please enter a valid billing email.");
 
@@ -583,6 +671,17 @@
     const billingName = String((addr.value && addr.value.name) ? addr.value.name : "").trim();
     if (billingName.length < 2) throw new Error("Please enter your full name in the billing address section.");
 
+    console.log("[BOOK_FLOW] Confirming payment with Stripe", {
+      hasElements: !!elements,
+      hasPaymentElement: !!paymentElement,
+      currentClientSecret: currentClientSecret
+    });
+    
+    // Ensure we have valid Stripe Elements before confirming
+    if (!elements || !paymentElement) {
+      throw new Error("Stripe Elements not properly initialized. Please refresh the page.");
+    }
+    
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
@@ -599,7 +698,16 @@
       redirect: "if_required"
     });
 
-    if (error) throw new Error(error.message || "Payment failed");
+    if (error) {
+      console.error("[BOOK_FLOW] Stripe confirmPayment error:", error);
+      throw new Error(error.message || "Payment failed");
+    }
+    
+    console.log("[BOOK_FLOW] Payment confirmed successfully", {
+      status: paymentIntent?.status,
+      id: paymentIntent?.id
+    });
+    
     return paymentIntent;
   }
 
@@ -609,6 +717,22 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ public_id, ...patch })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errorMsg = data?.error || ("HTTP " + res.status);
+      const details = data?.details ? `: ${data.details}` : "";
+      throw new Error(errorMsg + details);
+    }
+    return data;
+  }
+
+  // ---------- record acceptance ----------
+  async function recordAcceptance(public_id, tip_ack, terms_accepted){
+    const res = await fetch(RECORD_ACCEPTANCE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ public_id, tip_ack, terms_accepted })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -1263,9 +1387,15 @@
     // Selection UI values from backend (mutable)
     let careSelected = !!(data.selection && data.selection.care_selected);
     let tipMode = String(data.selection?.tip_mode || "none");
+    
+    // Acceptance state tracking (update global variables declared above)
+    acceptanceCompleted = !!(data.acceptance && data.acceptance.acceptance_completed);
+    acceptanceInProgress = false;
+    const termsUrl = data.acceptance?.terms_url || "https://www.business-airfare.com/payment-terms";
     let tipPresetLabel = data.selection?.tip_preset_label ? String(data.selection.tip_preset_label) : "";
     let tipAmount = Number(data.selection?.tip_amount ?? 0) || 0;
     let tipAgreed = (Number(tipAmount) || 0) > 0;
+    // tipSaveError is declared in global scope above for validateBillingUI() access
 
     const tipMin = 0;
     const tipMax = 100000; // $1000
@@ -3278,7 +3408,7 @@
               <label class="baCareRadio">
                 <input type="radio" name="baCareOption" value="yes" id="baCareYes" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
                 <span class="baCareRadio__text">
-                  <strong>Yes</strong>, I would like to add Travel Care Service to my purchase for <strong>${fmtMoney(careCents)}</strong> and I confirm that I have read and agreed to the <a href="#" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a>
+                  <strong>Yes</strong>, I would like to add Travel Care Service to my purchase for <strong>${fmtMoney(careCents)}</strong> and I confirm that I have read and agreed to the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a>
                 </span>
               </label>
               <label class="baCareRadio">
@@ -3336,6 +3466,7 @@
                   </div>
                 </div>
                 <div id="baTipAgreeMsg" class="baTipAgreeWarning"></div>
+                <div id="baTipErrorMsg" style="display:none;color:#b00020;font-size:13px;margin-top:8px;"></div>
               </div>
             </div>
           </div>
@@ -3371,7 +3502,7 @@
                 <label class="baTermsAgreeLabel">
                   <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
                   <span class="baTermsAgreeText">
-                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="#" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="#" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="#" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
+                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="#" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
                   </span>
                 </label>
                 <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
@@ -3531,7 +3662,26 @@
       }
     }
 
-    function updateTipAgreementUI(){
+    function showTipError(message) {
+      tipSaveError = message;
+      const tipErrorMsg = document.getElementById("baTipErrorMsg");
+      if (tipErrorMsg) {
+        tipErrorMsg.textContent = message || "";
+        tipErrorMsg.style.display = message ? "block" : "none";
+      }
+      setConfirmEnabled(validateBillingUI());
+    }
+
+    function clearTipError() {
+      tipSaveError = null;
+      const tipErrorMsg = document.getElementById("baTipErrorMsg");
+      if (tipErrorMsg) {
+        tipErrorMsg.textContent = "";
+        tipErrorMsg.style.display = "none";
+      }
+    }
+
+    async function updateTipAgreementUI(){
       const tipAgree = document.getElementById("baTipAgree");
       const tipAgreeRow = document.querySelector(".baTipAgreeRow");
       const tipAgreeMsg = document.getElementById("baTipAgreeMsg");
@@ -3544,21 +3694,69 @@
           : "";
         tipAgreeMsg.style.display = shouldWarn ? "block" : "none";
       }
-      // Update Pay Now button state when tip agreement changes
+      
+      // If tip is unchecked or tip is selected but checkbox unchecked, reset acceptance
+      if (shouldWarn) {
+        acceptanceCompleted = false;
+      } else {
+        // Check if both checkboxes are checked, then call record_acceptance
+        const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+        const termsChecked = termsCheckbox && termsCheckbox.checked;
+        
+        if (termsChecked && !acceptanceInProgress && !acceptanceCompleted) {
+          acceptanceInProgress = true;
+          try {
+            console.log("[BOOK_FLOW] Recording acceptance from tip checkbox", {
+              termsChecked: true,
+              tipChecked: true
+            });
+            // Always pass true for tip_ack - it means "I acknowledge tips/extra charges"
+            await recordAcceptance(publicId, true, true);
+            acceptanceCompleted = true;
+            console.log("[BOOK_FLOW] Acceptance recorded successfully");
+            
+            // Immediately update button state after successful acceptance
+            setConfirmEnabled(validateBillingUI());
+          } catch (e) {
+            console.error("[BOOK_FLOW] Failed to record acceptance:", e);
+            // Don't uncheck the checkbox on error - just mark acceptance as incomplete
+            // The user can try again or the error will be handled when they click Pay
+            acceptanceCompleted = false;
+            // Show error message if msg element exists
+            const msg = document.getElementById("baStripeMsg");
+            if (msg) {
+              msg.textContent = "Could not record acceptance. Please try again or contact support.";
+              msg.style.color = "#b00020";
+            }
+            // Update button state even on error
+            setConfirmEnabled(validateBillingUI());
+          } finally {
+            acceptanceInProgress = false;
+          }
+        } else if (!termsChecked) {
+          // If terms checkbox is not checked, reset acceptance
+          // (but don't uncheck the tip checkbox - user might check terms checkbox next)
+          acceptanceCompleted = false;
+          setConfirmEnabled(validateBillingUI());
+        }
+      }
+      
+      // Always update Pay Now button state when tip agreement changes
       setConfirmEnabled(validateBillingUI());
     }
 
     function buildTipPayload(){
-      const selected = selectedTipAmount();
-      const applied = appliedTipAmount();
-      if (!tipAgreed || applied <= 0 || tipMode === "none") {
+      // Save tip selection based on tipMode and tipAmount, regardless of tipAgreed checkbox
+      // The tipAgreed checkbox is for UI validation/payment flow, not for what gets saved to DB
+      if (tipMode === "none" || selectedTipAmount() <= 0) {
         return { mode: "none", preset_label: null, amount: 0 };
       }
       const preset = tipMode === "preset" ? resolvedPreset() : null;
+      const amount = Number.isFinite(selectedTipAmount()) ? selectedTipAmount() : 0;
       return {
         mode: tipMode || "none",
         preset_label: (tipMode === "preset" ? ((preset && preset.label) || tipPresetLabel || null) : null),
-        amount: Number.isFinite(applied) ? applied : 0
+        amount: amount
       };
     }
 
@@ -3801,7 +3999,10 @@
 
             try {
               const tip = buildTipPayload();
+              console.log("[TIP_SELECTION] Saving tip preset selection:", tip);
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              console.log("[TIP_SELECTION] Tip preset saved successfully:", result);
+              clearTipError();
               updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
@@ -3821,7 +4022,10 @@
               applyTipHighlights(); updateTotalsUI();
               setSaving(false);
               setPaymentButtonsDisabled(false);
-              setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+              const errorMsg = "Could not save tip selection. Please try again.";
+              setSelMsg(errorMsg);
+              showTipError(errorMsg);
+              console.error("[TIP_SELECTION] Failed to save tip preset:", e);
             }
             return;
           }
@@ -3862,15 +4066,39 @@
           setSelMsg("");
 
           const tip = buildTipPayload();
+          console.log("[TIP_SELECTION] Saving custom tip selection:", tip);
 
-          const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+          try {
+            const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+            console.log("[TIP_SELECTION] Custom tip saved successfully:", result);
+            clearTipError();
 
-          applyTipHighlights();
-          updateTotalsUI();
+            applyTipHighlights();
+            updateTotalsUI();
 
-          setSaving(false);
-          setPaymentButtonsDisabled(false);
-          setSelMsg("");
+            setSaving(false);
+            setPaymentButtonsDisabled(false);
+            setSelMsg("");
+            
+            // If a new client_secret was returned, update Stripe Elements gracefully
+            if (result.client_secret && paymentElement) {
+              try {
+                await mountStripePaymentElement(result.client_secret, true);
+              } catch (remountErr) {
+                console.error("Failed to update Stripe Elements:", remountErr);
+              }
+            }
+          } catch (e) {
+            // REVERT on error
+            tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
+            applyTipHighlights(); updateTotalsUI();
+            setSaving(false);
+            setPaymentButtonsDisabled(false);
+            const errorMsg = "Could not save tip selection. Please try again.";
+            setSelMsg(errorMsg);
+            showTipError(errorMsg);
+            console.error("[TIP_SELECTION] Failed to save custom tip:", e);
+          }
           
           // If a new client_secret was returned, update Stripe Elements gracefully
           if (result.client_secret && paymentElement) {
@@ -3921,7 +4149,10 @@
         setSelMsg("");
         try {
           const tip = buildTipPayload();
+          console.log("[TIP_SELECTION] Saving tip checkbox confirmation:", tip);
           const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+          console.log("[TIP_SELECTION] Tip checkbox save successful:", result);
+          clearTipError();
           updateTotalsUI();
           updateTipAgreementUI(); // Update button state after save
           setSaving(false);
@@ -3939,13 +4170,16 @@
           updateTipAgreementUI(); // Update button state on error
           setSaving(false);
           setPaymentButtonsDisabled(false);
-          setSelMsg("Could not update: " + (e && e.message ? e.message : String(e)));
+          const errorMsg = "Could not save tip selection. Please try again.";
+          setSelMsg(errorMsg);
+          showTipError(errorMsg);
+          console.error("[TIP_SELECTION] Failed to save tip checkbox:", e);
         }
       });
     }
 
     // Terms agreement checkbox handler
-    function updateTermsAgreementUI() {
+    async function updateTermsAgreementUI() {
       const termsCheckbox = document.getElementById("baTermsAgreeCheck");
       const termsSection = document.getElementById("baTermsAgreeSection");
       const termsWarning = document.getElementById("baTermsAgreeWarning");
@@ -3958,29 +4192,84 @@
       // Update section styling
       if (shouldWarn) {
         termsSection.classList.add("is-warn");
+        acceptanceCompleted = false;
       } else {
         termsSection.classList.remove("is-warn");
+        
+        // Check if both checkboxes are checked, then call record_acceptance
+        const tipAgreeCheckbox = document.getElementById("baTipAgree");
+        const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
+        const hasTipSelected = tipBtns.length > 0;
+        const tipChecked = !hasTipSelected || (tipAgreeCheckbox && tipAgreeCheckbox.checked);
+        
+        // Both checkboxes must be checked to record acceptance
+        // tip_ack should always be true when recording (it means "I acknowledge tips/extra charges")
+        if (tipChecked && !acceptanceInProgress && !acceptanceCompleted) {
+          acceptanceInProgress = true;
+          try {
+            console.log("[BOOK_FLOW] Recording acceptance from terms checkbox", {
+              termsChecked: true,
+              tipChecked,
+              hasTipSelected
+            });
+            // Always pass true for tip_ack - it means "I acknowledge tips/extra charges" regardless of whether tip is selected
+            await recordAcceptance(publicId, true, true);
+            acceptanceCompleted = true;
+            console.log("[BOOK_FLOW] Acceptance recorded successfully");
+            
+            // Immediately update button state after successful acceptance
+            setConfirmEnabled(validateBillingUI());
+          } catch (e) {
+            console.error("[BOOK_FLOW] Failed to record acceptance:", e);
+            // Don't uncheck the checkbox on error - just mark acceptance as incomplete
+            // The user can try again or the error will be handled when they click Pay
+            acceptanceCompleted = false;
+            // Show error message if msg element exists
+            const msg = document.getElementById("baStripeMsg");
+            if (msg) {
+              msg.textContent = "Could not record acceptance. Please try again or contact support.";
+              msg.style.color = "#b00020";
+            }
+            // Update button state even on error
+            setConfirmEnabled(validateBillingUI());
+          } finally {
+            acceptanceInProgress = false;
+          }
+        } else if (!tipChecked && hasTipSelected) {
+          // If tip checkbox is not checked but tip is selected, reset acceptance
+          // (but don't uncheck the terms checkbox - user might check tip checkbox next)
+          acceptanceCompleted = false;
+          setConfirmEnabled(validateBillingUI());
+        }
       }
       
-      // Update button state
+      // Always update button state
       setConfirmEnabled(validateBillingUI());
     }
 
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     if (termsCheckbox) {
-      termsCheckbox.addEventListener("change", () => {
-        updateTermsAgreementUI();
+      termsCheckbox.addEventListener("change", async () => {
+        await updateTermsAgreementUI();
       });
     }
 
     // Wire up terms links (if they exist in the new section)
+    // Update links to use terms_url from server if available
     const termsLinks = document.querySelectorAll(".baTermsLink");
     termsLinks.forEach(link => {
+      const linkText = link.textContent.trim();
+      if (linkText.includes("Terms and Conditions")) {
+        // Set href to terms_url from server
+        link.setAttribute("href", termsUrl);
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer");
+      }
       link.addEventListener("click", (e) => {
         e.preventDefault();
-        const linkText = link.textContent.trim();
         if (linkText.includes("Terms and Conditions")) {
-          createPopup("Terms and Conditions", "<p>Terms and Conditions content will be displayed here.</p>");
+          // Open in new tab
+          window.open(termsUrl, "_blank", "noopener,noreferrer");
         } else if (linkText.includes("Privacy Policy")) {
           createPopup("Privacy Policy", "<p>Privacy Policy content will be displayed here.</p>");
         } else if (linkText.includes("airline liability limitations")) {
@@ -4029,9 +4318,13 @@
     const readMoreLink = document.getElementById("baReadMoreLink");
 
     if (termsLink) {
+      // Update href to terms_url from server
+      termsLink.setAttribute("href", termsUrl);
+      termsLink.setAttribute("target", "_blank");
+      termsLink.setAttribute("rel", "noopener noreferrer");
       termsLink.addEventListener("click", (e) => {
         e.preventDefault();
-        createPopup("Terms and Conditions", "<p>Terms and Conditions content will be displayed here.</p>");
+        window.open(termsUrl, "_blank", "noopener,noreferrer");
       });
     }
 
@@ -4064,19 +4357,100 @@
     const stickyBar = root.querySelector(".baSticky");
     const extrasSection = document.getElementById("baExtras");
 
-    // Shared function to enter payment step (previously triggered by "Continue to Payment" button)
-    // This function is idempotent - it will not re-initialize Stripe if already mounted
-    // Returns a promise that resolves when Stripe Elements are fully ready
-    async function enterPaymentStep() {
-      // Guard: If Stripe Elements are already mounted and ready, ensure wrap is visible and return
+    // Function to reveal payment UI sections (TCS, tips, Stripe area)
+    // Attempts to initialize Stripe Elements, but handles acceptance_required gracefully
+    async function revealPaymentUI() {
+      console.log("[BOOK_FLOW] revealPaymentUI called - revealing UI and attempting to initialize Stripe Elements");
+      
+      if (extrasSection) {
+        extrasSection.style.display = "block";
+        
+        // Preselect "Excellent" tip and uncheck "I agree" checkbox
+        const excellentPreset = tipPresets.find(p => String(p.label).toLowerCase() === "excellent");
+        if (excellentPreset) {
+          const excellentAmount = Math.round(Number(excellentPreset.amount) || 0);
+          tipMode = "preset";
+          tipPresetLabel = excellentPreset.label;
+          tipAmount = excellentAmount;
+          tipAgreed = false;
+          
+          // Update custom tip input to show the amount
+          const tipCustom = document.getElementById("baTipCustom");
+          if (tipCustom) {
+            tipCustom.value = excellentAmount > 0 ? (excellentAmount / 100).toFixed(2) : "";
+          }
+          
+          // Uncheck "I agree" checkbox
+          const tipAgree = document.getElementById("baTipAgree");
+          if (tipAgree) {
+            tipAgree.checked = false;
+          }
+          
+          // Update UI highlights and totals
+          applyTipHighlights();
+          updateTipAgreementUI();
+          updateTotalsUI();
+        }
+        
+        // Show the Stripe wrap
+        if (wrap) wrap.style.display = "block";
+        
+        // Initialize Stripe Elements immediately when Book is clicked
+        // This allows users to see and fill in the payment form
+        try {
+          console.log("[BOOK_FLOW] Calling start_payment to initialize Stripe Elements");
+          const res = await fetch(START_PAYMENT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ public_id: publicId })
+          });
+          
+          const payload = await res.json().catch(() => ({}));
+          
+          if (res.ok && payload.client_secret) {
+            // Success - initialize Stripe Elements
+            console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
+            await mountStripePaymentElement(payload.client_secret, false);
+            await waitForStripeReady(8000);
+            if (msg) msg.textContent = "";
+            console.log("[BOOK_FLOW] Stripe Elements initialized successfully");
+          } else {
+            // Error - show message
+            const errorMsg = payload?.error || `HTTP ${res.status}`;
+            console.error("[BOOK_FLOW] start_payment failed:", errorMsg);
+            if (msg) {
+              msg.textContent = "Could not load payment form. Please refresh the page.";
+              msg.style.color = "#b00020";
+            }
+          }
+        } catch (e) {
+          // Network or other error
+          console.error("[BOOK_FLOW] start_payment error:", e.message);
+          if (msg) {
+            msg.textContent = "Could not load payment form. Please refresh the page.";
+            msg.style.color = "#b00020";
+          }
+        }
+        
+        // Initialize terms checkbox UI state
+        updateTermsAgreementUI();
+        
+        // Scroll to Optional Services section
+        try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+      }
+    }
+
+
+    // Function to initialize payment (called only when Pay button is clicked)
+    // This function calls start_payment and initializes Stripe Elements
+    async function initializePayment() {
+      console.log("[BOOK_FLOW] initializePayment called - will call start_payment and initialize Stripe");
+      
+      // Guard: If Stripe Elements are already mounted and ready, return
       if (paymentElement && elements) {
         const payMount = document.getElementById("baStripeMount");
         if (payMount && payMount.querySelector("iframe")) {
-          // Already mounted and ready - ensure wrap is visible
-          if (wrap) wrap.style.display = "block";
-          if (msg) msg.textContent = "";
-          // Ensure terms checkbox validation is applied (button disabled if unchecked)
-          updateTermsAgreementUI();
+          console.log("[BOOK_FLOW] Stripe Elements already initialized");
           return Promise.resolve();
         }
       }
@@ -4093,13 +4467,60 @@
           return Promise.reject(new Error("Passenger validation failed"));
         }
 
+        // Record acceptance before calling start_payment
+        const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+        const tipAgreeCheckbox = document.getElementById("baTipAgree");
+        const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
+        const hasTipSelected = tipBtns.length > 0;
+        const termsChecked = termsCheckbox && termsCheckbox.checked;
+        const tipChecked = !hasTipSelected || (tipAgreeCheckbox && tipAgreeCheckbox.checked);
+
+        if (!termsChecked || !tipChecked) {
+          throw new Error("Please check both the Terms & Conditions and Tip agreement boxes before proceeding.");
+        }
+
+        // Record acceptance
+        console.log("[BOOK_FLOW] Recording acceptance before start_payment");
+        try {
+          const acceptRes = await fetch(RECORD_ACCEPTANCE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              public_id: publicId, 
+              tip_ack: true, 
+              terms_accepted: true 
+            })
+          });
+          const acceptPayload = await acceptRes.json().catch(() => ({}));
+          console.log("[BOOK_FLOW] record_acceptance response", {
+            status: acceptRes.status,
+            ok: acceptRes.ok,
+            payload: acceptPayload
+          });
+          if (!acceptRes.ok) {
+            throw new Error(`Failed to record acceptance: ${acceptPayload?.error || acceptRes.status}`);
+          }
+          acceptanceCompleted = true;
+        } catch (acceptErr) {
+          console.error("[BOOK_FLOW] record_acceptance error", acceptErr);
+          throw new Error(`Acceptance required: ${acceptErr.message}`);
+        }
+
+        // Call start_payment
+        console.log("[BOOK_FLOW] Calling start_payment", { public_id: publicId });
         const res = await fetch(START_PAYMENT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_id: data.public_id })
+          body: JSON.stringify({ public_id: publicId })
         });
 
         const payload = await res.json().catch(() => ({}));
+        console.log("[BOOK_FLOW] start_payment response", {
+          status: res.status,
+          ok: res.ok,
+          payload: payload
+        });
+        
         if (!res.ok) {
           const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
           throw new Error(m);
@@ -4107,41 +4528,33 @@
 
         if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
 
-        // Mount Stripe Elements (but don't show wrap yet - caller will reveal after ready)
-        await mountStripePaymentElement(payload.client_secret, false);
+        // Mount Stripe Elements (only if not already mounted)
+        // Use preserveState=true to avoid clearing user input if elements already exist
+        console.log("[BOOK_FLOW] Mounting Stripe Elements");
+        const shouldPreserve = !!(paymentElement && elements);
+        await mountStripePaymentElement(payload.client_secret, shouldPreserve);
 
-        // Wait for Stripe Elements iframes to appear (basic check)
+        // Wait for Stripe Elements iframes to appear
         await waitForStripeReady(8000);
+        console.log("[BOOK_FLOW] Stripe Elements ready");
 
-        // Don't show wrap yet - wait longer for internal content to load
-        // The wrap will be shown after sections are revealed and we've waited additional time
         if (msg) msg.textContent = "";
 
         return Promise.resolve();
 
       } catch (e) {
-        // Error will be handled by caller
+        console.error("[BOOK_FLOW] initializePayment error", e);
         throw e;
       }
     }
 
-    // Retry function for failed Stripe initialization
-    async function retryPaymentStep() {
-      // Clear any previous error state
-      if (hint) hint.textContent = "";
-      
-      // Remove any retry button that might exist
-      const existingRetry = document.getElementById("baRetryPaymentBtn");
-      if (existingRetry) existingRetry.remove();
-      
-      // Try again
-      await handleBookClick();
-    }
 
-    // Main handler for Book button click
+    // Main handler for Book button click - reveals UI and attempts to initialize Stripe Elements
     async function handleBookClick() {
+      console.log("[BOOK_FLOW] Book button clicked - revealing UI and attempting to initialize Stripe Elements");
+      
       try {
-        // Step 1: If Optional Services not revealed, initialize payment first
+        // If Optional Services not revealed, reveal them now
         if (!optionalServicesRevealed) {
           // require passenger validity before letting them proceed
           const paxOk = validateAllPassengers(paxCount);
@@ -4155,162 +4568,20 @@
             return;
           }
 
-          // Show loading state on Book button (keep sticky bar visible)
-          const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
-          const originalBtnText = btnTitle ? btnTitle.innerHTML : "BOOK";
+          // Reveal payment UI sections (TCS, tips, Stripe area)
+          // This will attempt to initialize Stripe Elements, but handles errors gracefully
+          await revealPaymentUI();
+          optionalServicesRevealed = true;
+
+          // Hide sticky bar
+          if (stickyBar) stickyBar.style.display = "none";
           
-          if (payBtn) {
-            payBtn.disabled = true;
-            payBtn.style.opacity = ".7";
-            payBtn.style.cursor = "not-allowed";
-            
-            // Add spinner to button
-            if (btnTitle) {
-              btnTitle.innerHTML = `
-                <span style="display:inline-flex;align-items:center;gap:8px">
-                  <span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:rgba(255,255,255,0.9);border-radius:50%;animation:spin 0.8s linear infinite"></span>
-                  Preparing...
-                </span>
-              `;
-            }
-          }
-          if (hint) hint.textContent = "Preparing secure payment…";
-
-          // DO NOT hide sticky bar yet - keep it visible during loading
-
-          try {
-            // Initialize payment step and wait for Stripe iframes to appear
-            // Note: Don't reveal any sections yet - we'll reveal everything together after Stripe is fully loaded
-            await enterPaymentStep();
-
-            // Wait additional time for Stripe Elements' internal content to fully load
-            // This ensures when we reveal sections, Stripe content is ready (not loading skeletons)
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // NOW reveal everything at once: TCS section, Tips section, and Stripe payment elements
-            // All sections are revealed together after Stripe is fully loaded
-            if (extrasSection) {
-              extrasSection.style.display = "block";
-              optionalServicesRevealed = true;
-              
-              // Preselect "Excellent" tip and uncheck "I agree" checkbox
-              const excellentPreset = tipPresets.find(p => String(p.label).toLowerCase() === "excellent");
-              if (excellentPreset) {
-                const excellentAmount = Math.round(Number(excellentPreset.amount) || 0);
-                tipMode = "preset";
-                tipPresetLabel = excellentPreset.label;
-                tipAmount = excellentAmount;
-                tipAgreed = false;
-                
-                // Update custom tip input to show the amount
-                const tipCustom = document.getElementById("baTipCustom");
-                if (tipCustom) {
-                  tipCustom.value = excellentAmount > 0 ? (excellentAmount / 100).toFixed(2) : "";
-                }
-                
-                // Uncheck "I agree" checkbox
-                const tipAgree = document.getElementById("baTipAgree");
-                if (tipAgree) {
-                  tipAgree.checked = false;
-                }
-                
-                // Update UI highlights and totals
-                applyTipHighlights();
-                updateTipAgreementUI();
-                updateTotalsUI();
-              }
-              
-              // Update hint message
-              if (hint) hint.textContent = "";
-              
-              // Scroll to Optional Services section (all sections now visible)
-              try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
-            }
-
-            // Show the Stripe wrap - elements should be fully loaded by now
-            if (wrap) wrap.style.display = "block";
-            
-            // Initialize terms checkbox UI state now that the wrap is visible
-            // This ensures the button state is correct based on checkbox (disabled if unchecked)
-            updateTermsAgreementUI();
-
-            // NOW hide sticky bar while button is still in "Preparing..." state
-            // This ensures the button never shows "BOOK" again - it disappears in "Preparing..." state
-            // Note: We don't restore button state here since sticky bar disappears, so button is not visible anyway
-            if (stickyBar) stickyBar.style.display = "none";
-
-          } catch (e) {
-            // Payment initialization failed - show error with retry
-            // Keep sticky bar visible on error
-            const errorMsg = e && e.message ? e.message : String(e);
-            if (hint) hint.textContent = "Could not load payment form: " + errorMsg;
-            
-            // Restore button text and re-enable
-            if (btnTitle) btnTitle.innerHTML = originalBtnText;
-            if (payBtn) {
-              payBtn.disabled = false;
-              payBtn.style.opacity = "1";
-              payBtn.style.cursor = "pointer";
-            }
-            
-            // Create retry button
-            const retryBtn = document.createElement("button");
-            retryBtn.id = "baRetryPaymentBtn";
-            retryBtn.textContent = "Retry";
-            retryBtn.style.cssText = "margin-top: 10px; padding: 8px 16px; border-radius: 8px; border: 1px solid #d1ad54; background: #d1ad54; color: #fff; font-weight: 700; cursor: pointer; font-size: 13px;";
-            retryBtn.addEventListener("click", () => {
-              retryPaymentStep().catch((err) => {
-                console.error("Retry failed:", err);
-              });
-            });
-            
-            // Insert retry button after hint
-            if (hint && hint.parentNode) {
-              const existingRetry = document.getElementById("baRetryPaymentBtn");
-              if (existingRetry) existingRetry.remove();
-              hint.parentNode.insertBefore(retryBtn, hint.nextSibling);
-            }
-          }
-
-          return;
+          console.log("[BOOK_FLOW] UI revealed successfully");
         }
-
-        // Step 2: If Optional Services already revealed, proceed with payment
-        // This path should rarely be hit now, but kept for safety
-        if (payBtn) {
-          payBtn.disabled = true;
-          payBtn.style.opacity = ".7";
-          payBtn.style.cursor = "not-allowed";
-        }
-        if (hint) hint.textContent = "Preparing secure payment…";
-
-        try {
-          await enterPaymentStep();
-          
-          if (hint) hint.textContent = "";
-          if (wrap) {
-            try { wrap.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
-          }
-        } catch (e) {
-          const errorMsg = e && e.message ? e.message : String(e);
-          if (hint) hint.textContent = "Could not start payment: " + errorMsg;
-        } finally {
-          if (payBtn) {
-            payBtn.disabled = false;
-            payBtn.style.opacity = "1";
-            payBtn.style.cursor = "pointer";
-          }
-        }
-
       } catch (e) {
         // Fallback error handling
-        console.error("Unexpected error in handleBookClick:", e);
+        console.error("[BOOK_FLOW] Unexpected error in handleBookClick:", e);
         if (hint) hint.textContent = "An unexpected error occurred. Please try again.";
-        if (payBtn) {
-          payBtn.disabled = false;
-          payBtn.style.opacity = "1";
-          payBtn.style.cursor = "pointer";
-        }
       }
     }
 
@@ -4366,7 +4637,12 @@
           }
 
         } catch (e) {
-          if (msg) msg.textContent = "Payment error: " + (e && e.message ? e.message : String(e));
+          const errorMsg = e && e.message ? e.message : String(e);
+          console.error("[BOOK_FLOW] Payment error:", errorMsg);
+          if (msg) {
+            msg.textContent = "Payment error: " + errorMsg;
+            msg.style.color = "#b00020";
+          }
           // Only re-enable if validation passes
           const isValid = validateBillingUI();
           confirmBtn.disabled = !isValid;
