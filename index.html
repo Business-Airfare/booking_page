@@ -3502,7 +3502,7 @@
                 <label class="baTermsAgreeLabel">
                   <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
                   <span class="baTermsAgreeText">
-                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="#" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
+                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="https://www.business-airfare.com/convention" target="_blank" rel="noopener noreferrer" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
                   </span>
                 </label>
                 <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
@@ -3611,12 +3611,13 @@
       const payBtn = document.getElementById("baPayBtn");
       const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
       
-      // Don't update button text if it's in "Preparing..." state or if sticky bar is hidden (sections revealed)
+      // Don't update button text if it's in "Preparing..." or "Processing..." state or if sticky bar is hidden (sections revealed)
       const stickyBar = root.querySelector(".baSticky");
       const isStickyBarHidden = stickyBar && stickyBar.style.display === "none";
       const currentBtnText = btnTitle ? (btnTitle.textContent || btnTitle.innerHTML || "") : "";
       const isPreparing = currentBtnText.includes("Preparing") || currentBtnText.includes("Preparing...");
-      const shouldSkipButtonUpdate = isPreparing || isStickyBarHidden;
+      const isProcessing = currentBtnText.includes("Processing") || currentBtnText.includes("Processing...");
+      const shouldSkipButtonUpdate = isPreparing || isProcessing || isStickyBarHidden;
       
       if (t === "00:00:00") {
         if (el1) el1.style.display = "none";
@@ -4273,7 +4274,8 @@
         } else if (linkText.includes("Privacy Policy")) {
           createPopup("Privacy Policy", "<p>Privacy Policy content will be displayed here.</p>");
         } else if (linkText.includes("airline liability limitations")) {
-          createPopup("Airline Liability Limitations", "<p>Airline liability limitations content will be displayed here.</p>");
+          // Open convention page in new tab
+          window.open("https://www.business-airfare.com/convention", "_blank", "noopener,noreferrer");
         } else if (linkText.includes("valid travel document")) {
           createPopup("Valid Travel Documents", "<p>Information about valid travel documents will be displayed here.</p>");
         }
@@ -4363,7 +4365,8 @@
       console.log("[BOOK_FLOW] revealPaymentUI called - revealing UI and attempting to initialize Stripe Elements");
       
       if (extrasSection) {
-        extrasSection.style.display = "block";
+        // Keep sections hidden initially - they will be shown after Stripe elements are loaded
+        // extrasSection.style.display = "block"; // Moved to after Stripe is ready
         
         // Preselect "Excellent" tip and uncheck "I agree" checkbox
         const excellentPreset = tipPresets.find(p => String(p.label).toLowerCase() === "excellent");
@@ -4392,8 +4395,8 @@
           updateTotalsUI();
         }
         
-        // Show the Stripe wrap
-        if (wrap) wrap.style.display = "block";
+        // Keep Stripe wrap hidden initially - it will be shown after Stripe elements are loaded
+        // if (wrap) wrap.style.display = "block"; // Moved to after Stripe is ready
         
         // Initialize Stripe Elements immediately when Book is clicked
         // This allows users to see and fill in the payment form
@@ -4412,8 +4415,23 @@
             console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
             await mountStripePaymentElement(payload.client_secret, false);
             await waitForStripeReady(8000);
+            
+            // NOW that Stripe elements are fully loaded, reveal sections and hide sticky bar
+            if (extrasSection) {
+              extrasSection.style.display = "block";
+            }
+            if (wrap) {
+              wrap.style.display = "block";
+            }
+            
+            // Hide sticky bar
+            if (stickyBar) stickyBar.style.display = "none";
+            
+            // Scroll to Optional Services section
+            try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+            
             if (msg) msg.textContent = "";
-            console.log("[BOOK_FLOW] Stripe Elements initialized successfully");
+            console.log("[BOOK_FLOW] Stripe Elements initialized successfully - sections revealed");
           } else {
             // Error - show message
             const errorMsg = payload?.error || `HTTP ${res.status}`;
@@ -4421,6 +4439,12 @@
             if (msg) {
               msg.textContent = "Could not load payment form. Please refresh the page.";
               msg.style.color = "#b00020";
+            }
+            // Restore button text on error
+            const payBtn = document.getElementById("baPayBtn");
+            const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+            if (btnTitle) {
+              btnTitle.textContent = "BOOK";
             }
           }
         } catch (e) {
@@ -4430,13 +4454,16 @@
             msg.textContent = "Could not load payment form. Please refresh the page.";
             msg.style.color = "#b00020";
           }
+          // Restore button text on error
+          const payBtn = document.getElementById("baPayBtn");
+          const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+          if (btnTitle) {
+            btnTitle.textContent = "BOOK";
+          }
         }
         
         // Initialize terms checkbox UI state
         updateTermsAgreementUI();
-        
-        // Scroll to Optional Services section
-        try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
       }
     }
 
@@ -4568,13 +4595,20 @@
             return;
           }
 
+          // Update button to show "Processing..." with loading spinner
+          const payBtn = document.getElementById("baPayBtn");
+          const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+          if (btnTitle) {
+            btnTitle.innerHTML = `
+              Processing...
+              <span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;margin-left:8px;vertical-align:middle"></span>
+            `;
+          }
+
           // Reveal payment UI sections (TCS, tips, Stripe area)
           // This will attempt to initialize Stripe Elements, but handles errors gracefully
           await revealPaymentUI();
           optionalServicesRevealed = true;
-
-          // Hide sticky bar
-          if (stickyBar) stickyBar.style.display = "none";
           
           console.log("[BOOK_FLOW] UI revealed successfully");
         }
@@ -4582,6 +4616,12 @@
         // Fallback error handling
         console.error("[BOOK_FLOW] Unexpected error in handleBookClick:", e);
         if (hint) hint.textContent = "An unexpected error occurred. Please try again.";
+        // Restore button text on error
+        const payBtn = document.getElementById("baPayBtn");
+        const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+        if (btnTitle) {
+          btnTitle.textContent = "BOOK";
+        }
       }
     }
 
