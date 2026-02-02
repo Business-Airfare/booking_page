@@ -1789,7 +1789,7 @@
   .baHeaderTop{
     max-width: 1220px;
     margin: 0 auto;
-    padding: 2px 18px;
+    padding: 4px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1899,13 +1899,13 @@
   .baHeaderProgressInner{
     max-width: 1220px;
     margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1.25fr 0.95fr;
+    gap: 18px;
     align-items: center;
-    gap: 20px;
   }
   .baHeaderProgressLeft{
-    flex: 1;
+    min-width: 0;
   }
   .baHeaderProgressTitle{
     font-weight: 900;
@@ -1922,6 +1922,7 @@
     display: flex;
     align-items: center;
     gap: 16px;
+    justify-content: flex-start;
   }
   .baProgressStep{
     display: flex;
@@ -1973,7 +1974,7 @@
   @media (max-width: 980px){
     .baHeaderNav{ gap: 16px; }
     .baHeaderRight{ gap: 16px; }
-    .baHeaderProgressInner{ flex-direction: column; align-items: flex-start; gap: 16px; }
+    .baHeaderProgressInner{ grid-template-columns: 1fr; align-items: flex-start; gap: 16px; }
     .baHeaderProgressSteps{ width: 100%; }
   }
 
@@ -2871,35 +2872,6 @@
   .baStickyMessageText{
     flex-shrink: 0;
   }
-  .baStickyMessageTraceWrapper{
-    position: relative;
-    display: flex;
-    align-items: center;
-    height: 14px;
-    flex: 0 0 140px;
-    min-width: 140px;
-    max-width: 140px;
-  }
-  .baStickyMessageTrace{
-    position: absolute;
-    left: 0;
-    right: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    height: 14px;
-    overflow: visible;
-    pointer-events: none;
-    z-index: 0;
-    width: calc(100% - 14px);
-  }
-  .baStickyMessagePlane{
-    position: absolute;
-    right: 0;
-    top: calc(50% - 7px);
-    transform: translateY(-50%);
-    z-index: 1;
-    flex-shrink: 0;
-  }
   @media (max-width: 560px){
     .baStickyMessage{ font-size: 12px; }
   }
@@ -3000,7 +2972,7 @@
   }
   .baCareBox__title{
     font-weight: 900;
-    font-size: 18px;
+    font-size: 22px;
     margin-bottom: 4px;
   }
   .baCareBox__subtitle{
@@ -3010,18 +2982,11 @@
   }
   .baCareBox__content{
     padding: 20px;
-    display: grid;
-    grid-template-columns: 1fr 200px;
-    gap: 20px;
-    align-items: start;
-  }
-  @media (max-width: 768px){
-    .baCareBox__content{ grid-template-columns: 1fr; }
   }
   .baCareBox__benefits{
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 18px;
   }
   .baCareBox__benefit{
     display: flex;
@@ -3036,9 +3001,20 @@
     flex-shrink: 0;
     margin-top: 2px;
   }
-  .baCareBox__image{
-    width: 100%;
-    aspect-ratio: 4/5;
+  .baCareBox__benefitText{
+    flex: 1;
+    min-width: 0;
+  }
+  .baCareBox__benefitTitle{
+    font-size: 18px;
+    line-height: 1.4;
+    font-weight: 700;
+  }
+  .baCareBox__benefitSub{
+    font-size: 12px;
+    opacity: 0.85;
+    line-height: 1.4;
+    margin-top: 4px;
   }
   .baCareBox__recommended{
     background: #4a4a4a;
@@ -3055,46 +3031,116 @@
     flex-direction: column;
     gap: 14px;
   }
-  .baCareRadio{
+  /* TCS custom selector UI - keeps underlying radio for accessibility */
+  .ba-tcs-choice{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ba-tcs-option{
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 12px;
     cursor: pointer;
-    padding: 10px;
-    border-radius: 6px;
-    transition: background 0.2s;
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: 2px solid #e7e7e7;
+    background: #fff;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
   }
-  .baCareRadio:hover{
-    background: rgba(0,0,0,0.03);
+  .ba-tcs-option:hover{
+    border-color: #ccc;
+    background: #fafafa;
   }
-  .baCareRadio input[type="radio"]{
-    width: 20px;
-    height: 20px;
+  .ba-tcs-option:focus-within{
+    outline: 2px solid var(--ba-accent);
+    outline-offset: 2px;
+  }
+  .ba-tcs-option:has(input:checked){
+    border-color: var(--ba-accent);
+    background: rgba(209, 173, 84, 0.08);
+    box-shadow: 0 0 0 1px var(--ba-accent);
+  }
+  .ba-tcs-option:has(input:checked):hover{
+    border-color: var(--ba-accent);
+    background: rgba(209, 173, 84, 0.1);
+  }
+  /* Visually hide radio, keep for accessibility (keyboard + screen readers) */
+  .ba-tcs-option input[type="radio"]{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .ba-tcs-indicator{
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 50%;
+    border: 2px solid #ccc;
+    background: #fff;
     margin-top: 2px;
     flex-shrink: 0;
-    accent-color: var(--ba-accent);
-    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, background 0.2s;
   }
-  .baCareRadio__text{
+  .ba-tcs-option input[type="radio"]:checked ~ .ba-tcs-indicator{
+    border-color: var(--ba-accent);
+    background: var(--ba-accent);
+  }
+  .ba-tcs-option input[type="radio"]:checked ~ .ba-tcs-indicator::after{
+    content: "✓";
+    font-size: 12px;
+    font-weight: 900;
+    color: #1a1a1a;
+    line-height: 1;
+  }
+  .ba-tcs-label{
     flex: 1;
     font-size: 14px;
     line-height: 1.5;
     color: #333;
   }
-  .baCareRadio__text strong{
+  .ba-tcs-label strong{
     font-weight: 900;
   }
-  .baCareRadio__link{
+  .ba-tcs-terms{
+    display: block;
+    font-size: 13px;
+    margin-top: 6px;
+    color: #555;
+  }
+  .ba-tcs-option .baCareRadio__link{
     color: #0066cc;
     text-decoration: underline;
     cursor: pointer;
   }
-  .baCareRadio__link:hover{
+  .ba-tcs-option .baCareRadio__link:hover{
     color: #0052a3;
   }
-  .baCareRadio input[type="radio"]:disabled + .baCareRadio__text{
-    opacity: 0.6;
+  .ba-tcs-option:has(input[type="radio"]:disabled){
     cursor: not-allowed;
+    opacity: 0.7;
+  }
+  .ba-tcs-option input[type="radio"]:disabled ~ .ba-tcs-label{
+    cursor: not-allowed;
+  }
+  .ba-tcs-option input[type="radio"]:disabled ~ .ba-tcs-indicator{
+    opacity: 0.6;
+  }
+  /* Legacy baCareRadio kept for compatibility, now uses tcs classes */
+  .baCareRadio{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
   }
 
   /* Summary Box (Sticky) */
@@ -3145,7 +3191,7 @@
   .baSummaryBox__items{
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
   .baSummaryBox__item{
     display: grid;
@@ -3357,13 +3403,11 @@
             <div class="baCareBox__header">
               <div class="baCareBox__headerLeft">
                 <svg class="baCareBox__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                  <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                  <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
                 <div class="baCareBox__titleWrap">
                   <div class="baCareBox__title">Travel Care Service</div>
-                  <div class="baCareBox__subtitle">For the wise travellers charged by Deluxe Flights in addition to ticket cost</div>
+                  <div class="baCareBox__subtitle">Add flexible cancellation, refund options, and priority support to your booking.</div>
                 </div>
               </div>
             </div>
@@ -3371,55 +3415,60 @@
               <div class="baCareBox__benefits">
                 <div class="baCareBox__benefit">
                   <span class="baCareBox__check">✓</span>
-                  <span>Change of plans? First exchange 100% free of airline penalties and Deluxe Flights fees!</span>
+                  <div class="baCareBox__benefitText">
+                    <div class="baCareBox__benefitTitle">Cancel Anytime — 80% Cash Refund</div>
+                    <div class="baCareBox__benefitSub">Cancel for any reason and receive 80% of your ticket price back to your original payment method.</div>
+                  </div>
                 </div>
                 <div class="baCareBox__benefit">
                   <span class="baCareBox__check">✓</span>
-                  <span>We'll rebook you for FREE if you late due to inclement weather</span>
+                  <div class="baCareBox__benefitText">
+                    <div class="baCareBox__benefitTitle">Prefer Credit? Get 90% Back</div>
+                    <div class="baCareBox__benefitSub">Choose a 90% refund as Business-Airfare credit for future travel. Validity and usage terms apply.</div>
+                  </div>
                 </div>
                 <div class="baCareBox__benefit">
                   <span class="baCareBox__check">✓</span>
-                  <span>Get 100% refund if you got sick and can't travel</span>
+                  <div class="baCareBox__benefitText">
+                    <div class="baCareBox__benefitTitle">First Airline Exchange Fee Covered</div>
+                    <div class="baCareBox__benefitSub">We cover the airline's first exchange/change penalty once. Fare difference may apply.</div>
+                  </div>
                 </div>
                 <div class="baCareBox__benefit">
                   <span class="baCareBox__check">✓</span>
-                  <span>Never used your Travel Care Service? Claim Your Voucher for next purchase with Deluxe Flight</span>
+                  <div class="baCareBox__benefitText">
+                    <div class="baCareBox__benefitTitle">Mishandled Baggage Assistance</div>
+                    <div class="baCareBox__benefitSub">Priority support to help track and escalate delayed/mishandled baggage according to airline policy.</div>
+                  </div>
                 </div>
                 <div class="baCareBox__benefit">
                   <span class="baCareBox__check">✓</span>
-                  <span>We'll process your changes for FREE if your Last minute plan changes</span>
+                  <div class="baCareBox__benefitText">
+                    <div class="baCareBox__benefitTitle">Didn't Use It? Get a Travel Voucher</div>
+                    <div class="baCareBox__benefitSub">Receive a voucher equal to 50% of your TCS cost, up to $150, if no TCS benefits were used.</div>
+                  </div>
                 </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <span>We'll rebook you for FREE if your flights got canceled or delayed</span>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <span>Airline mishandled your baggage? We'll get them back, or we'll pay you $1000 for each bag!</span>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <span>Priority access to VIP Concierge Desk 24/7</span>
-                </div>
-              </div>
-              <div class="baCareBox__image">
-                <div style="width:100%;height:100%;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#999">Flight attendant image</div>
               </div>
             </div>
             <div class="baCareBox__recommended">RECOMMENDED</div>
             <div class="baCareBox__options">
-              <label class="baCareRadio">
-                <input type="radio" name="baCareOption" value="yes" id="baCareYes" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
-                <span class="baCareRadio__text">
-                  <strong>Yes</strong>, I would like to add Travel Care Service to my purchase for <strong>${fmtMoney(careCents)}</strong> and I confirm that I have read and agreed to the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a>
-                </span>
-              </label>
-              <label class="baCareRadio">
-                <input type="radio" name="baCareOption" value="no" id="baCareNo" ${!careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""}>
-                <span class="baCareRadio__text">
-                  <strong>No</strong>, I choose not to protect. Travel Care Service is not available after the booking. <a href="#" class="baCareRadio__link" id="baReadMoreLink">Read more</a>
-                </span>
-              </label>
+              <div class="ba-tcs-choice">
+                <label class="ba-tcs-option baCareRadio">
+                  <input type="radio" name="baCareOption" value="yes" id="baCareYes" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Yes, add Travel Care Service">
+                  <span class="ba-tcs-indicator" aria-hidden="true"></span>
+                  <span class="ba-tcs-label">
+                    <strong>Yes</strong>, add Travel Care Service for <strong>${fmtMoney(careCents)}</strong>
+                    <span class="ba-tcs-terms">I have read and agree to the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a></span>
+                  </span>
+                </label>
+                <label class="ba-tcs-option baCareRadio">
+                  <input type="radio" name="baCareOption" value="no" id="baCareNo" ${!careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""} aria-label="No, I choose not to protect">
+                  <span class="ba-tcs-indicator" aria-hidden="true"></span>
+                  <span class="ba-tcs-label">
+                    <strong>No</strong>, I choose not to protect. Travel Care Service is not available after booking. <a href="#" class="baCareRadio__link" id="baReadMoreLink">Read more</a>
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -3541,10 +3590,10 @@
               <div class="baSummaryBox__item">
                 <div class="baSummaryBox__itemLabel">One-Way Flight</div>
                 <div class="baSummaryBox__itemValue">${fmtMoney(baseTicketService())}</div>
-                <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">To be processed by airline</div>
-                <div class="baSummaryBox__itemSubValue" style="grid-column: 2;">${fmtMoney(ticketCents)}</div>
-                <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">To be processed by DXF</div>
-                <div class="baSummaryBox__itemSubValue" style="grid-column: 2;">${fmtMoney(serviceCents)}</div>
+                <div class="baSummaryBox__itemSub">To be processed by airline</div>
+                <div class="baSummaryBox__itemSubValue">${fmtMoney(ticketCents)}</div>
+                <div class="baSummaryBox__itemSub">To be processed by Business-Airfare</div>
+                <div class="baSummaryBox__itemSubValue">${fmtMoney(serviceCents)}</div>
               </div>
             </div>
 
@@ -3571,12 +3620,6 @@
         ` : ""}
         <div class="baStickyMessage">
           <span class="baStickyMessageText">You are almost there</span>
-          <div class="baStickyMessageTraceWrapper">
-            <svg class="baStickyMessageTrace" viewBox="0 0 100 14" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M 0 7 Q 25 3 50 7 T 100 7" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
-            </svg>
-            <svg class="baStickyMessagePlane" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;transform:rotate(90deg);"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-          </div>
         </div>
       </div>
 
@@ -3792,7 +3835,7 @@
             div.innerHTML = `
               <div class="baSummaryBox__itemLabel">Travel Care Service</div>
               <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by Business-Airfare</div>
             `;
             items.appendChild(div);
             careItem = div;
@@ -3820,7 +3863,7 @@
             div.innerHTML = `
               <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
               <div class="baSummaryBox__itemValue">${fmtMoney(effectiveTip)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by DXF</div>
+              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by Business-Airfare</div>
             `;
             items.appendChild(div);
             tipItem = div;
@@ -3843,7 +3886,8 @@
       if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
     }
 
-    // Travel Care Service radio buttons
+    // Travel Care Service radio buttons - custom UI (ba-tcs-option) wraps visually hidden inputs
+    // careYes/careNo are the underlying radios; handleCareSelection drives update_selection
     const careYes = document.getElementById("baCareYes");
     const careNo = document.getElementById("baCareNo");
     
