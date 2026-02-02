@@ -2939,7 +2939,13 @@
     align-items: start;
   }
   @media (max-width: 980px){
-    .baExtrasGrid{ grid-template-columns: 1fr; }
+    .baExtrasGrid{ grid-template-columns: 1fr; display: flex; flex-direction: column; }
+    .baExtrasLeft{ display: contents; }
+    .baExtrasRight{ display: contents; }
+    .baCareBox{ order: 1; }
+    .baTipSection{ order: 2; }
+    .baSummaryBox{ order: 3; }
+    .baExtrasStripe{ order: 4; }
   }
 
   /* Travel Care Service Box */
@@ -3523,7 +3529,7 @@
             </div>
           </div>
 
-          <div style="margin-top:18px">
+          <div class="baExtrasStripe" style="margin-top:18px">
             <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
 
             <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
