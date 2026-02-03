@@ -420,7 +420,7 @@
     // Adjust fontSizeBase (e.g. 16px–24px) and spacingUnit (e.g. 4px–8px) to change text/box size on mobile.
     const isMobileStripe = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
     const stripeAppearance = isMobileStripe
-      ? { theme: "stripe", variables: { fontSizeBase: "34px", spacingUnit: "6px" } }
+      ? { theme: "stripe", variables: { fontSizeBase: "38px", spacingUnit: "8px" } }
       : { theme: "stripe" };
 
     // Create new elements
@@ -1789,6 +1789,11 @@
   }
   @media (max-width: 980px){
     html{ zoom: 1.5; }
+    /* Stripe-only zoom on mobile: change --ba-stripe-mobile-zoom to scale the Stripe block (e.g. 1, 1.1, 1.2, 1.5) */
+    #baStripeWrap{
+      --ba-stripe-mobile-zoom: 1.1;
+      zoom: var(--ba-stripe-mobile-zoom);
+    }
     /* Mobile only: add space above "Full name" so there's a clear gap between email input box and Full name label */
     .baStripeAddressWrap{ margin-top: 32px; }
     /* Address Element: stack above payment section so autofill suggestions stay on top */
