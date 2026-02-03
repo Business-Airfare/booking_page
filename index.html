@@ -1594,7 +1594,7 @@
                           ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
                         </div>
 
-                        <div class="baRow" style="margin-top:10px">
+                        <div class="baRow baRow--arrival">
                           <div class="baTimeLine">
                             <span class="baTime">${escapeHtml(arrTime)}</span>
                             <span class="baMD ${shouldHighlight ? 'baMD--nextDay' : ''}">${escapeHtml(arrMD)}</span>
@@ -2001,10 +2001,12 @@
     background: var(--ba-accent);
   }
   @media (max-width: 980px){
+    .baHeaderTop{ padding: 10px 18px; }
     .baHeaderNav{ gap: 16px; }
     .baHeaderRight{ gap: 16px; }
-    .baHeaderProgressInner{ grid-template-columns: 1fr; align-items: flex-start; gap: 16px; }
-    .baHeaderProgressSteps{ width: 100%; }
+    .baHeaderProgressInner{ grid-template-columns: 1fr; align-items: center; gap: 16px; text-align: center; }
+    .baHeaderProgressLeft{ display: flex; flex-direction: column; align-items: center; }
+    .baHeaderProgressSteps{ width: 100%; justify-content: center; }
   }
 
   .baWrap{
@@ -2119,7 +2121,7 @@
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap: 7px;
+    gap: 6px;
     opacity:.8;
   }
   .baTL__dot{
@@ -2192,9 +2194,12 @@
 
   /* flight time smaller */
   .baRow--meta{
-    margin-top: 10px;
+    margin-top: 14px;
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+  .baRow--meta + .baRow{
+    margin-top: 16px;
   }
   .baMetaRow{
     font-size: 12px;
@@ -3270,6 +3275,20 @@
     font-size: 13px;
     opacity: 0.75;
   }
+  .baSummaryBox__flightLeg{
+    margin-bottom: 10px;
+  }
+  .baSummaryBox__flightLeg:last-child{
+    margin-bottom: 0;
+  }
+  .baSummaryBox__flightLegLabel{
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    opacity: 0.65;
+    margin-bottom: 2px;
+  }
   .baSummaryBox__divider{
     height: 1px;
     background: #e9e9e9;
@@ -3864,16 +3883,22 @@
               </svg>
               <div class="baSummaryBox__flightInfo">
                 <div class="baSummaryBox__flightLabel">Flight</div>
-                ${journeys.length > 0 ? (() => {
-                  const cp = cityPairFromJourney(journeys[0]);
-                  const first = journeys[0]?.segments?.[0];
+                ${journeys.length > 0 ? journeys.map((j, idx) => {
+                  const cp = cityPairFromJourney(j);
+                  const first = j?.segments?.[0];
                   const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
                   const dateLabel = departDay ? dateHeaderLabel(departDay) : "";
+                  const legLabel = journeys.length > 1
+                    ? (idx === 0 ? "Departure" : idx === 1 ? "Return" : `Leg ${idx + 1}`)
+                    : "";
                   return `
-                    <div class="baSummaryBox__flightRoute">${escapeHtml(cp.fromCity || cp.fromIata || "")} (${escapeHtml(cp.fromIata || "")}) → ${escapeHtml(cp.toCity || cp.toIata || "")} (${escapeHtml(cp.toIata || "")})</div>
-                    <div class="baSummaryBox__flightDate">${escapeHtml(dateLabel)}</div>
+                    <div class="baSummaryBox__flightLeg">
+                      ${legLabel ? `<div class="baSummaryBox__flightLegLabel">${escapeHtml(legLabel)}</div>` : ""}
+                      <div class="baSummaryBox__flightRoute">${escapeHtml(cp.fromCity || cp.fromIata || "")} (${escapeHtml(cp.fromIata || "")}) → ${escapeHtml(cp.toCity || cp.toIata || "")} (${escapeHtml(cp.toIata || "")})</div>
+                      <div class="baSummaryBox__flightDate">${escapeHtml(dateLabel)}</div>
+                    </div>
                   `;
-                })() : ""}
+                }).join("") : ""}
               </div>
             </div>
 
