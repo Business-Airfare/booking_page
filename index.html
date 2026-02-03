@@ -3384,6 +3384,9 @@
   .baPopup__close:hover{
     background: #f0f0f0;
   }
+  .baPopup .baReadMorePopup__list li::marker{
+    color: #8b3a3a;
+  }
 
   /* TCS disclaimer below TCS section */
   .baTcsDisclaimer{
@@ -4736,7 +4739,12 @@
           // Open convention page in new tab
           window.open("https://www.business-airfare.com/convention", "_blank", "noopener,noreferrer");
         } else if (linkText.includes("valid travel document")) {
-          createPopup("Valid Travel Documents", "<p>Information about valid travel documents will be displayed here.</p>");
+          createPopup("Valid Travel Documents", `<h3 style="margin:0 0 12px 0; font-size:16px;">Visa / Passport Information</h3>
+<p style="margin:0 0 12px 0;">Travel documents required for all tickets (e-tickets, paper tickets) include a Passport, which must be presented for all international flights and valid for at least six months beyond the period of the intended stay. Some countries may require a visa and/or a health card. It is passengers' responsibility to have all necessary travel documents in possession at check-in.</p>
+<p style="margin:0 0 12px 0;">Passengers will need to verify visa requirements for all stops, as some countries may require a transit visa. Please note, you may need transit visa even if you have USA Green Card. Travelers connecting between or transiting via airports within the European Union Schengen Zone may need a Schengen Entry visa.</p>
+<p style="margin:0 0 12px 0;">Traveling on a one way ticket may be restricted. If you intend to travel on a one way ticket, it is your responsibility to make sure you are eligible.</p>
+<p style="margin:0 0 12px 0;">Skylux agents do not advise passengers on visa requirements. Please contact the embassy or consulate of the country you are going to visit or transit through to get up-to-date requirements.</p>
+<p style="margin:0;">In addition, passport and visa information may be obtained by contacting the Travel Advisory Section of the U.S. State Department at (202)-647-5225 or by visiting the State Department's Web site at <a href="https://www.state.gov" target="_blank" rel="noopener noreferrer">www.state.gov</a>. Non-U.S. passport holders should contact the embassies or consulates of their destination and transit countries to obtain entrance requirements. To obtain medical information, you may contact the Centers for Disease Control at (404)-332-4559 or visit the CDC's Web site at <a href="https://www.cdc.gov" target="_blank" rel="noopener noreferrer">www.cdc.gov</a>.</p>`);
         }
       });
     });
@@ -4870,7 +4878,14 @@
     if (readMoreLink) {
       readMoreLink.addEventListener("click", (e) => {
         e.preventDefault();
-        createPopup("Read More", "<p>Additional information about Travel Care Service will be displayed here.</p>");
+        createPopup("Declining Travel Care Service means that you will", `<ul class="baReadMorePopup__list" style="margin:0; padding-left:20px; color:#8b3a3a; list-style:disc; columns:2; column-gap:24px;">
+<li style="margin-bottom:8px;">Have to deal with the airline directly for trip related requests</li>
+<li style="margin-bottom:8px;">Face hefty fees to make changes or cancellations</li>
+<li style="margin-bottom:8px;">Not be guaranteed to get the refunds you are eligible for under Travel Care Service</li>
+<li style="margin-bottom:8px;">Not have added flexibility or protection to your trip</li>
+<li style="margin-bottom:8px;">Miss out on personalized customer service</li>
+<li style="margin-bottom:0;">Miss out on waivers for our service fees and vouchers for future bookings</li>
+</ul>`);
       });
     }
 
