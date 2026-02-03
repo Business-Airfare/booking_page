@@ -1781,7 +1781,9 @@
     padding: 0;
   }
   @media (max-width: 980px){
-    html{ zoom: 1.50; }
+    html{ zoom: 1.5; }
+    /* Stripe Elements render in iframes that don't inherit html zoom - scale the wrapper so they match */
+    #baStripeWrap{ zoom: 1.5; }
   }
 
   /* Header */
