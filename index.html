@@ -416,11 +416,11 @@
     if (addrMount) addrMount.innerHTML = "";
     if (payMount) payMount.innerHTML = "";
 
-    // Stripe element size on mobile: use Appearance API (sizes the actual inputs inside iframes).
-    // Adjust variables below to change size: fontSizeBase (e.g. 16px–22px), spacingUnit (e.g. 4px–6px).
+    // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
+    // Adjust fontSizeBase (e.g. 16px–24px) and spacingUnit (e.g. 4px–8px) to change text/box size on mobile.
     const isMobileStripe = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
     const stripeAppearance = isMobileStripe
-      ? { theme: "stripe", variables: { fontSizeBase: "18px", spacingUnit: "5px" } }
+      ? { theme: "stripe", variables: { fontSizeBase: "20px", spacingUnit: "6px" } }
       : { theme: "stripe" };
 
     // Create new elements
