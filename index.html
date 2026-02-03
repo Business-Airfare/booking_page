@@ -1791,7 +1791,7 @@
     html{ zoom: 1.5; }
     /* Stripe-only zoom on mobile: change --ba-stripe-mobile-zoom to scale the Stripe block (e.g. 1, 1.1, 1.2, 1.5) */
     #baStripeWrap{
-      --ba-stripe-mobile-zoom: 0.99;
+      --ba-stripe-mobile-zoom: 1.00;
       zoom: var(--ba-stripe-mobile-zoom);
     }
     /* Mobile only: add space above "Full name" so there's a clear gap between email input box and Full name label */
@@ -1800,6 +1800,20 @@
     #baAddressMount{
       position: relative;
       z-index: 50;
+    }
+    /* Pay now button: 1.5x larger on mobile only */
+    #baStripeConfirm{
+      padding: 18px 24px !important;
+      font-size: 1.5em !important;
+      border-radius: 15px !important;
+      min-height: 1.5em;
+      box-sizing: border-box;
+    }
+    /* Terms checkbox only: 1.5x larger on mobile */
+    #baStripeWrap .baTermsAgreeCheck{
+      margin-top: 5px;
+      width: 27px;
+      height: 27px;
     }
   }
 
