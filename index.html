@@ -2951,11 +2951,61 @@
     flex-shrink: 0;
   }
 
+  /* Mobile: flight details — cities+airport in one line; airline block compact on the right */
+  @media (max-width: 980px){
+    /* Card header: route on one line, travel time aligned right with airline block below */
+    .baCard__head{
+      flex-wrap: nowrap;
+      gap: 10px;
+    }
+    .baCard__headL{
+      min-width: 0;
+      flex: 1;
+      container-type: inline-size;
+      container-name: route-head;
+    }
+    .baCard__route{
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: clamp(16px, 6cqi, 24px);
+    }
+    .baCard__tt{
+      flex-shrink: 0;
+      margin-right: 0;
+      padding-top: 6px;
+    }
+    .baFlight{
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .baFlight__main{ min-width: 0; }
+    .baAir{
+      flex-shrink: 0;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding-top: 6px;
+      padding-left: 12px;
+    }
+    .baAir__logo{
+      width: 64px;
+      height: 22px;
+    }
+    .baAir__meta{ font-size: 12px; white-space: nowrap; }
+    .baLocLine{
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+  }
+
   @media (max-width: 560px){
     .baSectionTitle{ font-size: 24px; }
     .baRow{ grid-template-columns: 1fr; }
-    .baAir{ align-items:flex-start; }
-    .baFlight{ grid-template-columns: 1fr; }
+    .baAir{ align-items: flex-end; }
+    .baFlight{ grid-template-columns: 1fr auto; }
     .baCTA{ padding: 10px 10px; }
     .baCTATitle{ padding: 0 6px; }
   }
@@ -3334,6 +3384,209 @@
   .baPopup__close:hover{
     background: #f0f0f0;
   }
+
+  /* TCS disclaimer below TCS section */
+  .baTcsDisclaimer{
+    margin-top: 6px;
+    margin-bottom: 14px;
+    padding-bottom: 4px;
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.45;
+  }
+  .baTcsDisclaimer__line1{
+    margin: 0 0 4px 0;
+  }
+  .baTcsDisclaimer__line2{
+    margin: 0;
+    font-size: 11px;
+    color: #888;
+  }
+  @media (max-width: 1000px){
+    .baTcsDisclaimer{
+      margin-top: 3px;
+      margin-bottom: 7px;
+      padding-bottom: 2px;
+      font-size: 12px;
+    }
+    .baTcsDisclaimer__line1{
+      margin-bottom: 2px;
+      padding-left: 30px;
+      padding-right: 30px;
+    }
+    .baTcsDisclaimer__line2{
+      font-size: 11px;
+      padding-left: 30px;
+      padding-right: 30px;
+    }
+  }
+
+  /* TCS Terms modal */
+  .baTcsModal{
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+  .baTcsModal[hidden]{ display: none !important; }
+  .baTcsModal__backdrop{
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    cursor: pointer;
+  }
+  .baTcsModal__panel{
+    position: relative;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    max-width: 900px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .baTcsModal__header{
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--ba-border);
+    background: #faf9f6;
+  }
+  .baTcsModal__headerText{ flex: 1; min-width: 0; }
+  .baTcsModal__title{
+    margin: 0 0 4px 0;
+    font-weight: 900;
+    font-size: 20px;
+    line-height: 1.3;
+  }
+  .baTcsModal__subheader{
+    margin: 0;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.4;
+  }
+  .baTcsModal__close{
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: #fff;
+    border-radius: 8px;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+    transition: background 0.2s, color 0.2s;
+  }
+  .baTcsModal__close:hover{
+    background: #e9e9e9;
+    color: #111;
+  }
+  .baTcsModal__close:focus{
+    outline: 2px solid var(--ba-accent);
+    outline-offset: 2px;
+  }
+  .baTcsModal__body{
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px 24px;
+  }
+  .baTcsAccordion{
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .baTcsAccordion__item{
+    border-bottom: 1px solid var(--ba-border);
+  }
+  .baTcsAccordion__item:last-child{ border-bottom: none; }
+  .baTcsAccordion__heading{
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  .baTcsAccordion__trigger{
+    width: 100%;
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: #111;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: background 0.2s;
+  }
+  .baTcsAccordion__trigger:hover{ background: #f5f5f5; }
+  .baTcsAccordion__trigger:focus{
+    outline: 2px solid var(--ba-accent);
+    outline-offset: -2px;
+  }
+  .baTcsAccordion__trigger::after{
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .baTcsAccordion__trigger[aria-expanded="true"]::after{ transform: rotate(-135deg); }
+  .baTcsAccordion__panel{
+    overflow: hidden;
+    transition: max-height 0.25s ease-out;
+  }
+  .baTcsAccordion__panel[hidden]{
+    display: block !important;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
+    border: none;
+    visibility: hidden;
+  }
+  .baTcsAccordion__panel:not([hidden]){
+    max-height: 1200px;
+  }
+  .baTcsAccordion__panel p,
+  .baTcsAccordion__panel ul{
+    margin: 0 0 12px 0;
+    padding: 0 20px 16px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #333;
+  }
+  .baTcsAccordion__panel p:last-child,
+  .baTcsAccordion__panel ul:last-child{ margin-bottom: 0; padding-bottom: 16px; }
+  .baTcsAccordion__panel ul{
+    padding-left: 24px;
+    list-style: disc;
+  }
+  .baTcsAccordion__panel li{ margin-bottom: 6px; }
 </style>
 
 <div class="baHeader">
@@ -3503,9 +3756,13 @@
                     <strong>No</strong>, I choose not to protect. Travel Care Service is not available after booking. <a href="#" class="baCareRadio__link" id="baReadMoreLink">Read more</a>
                   </span>
                 </label>
-              </div>
             </div>
           </div>
+          <div class="baTcsDisclaimer">
+            <p class="baTcsDisclaimer__line1">Your card will be charged according to the selected options. For full details, click "Terms and Conditions" above.</p>
+            <p class="baTcsDisclaimer__line2">Travel Care Service is not an insurance policy and does not replace travel insurance obtained or obtainable by you.</p>
+          </div>
+        </div>
 
           <div class="baTipSection">
             <div class="baTipCard">
@@ -3672,6 +3929,130 @@
     </div>
   </div>
 </div>
+
+  <div id="baTcsTermsModal" class="baTcsModal" role="dialog" aria-modal="true" aria-labelledby="baTcsModalTitle" hidden>
+    <div class="baTcsModal__backdrop" aria-hidden="true"></div>
+    <div class="baTcsModal__panel">
+      <div class="baTcsModal__header">
+        <div class="baTcsModal__headerText">
+          <h2 id="baTcsModalTitle" class="baTcsModal__title">Travel Care Service — Terms &amp; Conditions</h2>
+          <p class="baTcsModal__subheader">Non-insurance, service-based benefits provided by Business-Airfare.</p>
+        </div>
+        <button type="button" class="baTcsModal__close" aria-label="Close">&times;</button>
+      </div>
+      <div class="baTcsModal__body">
+        <div class="baTcsAccordion">
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="true" aria-controls="baTcsAcc1" id="baTcsAcc1Btn">Not Insurance</button>
+            </h3>
+            <div id="baTcsAcc1" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc1Btn">
+              <p>Travel Care Service ("TCS") is a non-insurance, service-based product. It is not an insurance policy, does not constitute an insurance contract, and does not replace travel insurance you may obtain independently.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc2" id="baTcsAcc2Btn">Purchase &amp; Eligibility</button>
+            </h3>
+            <div id="baTcsAcc2" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc2Btn" hidden>
+              <ul>
+                <li>TCS must be purchased at checkout and cannot be added after booking.</li>
+                <li>TCS applies to all passengers on the booking.</li>
+                <li>TCS may not be available for all itineraries and may be declined at our discretion.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc3" id="baTcsAcc3Btn">Non-Refundable Service Fee</button>
+            </h3>
+            <div id="baTcsAcc3" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc3Btn" hidden>
+              <p>The TCS fee is non-refundable in all cases, including if you cancel your trip or do not use TCS.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc4" id="baTcsAcc4Btn">Cancel Anytime — 80% Cash Refund</button>
+            </h3>
+            <div id="baTcsAcc4" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc4Btn" hidden>
+              <p>To qualify, you must cancel before the first scheduled departure and you must cancel through Business-Airfare (not the airline). If approved, you may receive 80% of the ticket price paid refunded to the original payment method. The TCS fee is excluded from all refunds. Cutoffs and eligibility rules apply.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc5" id="baTcsAcc5Btn">Prefer Credit? Get 90% Back</button>
+            </h3>
+            <div id="baTcsAcc5" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc5Btn" hidden>
+              <p>Instead of cash, you may choose a 90% refund as Business-Airfare travel credit for future bookings. The TCS fee is excluded. Credit validity and usage rules apply.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc6" id="baTcsAcc6Btn">First Airline Exchange Penalty Covered</button>
+            </h3>
+            <div id="baTcsAcc6" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc6Btn" hidden>
+              <p>We cover the airline's first standard exchange/change penalty once per booking when requested before departure through Business-Airfare. Fare differences, taxes, and surcharges may still apply and are the passenger's responsibility. Changes are subject to airline rules and availability.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc7" id="baTcsAcc7Btn">Mishandled Baggage Assistance</button>
+            </h3>
+            <div id="baTcsAcc7" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc7Btn" hidden>
+              <p>We provide priority assistance to help track and escalate delayed/mishandled baggage with the airline. Any compensation is governed by the airline's policies and applicable regulations.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc8" id="baTcsAcc8Btn">Didn't Use It? Get a Travel Voucher</button>
+            </h3>
+            <div id="baTcsAcc8" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc8Btn" hidden>
+              <p>If no TCS benefits are used, you may request a voucher after trip completion equal to 50% of your TCS fee, up to $150. One voucher per booking. Valid for 12 months from issuance. TCS is considered "used" if any cancellation refund (cash/credit) is issued, an exchange penalty is covered, or any TCS benefit/reimbursement is provided.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc9" id="baTcsAcc9Btn">Exclusions &amp; Special Events</button>
+            </h3>
+            <div id="baTcsAcc9" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc9Btn" hidden>
+              <ul>
+                <li>Airline-initiated cancellations or schedule changes</li>
+                <li>Force majeure events (e.g., severe weather, strikes, natural disasters)</li>
+                <li>Government restrictions, travel bans, border closures</li>
+                <li>Pandemics or public health emergencies declared by authorities</li>
+                <li>Voluntary changes/cancellations made directly with the airline</li>
+              </ul>
+              <p>In these cases, airline fare rules and passenger rights regimes apply.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc10" id="baTcsAcc10Btn">Passenger Rights</button>
+            </h3>
+            <div id="baTcsAcc10" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc10Btn" hidden>
+              <p>You may have rights under passenger protection laws even without TCS. TCS provides supplemental convenience and does not waive statutory passenger rights.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc11" id="baTcsAcc11Btn">Non-Transferable &amp; Scope</button>
+            </h3>
+            <div id="baTcsAcc11" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc11Btn" hidden>
+              <p>TCS applies only to the booking for which it was purchased, is non-transferable, and cannot be moved to another booking unless explicitly stated. For multi-passenger bookings, the purchaser's request applies to the entire booking.</p>
+            </div>
+          </div>
+          <div class="baTcsAccordion__item">
+            <h3 class="baTcsAccordion__heading">
+              <button type="button" class="baTcsAccordion__trigger" aria-expanded="false" aria-controls="baTcsAcc12" id="baTcsAcc12Btn">Contact &amp; Requests</button>
+            </h3>
+            <div id="baTcsAcc12" class="baTcsAccordion__panel" role="region" aria-labelledby="baTcsAcc12Btn" hidden>
+              <p>To use TCS benefits, contact Business-Airfare:<br>Phone: +1 877-382-8382<br>Email: support@business-airfare.com</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
     `;
 
     wirePassengerAccordion(paxCount);
@@ -4398,15 +4779,93 @@
     const readMoreLink = document.getElementById("baReadMoreLink");
 
     if (termsLink) {
-      // Update href to terms_url from server
       termsLink.setAttribute("href", termsUrl);
       termsLink.setAttribute("target", "_blank");
       termsLink.setAttribute("rel", "noopener noreferrer");
       termsLink.addEventListener("click", (e) => {
         e.preventDefault();
-        window.open(termsUrl, "_blank", "noopener,noreferrer");
+        const modal = document.getElementById("baTcsTermsModal");
+        if (modal) {
+          modal.removeAttribute("hidden");
+          const closeBtn = modal.querySelector(".baTcsModal__close");
+          if (closeBtn) closeBtn.focus();
+          document.body.style.overflow = "hidden";
+        } else {
+          window.open(termsUrl, "_blank", "noopener,noreferrer");
+        }
       });
     }
+
+    (function initTcsTermsModal() {
+      const modal = document.getElementById("baTcsTermsModal");
+      if (!modal) return;
+      const backdrop = modal.querySelector(".baTcsModal__backdrop");
+      const panel = modal.querySelector(".baTcsModal__panel");
+      const closeBtn = modal.querySelector(".baTcsModal__close");
+
+      function getFocusables() {
+        const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+        const list = panel ? Array.from(panel.querySelectorAll(sel)) : [];
+        if (closeBtn) list.unshift(closeBtn);
+        return list.filter(el => !el.hasAttribute("disabled") && el.offsetParent !== null);
+      }
+
+      function closeModal() {
+        modal.setAttribute("hidden", "");
+        document.body.style.overflow = "";
+        if (termsLink) termsLink.focus();
+      }
+
+      function handleKeydown(e) {
+        if (e.key === "Escape") {
+          closeModal();
+          e.preventDefault();
+          return;
+        }
+        if (e.key !== "Tab" || !panel || !panel.contains(document.activeElement)) return;
+        const focusables = getFocusables();
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      }
+
+      if (closeBtn) closeBtn.addEventListener("click", closeModal);
+      if (backdrop) backdrop.addEventListener("click", closeModal);
+      modal.addEventListener("keydown", handleKeydown);
+
+      var accordionTriggers = modal.querySelectorAll(".baTcsAccordion__trigger");
+      accordionTriggers.forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          var expanded = btn.getAttribute("aria-expanded") === "true";
+          var panelId = btn.getAttribute("aria-controls");
+          var targetPanel = panelId ? document.getElementById(panelId) : null;
+          if (expanded) {
+            btn.setAttribute("aria-expanded", "false");
+            if (targetPanel) targetPanel.setAttribute("hidden", "");
+          } else {
+            accordionTriggers.forEach(function(b) {
+              b.setAttribute("aria-expanded", "false");
+              var id = b.getAttribute("aria-controls");
+              var p = id ? document.getElementById(id) : null;
+              if (p) p.setAttribute("hidden", "");
+            });
+            btn.setAttribute("aria-expanded", "true");
+            if (targetPanel) targetPanel.removeAttribute("hidden");
+          }
+        });
+      });
+    })();
 
     if (readMoreLink) {
       readMoreLink.addEventListener("click", (e) => {
