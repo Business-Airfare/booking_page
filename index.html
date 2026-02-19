@@ -415,56 +415,10 @@
     const scrollPos = wasMounted ? window.scrollY : null;
     let loadingOverlay = null;
     
-    // Preserve user input before unmounting
-    let preservedEmail = billingEmail || "";
+    // Preserve user input before unmounting (address only - email cannot be preserved due to Stripe limitations)
     let preservedAddress = null;
     
     if (wasMounted && preserveState) {
-      // Read current email from multiple sources to ensure we capture it
-      preservedEmail = billingEmail || "";
-      
-      // Try to read from Link Authentication element if getValue is supported
-      try {
-        if (linkAuthElement && typeof linkAuthElement.getValue === 'function') {
-          const linkValue = await linkAuthElement.getValue();
-          if (linkValue && linkValue.value && linkValue.value.email) {
-            const emailFromElement = String(linkValue.value.email).trim();
-            if (emailFromElement) {
-              preservedEmail = emailFromElement;
-              console.log("[STRIPE] Preserved email from Link Authentication getValue():", preservedEmail.substring(0, 3) + "***");
-            }
-          }
-        }
-      } catch (e) {
-        // getValue might not be supported - that's okay
-      }
-      
-      // Also try to read from the DOM input field directly (as fallback)
-      try {
-        const linkMount = document.getElementById("baLinkAuthMount");
-        if (linkMount) {
-          // Look for email input field in the Link Authentication iframe/mount point
-          const emailInput = linkMount.querySelector('input[type="email"], input[name*="email"], input[id*="email"]');
-          if (emailInput && emailInput.value) {
-            const emailFromDOM = String(emailInput.value).trim();
-            if (emailFromDOM && emailFromDOM.includes('@')) {
-              preservedEmail = emailFromDOM;
-              console.log("[STRIPE] Preserved email from DOM input:", preservedEmail.substring(0, 3) + "***");
-            }
-          }
-        }
-      } catch (e) {
-        // Can't access DOM - that's okay, we have billingEmail
-      }
-      
-      // Final check - ensure we have a valid email
-      preservedEmail = preservedEmail ? preservedEmail.trim() : "";
-      if (preservedEmail && preservedEmail.includes('@')) {
-        console.log("[STRIPE] Will preserve email:", preservedEmail.substring(0, 3) + "***");
-      } else {
-        console.log("[STRIPE] No valid email to preserve");
-      }
-      
       // Read current address data before unmounting
       try {
         if (addressElement) {
@@ -547,25 +501,14 @@
       ? { theme: "stripe", variables: { fontSizeBase: "38px", spacingUnit: "8px" } }
       : { theme: "stripe" };
 
-    // Prepare defaultValues with preserved email if available
-    const elementsOptions = {
+    // Create new elements
+    elements = stripe.elements({
       clientSecret,
       appearance: stripeAppearance,
       loader: "auto"
-    };
-    
-    // Add defaultValues with preserved email to restore it after remount
-    if (preservedEmail && preservedEmail.trim()) {
-      elementsOptions.defaultValues = {
-        email: preservedEmail.trim()
-      };
-      console.log("[STRIPE] Restoring email via defaultValues:", preservedEmail.substring(0, 3) + "***");
-    }
+    });
 
-    // Create new elements with defaultValues (includes preserved email)
-    elements = stripe.elements(elementsOptions);
-
-    // Create Link Authentication element (email will be restored via defaultValues)
+    // Create Link Authentication element (email cannot be preserved - user will need to re-enter)
     linkAuthElement = elements.create("linkAuthentication");
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
     linkAuthElement.mount("#baLinkAuthMount");
@@ -579,40 +522,8 @@
       setConfirmEnabled(ok);
     });
     
-    // Ensure email is restored after element is ready
-    if (preservedEmail && preservedEmail.trim()) {
-      billingEmail = preservedEmail.trim(); // Sync variable first
-      console.log("[STRIPE] Synced billingEmail variable with preserved email:", preservedEmail.substring(0, 3) + "***");
-      
-      // Wait for element to be ready, then try to set the email
-      linkAuthElement.on("ready", async () => {
-        try {
-          // Try setValue if available
-          if (typeof linkAuthElement.setValue === 'function') {
-            await linkAuthElement.setValue({ email: preservedEmail.trim() });
-            console.log("[STRIPE] Set email via setValue after ready");
-          } else {
-            // If setValue not available, defaultValues should have populated it
-            // Verify by checking if change event fires with the email
-            console.log("[STRIPE] setValue not available, defaultValues should have set email");
-          }
-        } catch (setErr) {
-          console.warn("[STRIPE] Could not set email after ready:", setErr);
-        }
-      });
-      
-      // Also try after a delay as fallback
-      setTimeout(async () => {
-        try {
-          if (linkAuthElement && typeof linkAuthElement.setValue === 'function') {
-            await linkAuthElement.setValue({ email: preservedEmail.trim() });
-            console.log("[STRIPE] Set email via setValue after timeout");
-          }
-        } catch (setErr) {
-          // Ignore - defaultValues should have handled it
-        }
-      }, 500);
-    }
+    // Note: Email cannot be preserved due to Stripe Link Authentication limitations
+    // User will need to re-enter email after remount, but address will be preserved
 
     // Prepare address default values from preserved data
     const addressDefaults = { address: { country: "US" } };
