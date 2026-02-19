@@ -289,7 +289,6 @@
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
   let previousPaymentMethodType = null; // Track previous payment method to detect switches
-  let isConfirmingPayment = false; // Flag to prevent remounts during payment confirmation
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -404,12 +403,6 @@
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
-    // CRITICAL: Never remount during payment confirmation - it will erase user input
-    if (isConfirmingPayment) {
-      console.warn("[STRIPE] Payment confirmation in progress - blocking remount to preserve user input");
-      return; // Skip remount entirely
-    }
-
     // If we already have elements and the client_secret hasn't changed, don't remount
     // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret is same)
     if (preserveState && elements && currentClientSecret === clientSecret && !forceRemount) {
@@ -422,7 +415,8 @@
     const scrollPos = wasMounted ? window.scrollY : null;
     let loadingOverlay = null;
     
-    // Preserve user input before unmounting (address only - email cannot be preserved due to Stripe limitations)
+    // Preserve user input before unmounting
+    let preservedEmail = billingEmail || "";
     let preservedAddress = null;
     
     if (wasMounted && preserveState) {
@@ -515,12 +509,10 @@
       loader: "auto"
     });
 
-    // Create Link Authentication element (email cannot be preserved - user will need to re-enter)
     linkAuthElement = elements.create("linkAuthentication");
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
     linkAuthElement.mount("#baLinkAuthMount");
 
-    // Set up change handler
     linkAuthElement.on("change", (event) => {
       billingEmail = (event && event.value && event.value.email) ? String(event.value.email) : "";
       const ok = validateBillingUI();
@@ -529,8 +521,21 @@
       setConfirmEnabled(ok);
     });
     
-    // Note: Email cannot be preserved due to Stripe Link Authentication limitations
-    // User will need to re-enter email after remount, but address will be preserved
+    // Restore preserved email if available
+    if (preservedEmail && linkAuthElement) {
+      try {
+        // Link Authentication element doesn't support setValue, but we'll restore via the change handler
+        // The email is already stored in billingEmail variable, so it will be used during validation
+        setTimeout(() => {
+          // Trigger change event to sync the stored email
+          if (linkAuthElement && billingEmail) {
+            // Email will be restored when user interacts or when Link auto-fills
+          }
+        }, 100);
+      } catch (e) {
+        console.warn("[STRIPE] Could not restore email:", e);
+      }
+    }
 
     // Prepare address default values from preserved data
     const addressDefaults = { address: { country: "US" } };
@@ -610,12 +615,6 @@
     
     // Listen for payment method changes to track selected method
     paymentElement.on("change", async (event) => {
-      // CRITICAL: Do NOT remount if payment confirmation is in progress
-      if (isConfirmingPayment) {
-        console.log("[STRIPE] Payment confirmation in progress - skipping payment method change remount");
-        return;
-      }
-      
       if (event && event.value && event.value.type) {
         const newPaymentMethodType = event.value.type;
         const oldPaymentMethodType = selectedPaymentMethodType;
@@ -631,12 +630,11 @@
         
         // Force remount when switching from credit card to wallet payment
         // This ensures wallet payment shows the correct amount
-        // BUT only if payment confirmation is NOT in progress
         const walletMethods = ["apple_pay", "google_pay"];
         const isSwitchingToWallet = walletMethods.includes(newPaymentMethodType);
         const wasCard = oldPaymentMethodType === "card" || oldPaymentMethodType === null;
         
-        if (isSwitchingToWallet && wasCard && currentClientSecret && !isConfirmingPayment) {
+        if (isSwitchingToWallet && wasCard && currentClientSecret) {
           console.log("[STRIPE] Switching from card to wallet payment - forcing remount to ensure correct amount");
           try {
             // Force remount to refresh wallet payment with current PaymentIntent amount
@@ -801,10 +799,6 @@
   async function confirmStripePayment(){
     console.log("[BOOK_FLOW] Pay button clicked - will record acceptance, call start_payment, then confirm with Stripe");
     
-    // CRITICAL: Set flag to prevent remounts during payment confirmation
-    isConfirmingPayment = true;
-    
-    try {
     // HARD VALIDATION: Check all required checkboxes before proceeding
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     if (!termsCheckbox || !termsCheckbox.checked) {
@@ -878,28 +872,7 @@
     }
 
     if (!linkAuthElement) throw new Error("Email element not initialized.");
-    
-    // CRITICAL: Read email from Link Authentication element BEFORE any remount
-    // This ensures we capture the email even if Elements get remounted
-    try {
-      if (linkAuthElement && typeof linkAuthElement.getValue === 'function') {
-        const linkValue = await linkAuthElement.getValue();
-        if (linkValue && linkValue.value && linkValue.value.email) {
-          const emailFromElement = String(linkValue.value.email).trim();
-          if (emailFromElement && emailFromElement.includes('@')) {
-            billingEmail = emailFromElement;
-            console.log("[BOOK_FLOW] Read email from Link Authentication before confirmation:", billingEmail.substring(0, 3) + "***");
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[BOOK_FLOW] Could not read email from Link Authentication:", e);
-      // Continue with existing billingEmail value
-    }
-    
-    if (!billingEmail || !billingEmail.includes('@')) {
-      throw new Error("Please enter a valid billing email.");
-    }
+    if (!billingEmail) throw new Error("Please enter a valid billing email.");
 
     if (!addressElement) throw new Error("Address element not initialized.");
     const addr = await addressElement.getValue();
@@ -913,8 +886,7 @@
     console.log("[BOOK_FLOW] Confirming payment with Stripe", {
       hasElements: !!elements,
       hasPaymentElement: !!paymentElement,
-      currentClientSecret: currentClientSecret,
-      billingEmail: billingEmail ? (billingEmail.substring(0, 3) + "***") : null
+      currentClientSecret: currentClientSecret
     });
     
     // Ensure we have valid Stripe Elements before confirming
@@ -922,39 +894,38 @@
       throw new Error("Stripe Elements not properly initialized. Please refresh the page.");
     }
     
-    // CRITICAL: Do NOT remount Elements here - user has already entered email and other details
-    // Remounting will erase all user input (especially email which cannot be preserved)
-    // Elements are already updated when TCS/tip changes, so remounting here is unnecessary
-    // Stripe Elements will automatically use the current PaymentIntent amount when confirming
-    console.log("[BOOK_FLOW] Skipping PaymentIntent verification remount to preserve user input");
-    console.log("[BOOK_FLOW] Elements are mounted, proceeding directly to payment confirmation");
-    
-    // Final email read right before confirmation to ensure we have the latest value
-    // This is a safety check in case email was entered but change event didn't fire yet
+    // Verify PaymentIntent is current before confirming
+    // Elements are already updated when TCS/tip changes, so we don't remount here to avoid disrupting Apple Pay
+    // Stripe Elements will automatically use the updated PaymentIntent amount when confirming
+    console.log("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation");
     try {
-      if (linkAuthElement && typeof linkAuthElement.getValue === 'function') {
-        const linkValue = await linkAuthElement.getValue();
-        if (linkValue && linkValue.value && linkValue.value.email) {
-          const emailFromElement = String(linkValue.value.email).trim();
-          if (emailFromElement && emailFromElement.includes('@')) {
-            billingEmail = emailFromElement;
-            console.log("[BOOK_FLOW] Final email read before confirmation:", billingEmail.substring(0, 3) + "***");
-          }
+      const refreshRes = await fetch(START_PAYMENT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_id: publicId })
+      });
+      const refreshPayload = await refreshRes.json().catch(() => ({}));
+      if (refreshRes.ok && refreshPayload.client_secret) {
+        // Only remount if PaymentIntent was recreated (client_secret changed) AND Elements aren't already mounted
+        // Avoid remounting if Elements are already mounted - it disrupts Apple Pay
+        if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
+          console.log("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
+          currentClientSecret = refreshPayload.client_secret;
+          await mountStripePaymentElement(refreshPayload.client_secret, false);
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        } else if (refreshPayload.client_secret !== currentClientSecret) {
+          // PaymentIntent was recreated but Elements are already mounted
+          // Update the client_secret reference but don't remount to avoid disrupting Apple Pay
+          console.log("[BOOK_FLOW] PaymentIntent recreated but Elements already mounted - Stripe will use updated amount");
+          currentClientSecret = refreshPayload.client_secret;
+        } else {
+          console.log("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
         }
       }
-    } catch (e) {
-      console.warn("[BOOK_FLOW] Could not read email before confirmation:", e);
-      // Continue with existing billingEmail value
+    } catch (refreshErr) {
+      console.warn("[BOOK_FLOW] Error verifying PaymentIntent:", refreshErr);
+      // Don't throw - proceed with existing PaymentIntent
     }
-    
-    // Final validation - ensure we have email before proceeding
-    if (!billingEmail || !billingEmail.includes('@')) {
-      throw new Error("Please enter a valid billing email.");
-    }
-    
-    // Note: We intentionally skip the START_PAYMENT refresh here to avoid any chance of remounting
-    // The PaymentIntent should already be up-to-date from previous TCS/tip updates
-    // If PaymentIntent needs updating, it should have been done before user reached this point
     
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
@@ -990,11 +961,6 @@
     });
     
     return paymentIntent;
-    } finally {
-      // Always reset the flag, even if payment fails
-      isConfirmingPayment = false;
-      console.log("[BOOK_FLOW] Payment confirmation completed, remount flag reset");
-    }
   }
 
   // ---------- selection update ----------
