@@ -288,7 +288,6 @@
   let addressElement = null;
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
-  let previousPaymentMethodType = null; // Track previous payment method to detect switches
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -614,38 +613,10 @@
     });
     
     // Listen for payment method changes to track selected method
-    paymentElement.on("change", async (event) => {
+    paymentElement.on("change", (event) => {
       if (event && event.value && event.value.type) {
-        const newPaymentMethodType = event.value.type;
-        const oldPaymentMethodType = selectedPaymentMethodType;
-        
-        // Update tracking
-        previousPaymentMethodType = oldPaymentMethodType;
-        selectedPaymentMethodType = newPaymentMethodType;
-        
-        console.log("[STRIPE] Payment method changed:", {
-          from: oldPaymentMethodType,
-          to: newPaymentMethodType
-        });
-        
-        // Force remount when switching from credit card to wallet payment
-        // This ensures wallet payment shows the correct amount
-        const walletMethods = ["apple_pay", "google_pay"];
-        const isSwitchingToWallet = walletMethods.includes(newPaymentMethodType);
-        const wasCard = oldPaymentMethodType === "card" || oldPaymentMethodType === null;
-        
-        if (isSwitchingToWallet && wasCard && currentClientSecret) {
-          console.log("[STRIPE] Switching from card to wallet payment - forcing remount to ensure correct amount");
-          try {
-            // Force remount to refresh wallet payment with current PaymentIntent amount
-            await mountStripePaymentElement(currentClientSecret, true, true);
-            // Wait for wallet payment to initialize with correct amount
-            await new Promise(resolve => setTimeout(resolve, 600));
-          } catch (remountErr) {
-            console.error("[STRIPE] Failed to remount when switching to wallet payment:", remountErr);
-            // Don't throw - continue with existing Elements
-          }
-        }
+        selectedPaymentMethodType = event.value.type;
+        console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
       }
     });
     
