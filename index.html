@@ -356,12 +356,13 @@
     return result;
   }
 
-  async function mountStripePaymentElement(clientSecret, preserveState = false){
+  async function mountStripePaymentElement(clientSecret, preserveState = false, forceRemount = false){
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
     // If we already have elements and the client_secret hasn't changed, don't remount
-    if (preserveState && elements && currentClientSecret === clientSecret) {
+    // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret is same)
+    if (preserveState && elements && currentClientSecret === clientSecret && !forceRemount) {
       return; // No need to remount - same PaymentIntent
     }
 
@@ -4446,12 +4447,14 @@
           setSelMsg("");
           setPaymentButtonsDisabled(false);
           
-          // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
+          // Always remount Elements when selection changes to ensure Apple Pay refreshes its cached amount
+          // Even if client_secret is the same, the PaymentIntent amount changed, so we need to refresh Apple Pay
           if (result.client_secret && paymentElement) {
             try {
-              // Use preserveState=true to avoid full remount if possible
-              await mountStripePaymentElement(result.client_secret, true);
-              // Don't show message - it's disruptive
+              // Force remount even if client_secret is same - PaymentIntent amount has changed
+              await mountStripePaymentElement(result.client_secret, true, true);
+              // Wait for Apple Pay to fully initialize after remount
+              await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (e) {
               console.error("Failed to update Stripe Elements:", e);
               // Don't fail the update - selection was saved successfully
@@ -4518,10 +4521,11 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // If a new client_secret was returned, update Stripe Elements gracefully
+              // Always remount Elements when selection changes to ensure Apple Pay refreshes
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true);
+                  await mountStripePaymentElement(result.client_secret, true, true);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4568,10 +4572,11 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // If a new client_secret was returned, update Stripe Elements gracefully
+              // Always remount Elements when selection changes to ensure Apple Pay refreshes
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true);
+                  await mountStripePaymentElement(result.client_secret, true, true);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4640,10 +4645,11 @@
             setPaymentButtonsDisabled(false);
             setSelMsg("");
             
-            // If a new client_secret was returned, update Stripe Elements gracefully
+            // Always remount Elements when selection changes to ensure Apple Pay refreshes
             if (result.client_secret && paymentElement) {
               try {
-                await mountStripePaymentElement(result.client_secret, true);
+                await mountStripePaymentElement(result.client_secret, true, true);
+                await new Promise(resolve => setTimeout(resolve, 1000));
               } catch (remountErr) {
                 console.error("Failed to update Stripe Elements:", remountErr);
               }
@@ -4658,15 +4664,6 @@
             setSelMsg(errorMsg);
             showTipError(errorMsg);
             console.error("[TIP_SELECTION] Failed to save custom tip:", e);
-          }
-          
-          // If a new client_secret was returned, update Stripe Elements gracefully
-          if (result.client_secret && paymentElement) {
-            try {
-              await mountStripePaymentElement(result.client_secret, true);
-            } catch (remountErr) {
-              console.error("Failed to update Stripe Elements:", remountErr);
-            }
           }
         } catch (e) {
           // REVERT on error
@@ -4718,9 +4715,11 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
+          // Always remount Elements when selection changes to ensure Apple Pay refreshes
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true);
+              await mountStripePaymentElement(result.client_secret, true, true);
+              await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
