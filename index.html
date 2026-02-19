@@ -420,19 +420,49 @@
     let preservedAddress = null;
     
     if (wasMounted && preserveState) {
-      // Read current email from Link Authentication element before unmounting
+      // Read current email from multiple sources to ensure we capture it
+      preservedEmail = billingEmail || "";
+      
+      // Try to read from Link Authentication element if getValue is supported
       try {
-        if (linkAuthElement) {
+        if (linkAuthElement && typeof linkAuthElement.getValue === 'function') {
           const linkValue = await linkAuthElement.getValue();
           if (linkValue && linkValue.value && linkValue.value.email) {
-            preservedEmail = String(linkValue.value.email).trim();
-            console.log("[STRIPE] Preserved email from Link Authentication:", preservedEmail.substring(0, 3) + "***");
+            const emailFromElement = String(linkValue.value.email).trim();
+            if (emailFromElement) {
+              preservedEmail = emailFromElement;
+              console.log("[STRIPE] Preserved email from Link Authentication getValue():", preservedEmail.substring(0, 3) + "***");
+            }
           }
         }
       } catch (e) {
-        console.warn("[STRIPE] Could not read email from Link Authentication, using stored value:", e);
-        // Fallback to stored billingEmail variable
-        preservedEmail = billingEmail || "";
+        // getValue might not be supported - that's okay
+      }
+      
+      // Also try to read from the DOM input field directly (as fallback)
+      try {
+        const linkMount = document.getElementById("baLinkAuthMount");
+        if (linkMount) {
+          // Look for email input field in the Link Authentication iframe/mount point
+          const emailInput = linkMount.querySelector('input[type="email"], input[name*="email"], input[id*="email"]');
+          if (emailInput && emailInput.value) {
+            const emailFromDOM = String(emailInput.value).trim();
+            if (emailFromDOM && emailFromDOM.includes('@')) {
+              preservedEmail = emailFromDOM;
+              console.log("[STRIPE] Preserved email from DOM input:", preservedEmail.substring(0, 3) + "***");
+            }
+          }
+        }
+      } catch (e) {
+        // Can't access DOM - that's okay, we have billingEmail
+      }
+      
+      // Final check - ensure we have a valid email
+      preservedEmail = preservedEmail ? preservedEmail.trim() : "";
+      if (preservedEmail && preservedEmail.includes('@')) {
+        console.log("[STRIPE] Will preserve email:", preservedEmail.substring(0, 3) + "***");
+      } else {
+        console.log("[STRIPE] No valid email to preserve");
       }
       
       // Read current address data before unmounting
@@ -517,24 +547,30 @@
       ? { theme: "stripe", variables: { fontSizeBase: "38px", spacingUnit: "8px" } }
       : { theme: "stripe" };
 
-    // Create new elements
-    elements = stripe.elements({
+    // Prepare defaultValues with preserved email if available
+    const elementsOptions = {
       clientSecret,
       appearance: stripeAppearance,
       loader: "auto"
-    });
-
-    // Create Link Authentication element with preserved email as default if available
-    const linkAuthOptions = {};
-    if (preservedEmail && preservedEmail.trim()) {
-      linkAuthOptions.defaultEmail = preservedEmail.trim();
-      console.log("[STRIPE] Restoring email in Link Authentication:", preservedEmail.substring(0, 3) + "***");
-    }
+    };
     
-    linkAuthElement = elements.create("linkAuthentication", linkAuthOptions);
+    // Add defaultValues with preserved email to restore it after remount
+    if (preservedEmail && preservedEmail.trim()) {
+      elementsOptions.defaultValues = {
+        email: preservedEmail.trim()
+      };
+      console.log("[STRIPE] Restoring email via defaultValues:", preservedEmail.substring(0, 3) + "***");
+    }
+
+    // Create new elements with defaultValues (includes preserved email)
+    elements = stripe.elements(elementsOptions);
+
+    // Create Link Authentication element (email will be restored via defaultValues)
+    linkAuthElement = elements.create("linkAuthentication");
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
     linkAuthElement.mount("#baLinkAuthMount");
 
+    // Set up change handler
     linkAuthElement.on("change", (event) => {
       billingEmail = (event && event.value && event.value.email) ? String(event.value.email) : "";
       const ok = validateBillingUI();
@@ -543,10 +579,39 @@
       setConfirmEnabled(ok);
     });
     
-    // Ensure billingEmail variable is synced with preserved email
-    if (preservedEmail && preservedEmail.trim() && !billingEmail) {
-      billingEmail = preservedEmail.trim();
-      console.log("[STRIPE] Synced billingEmail variable with preserved email");
+    // Ensure email is restored after element is ready
+    if (preservedEmail && preservedEmail.trim()) {
+      billingEmail = preservedEmail.trim(); // Sync variable first
+      console.log("[STRIPE] Synced billingEmail variable with preserved email:", preservedEmail.substring(0, 3) + "***");
+      
+      // Wait for element to be ready, then try to set the email
+      linkAuthElement.on("ready", async () => {
+        try {
+          // Try setValue if available
+          if (typeof linkAuthElement.setValue === 'function') {
+            await linkAuthElement.setValue({ email: preservedEmail.trim() });
+            console.log("[STRIPE] Set email via setValue after ready");
+          } else {
+            // If setValue not available, defaultValues should have populated it
+            // Verify by checking if change event fires with the email
+            console.log("[STRIPE] setValue not available, defaultValues should have set email");
+          }
+        } catch (setErr) {
+          console.warn("[STRIPE] Could not set email after ready:", setErr);
+        }
+      });
+      
+      // Also try after a delay as fallback
+      setTimeout(async () => {
+        try {
+          if (linkAuthElement && typeof linkAuthElement.setValue === 'function') {
+            await linkAuthElement.setValue({ email: preservedEmail.trim() });
+            console.log("[STRIPE] Set email via setValue after timeout");
+          }
+        } catch (setErr) {
+          // Ignore - defaultValues should have handled it
+        }
+      }, 500);
     }
 
     // Prepare address default values from preserved data
