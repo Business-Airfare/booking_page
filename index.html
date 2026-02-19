@@ -420,6 +420,21 @@
     let preservedAddress = null;
     
     if (wasMounted && preserveState) {
+      // Read current email from Link Authentication element before unmounting
+      try {
+        if (linkAuthElement) {
+          const linkValue = await linkAuthElement.getValue();
+          if (linkValue && linkValue.value && linkValue.value.email) {
+            preservedEmail = String(linkValue.value.email).trim();
+            console.log("[STRIPE] Preserved email from Link Authentication:", preservedEmail.substring(0, 3) + "***");
+          }
+        }
+      } catch (e) {
+        console.warn("[STRIPE] Could not read email from Link Authentication, using stored value:", e);
+        // Fallback to stored billingEmail variable
+        preservedEmail = billingEmail || "";
+      }
+      
       // Read current address data before unmounting
       try {
         if (addressElement) {
@@ -509,7 +524,14 @@
       loader: "auto"
     });
 
-    linkAuthElement = elements.create("linkAuthentication");
+    // Create Link Authentication element with preserved email as default if available
+    const linkAuthOptions = {};
+    if (preservedEmail && preservedEmail.trim()) {
+      linkAuthOptions.defaultEmail = preservedEmail.trim();
+      console.log("[STRIPE] Restoring email in Link Authentication:", preservedEmail.substring(0, 3) + "***");
+    }
+    
+    linkAuthElement = elements.create("linkAuthentication", linkAuthOptions);
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
     linkAuthElement.mount("#baLinkAuthMount");
 
@@ -521,20 +543,10 @@
       setConfirmEnabled(ok);
     });
     
-    // Restore preserved email if available
-    if (preservedEmail && linkAuthElement) {
-      try {
-        // Link Authentication element doesn't support setValue, but we'll restore via the change handler
-        // The email is already stored in billingEmail variable, so it will be used during validation
-        setTimeout(() => {
-          // Trigger change event to sync the stored email
-          if (linkAuthElement && billingEmail) {
-            // Email will be restored when user interacts or when Link auto-fills
-          }
-        }, 100);
-      } catch (e) {
-        console.warn("[STRIPE] Could not restore email:", e);
-      }
+    // Ensure billingEmail variable is synced with preserved email
+    if (preservedEmail && preservedEmail.trim() && !billingEmail) {
+      billingEmail = preservedEmail.trim();
+      console.log("[STRIPE] Synced billingEmail variable with preserved email");
     }
 
     // Prepare address default values from preserved data
