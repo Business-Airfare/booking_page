@@ -904,40 +904,39 @@
       throw new Error("Stripe Elements not properly initialized. Please refresh the page.");
     }
     
-    // Verify PaymentIntent is current before confirming
-    // IMPORTANT: Do NOT remount Elements here if they're already mounted - it will erase user input
+    // CRITICAL: Do NOT remount Elements here - user has already entered email and other details
+    // Remounting will erase all user input (especially email which cannot be preserved)
     // Elements are already updated when TCS/tip changes, so remounting here is unnecessary
-    console.log("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation (no remount to preserve user input)");
+    // Stripe Elements will automatically use the current PaymentIntent amount when confirming
+    console.log("[BOOK_FLOW] Skipping PaymentIntent verification remount to preserve user input");
+    console.log("[BOOK_FLOW] Elements are mounted, proceeding directly to payment confirmation");
+    
+    // Final email read right before confirmation to ensure we have the latest value
+    // This is a safety check in case email was entered but change event didn't fire yet
     try {
-      const refreshRes = await fetch(START_PAYMENT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ public_id: publicId })
-      });
-      const refreshPayload = await refreshRes.json().catch(() => ({}));
-      if (refreshRes.ok && refreshPayload.client_secret) {
-        // Only remount if Elements are NOT mounted at all (shouldn't happen at this point)
-        // If Elements are already mounted, DO NOT remount - it will erase email and other user input
-        if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
-          console.log("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
-          currentClientSecret = refreshPayload.client_secret;
-          await mountStripePaymentElement(refreshPayload.client_secret, false);
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        } else {
-          // Elements are already mounted - just update client_secret reference
-          // DO NOT remount - Stripe Elements will use the updated PaymentIntent automatically
-          if (refreshPayload.client_secret !== currentClientSecret) {
-            console.log("[BOOK_FLOW] PaymentIntent updated but Elements already mounted - not remounting to preserve user input");
-            currentClientSecret = refreshPayload.client_secret;
-          } else {
-            console.log("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
+      if (linkAuthElement && typeof linkAuthElement.getValue === 'function') {
+        const linkValue = await linkAuthElement.getValue();
+        if (linkValue && linkValue.value && linkValue.value.email) {
+          const emailFromElement = String(linkValue.value.email).trim();
+          if (emailFromElement && emailFromElement.includes('@')) {
+            billingEmail = emailFromElement;
+            console.log("[BOOK_FLOW] Final email read before confirmation:", billingEmail.substring(0, 3) + "***");
           }
         }
       }
-    } catch (refreshErr) {
-      console.warn("[BOOK_FLOW] Error verifying PaymentIntent:", refreshErr);
-      // Don't throw - proceed with existing PaymentIntent
+    } catch (e) {
+      console.warn("[BOOK_FLOW] Could not read email before confirmation:", e);
+      // Continue with existing billingEmail value
     }
+    
+    // Final validation - ensure we have email before proceeding
+    if (!billingEmail || !billingEmail.includes('@')) {
+      throw new Error("Please enter a valid billing email.");
+    }
+    
+    // Note: We intentionally skip the START_PAYMENT refresh here to avoid any chance of remounting
+    // The PaymentIntent should already be up-to-date from previous TCS/tip updates
+    // If PaymentIntent needs updating, it should have been done before user reached this point
     
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
