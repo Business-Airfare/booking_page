@@ -4680,18 +4680,8 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Remount Elements when selection changes - only force remount for wallet payments
-              if (result.client_secret && paymentElement) {
-                try {
-                  const needsForceRemount = shouldForceRemountForWalletPayment();
-                  await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
-                  if (needsForceRemount) {
-                    await new Promise(resolve => setTimeout(resolve, 600));
-                  }
-                } catch (remountErr) {
-                  console.error("Failed to update Stripe Elements:", remountErr);
-                }
-              }
+              // Don't remount here - tip amount changed but checkbox not checked yet
+              // Remount will happen when checkbox is checked (if wallet payment is selected)
             } catch (e) {
               // REVERT on error
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
@@ -4734,18 +4724,8 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Remount Elements when selection changes - only force remount for wallet payments
-              if (result.client_secret && paymentElement) {
-                try {
-                  const needsForceRemount = shouldForceRemountForWalletPayment();
-                  await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
-                  if (needsForceRemount) {
-                    await new Promise(resolve => setTimeout(resolve, 600));
-                  }
-                } catch (remountErr) {
-                  console.error("Failed to update Stripe Elements:", remountErr);
-                }
-              }
+              // Don't remount here - tip amount changed but checkbox not checked yet
+              // Remount will happen when checkbox is checked (if wallet payment is selected)
             } catch (e) {
               // REVERT on error
               tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
@@ -4810,18 +4790,8 @@
             setPaymentButtonsDisabled(false);
             setSelMsg("");
             
-            // Remount Elements when selection changes - only force remount for wallet payments
-            if (result.client_secret && paymentElement) {
-              try {
-                const needsForceRemount = shouldForceRemountForWalletPayment();
-                await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
-                if (needsForceRemount) {
-                  await new Promise(resolve => setTimeout(resolve, 600));
-                }
-              } catch (remountErr) {
-                console.error("Failed to update Stripe Elements:", remountErr);
-              }
-            }
+            // Don't remount here - tip amount changed but checkbox not checked yet
+            // Remount will happen when checkbox is checked (if wallet payment is selected)
           } catch (e) {
             // REVERT on error
             tipMode = prev.tipMode; tipPresetLabel = prev.tipPresetLabel; tipAmount = prev.tipAmount; tipAgreed = prev.tipAgreed;
