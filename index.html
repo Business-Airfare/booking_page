@@ -708,10 +708,10 @@
       throw new Error("Stripe Elements not properly initialized. Please refresh the page.");
     }
     
-    // CRITICAL: Refresh PaymentIntent before confirming to ensure Apple Pay shows correct amount
-    // This ensures that any TCS/tip changes are reflected in the PaymentIntent amount
-    // Apple Pay caches the PaymentIntent amount when initialized, so we need to refresh Elements
-    console.log("[BOOK_FLOW] Refreshing PaymentIntent to ensure correct amount before confirmation");
+    // Verify PaymentIntent is current before confirming
+    // Elements are already updated when TCS/tip changes, so we don't remount here to avoid disrupting Apple Pay
+    // Stripe Elements will automatically use the updated PaymentIntent amount when confirming
+    console.log("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation");
     try {
       const refreshRes = await fetch(START_PAYMENT, {
         method: "POST",
@@ -720,17 +720,24 @@
       });
       const refreshPayload = await refreshRes.json().catch(() => ({}));
       if (refreshRes.ok && refreshPayload.client_secret) {
-        // Always remount Stripe Elements before confirming to ensure Apple Pay has the latest amount
-        // Even if client_secret is the same, remounting ensures Apple Pay refreshes its cached amount
-        console.log("[BOOK_FLOW] Remounting Stripe Elements with refreshed PaymentIntent to update Apple Pay amount");
-        await mountStripePaymentElement(refreshPayload.client_secret, true); // preserveState=true to keep user input
-        // Wait a moment for Elements (especially Apple Pay) to fully initialize with new amount
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } else {
-        console.warn("[BOOK_FLOW] Could not refresh PaymentIntent, proceeding with existing amount");
+        // Only remount if PaymentIntent was recreated (client_secret changed) AND Elements aren't already mounted
+        // Avoid remounting if Elements are already mounted - it disrupts Apple Pay
+        if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
+          console.log("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
+          currentClientSecret = refreshPayload.client_secret;
+          await mountStripePaymentElement(refreshPayload.client_secret, false);
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        } else if (refreshPayload.client_secret !== currentClientSecret) {
+          // PaymentIntent was recreated but Elements are already mounted
+          // Update the client_secret reference but don't remount to avoid disrupting Apple Pay
+          console.log("[BOOK_FLOW] PaymentIntent recreated but Elements already mounted - Stripe will use updated amount");
+          currentClientSecret = refreshPayload.client_secret;
+        } else {
+          console.log("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
+        }
       }
     } catch (refreshErr) {
-      console.warn("[BOOK_FLOW] Error refreshing PaymentIntent before confirmation:", refreshErr);
+      console.warn("[BOOK_FLOW] Error verifying PaymentIntent:", refreshErr);
       // Don't throw - proceed with existing PaymentIntent
     }
     
@@ -752,7 +759,14 @@
 
     if (error) {
       console.error("[BOOK_FLOW] Stripe confirmPayment error:", error);
-      throw new Error(error.message || "Payment failed");
+      
+      // Handle Apple Pay specific errors more gracefully
+      const errorMessage = error.message || "Payment failed";
+      if (errorMessage.toLowerCase().includes("apple pay") || errorMessage.toLowerCase().includes("apple_pay")) {
+        throw new Error("Unable to process Apple Pay payment. Please try using a different payment method (card, Google Pay, or Link) and try again.");
+      }
+      
+      throw new Error(errorMessage);
     }
     
     console.log("[BOOK_FLOW] Payment confirmed successfully", {
