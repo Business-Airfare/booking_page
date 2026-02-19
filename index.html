@@ -356,50 +356,51 @@
     return result;
   }
 
-  async function mountStripePaymentElement(clientSecret, preserveState = false, forceRemount = false){
+  async function mountStripePaymentElement(clientSecret, preserveState = false){
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
     // If we already have elements and the client_secret hasn't changed, don't remount
-    // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret stayed the same)
-    // IMPORTANT: Only skip remount if preserveState is true AND elements exist AND client_secret matches
-    const shouldSkipRemount = preserveState && elements && currentClientSecret && currentClientSecret === clientSecret && !forceRemount;
-    if (shouldSkipRemount) {
-      console.log("[STRIPE] Skipping remount - same PaymentIntent", { currentClientSecret, clientSecret });
+    if (preserveState && elements && currentClientSecret === clientSecret) {
       return; // No need to remount - same PaymentIntent
     }
-    
-    console.log("[STRIPE] Mounting Stripe Elements", { 
-      preserveState, 
-      hasElements: !!elements, 
-      currentClientSecret, 
-      newClientSecret: clientSecret,
-      forceRemount,
-      shouldSkipRemount
-    });
 
-    // If elements exist and we're updating, preserve user input (address and email)
+    // If elements exist and we're updating, preserve scroll position and add loading overlay
     const wasMounted = !!elements;
-    let savedAddressValue = null;
-    let savedEmailValue = billingEmail; // Already stored in global variable
-    
-    // Only try to save address if we're preserving state and address element exists
-    if (wasMounted && preserveState && addressElement) {
-      try {
-        // Save address values before unmounting
-        const addrValue = await addressElement.getValue();
-        if (addrValue && addrValue.complete) {
-          savedAddressValue = addrValue.value;
-        }
-      } catch (e) {
-        // If getValue fails, continue anyway - don't block mounting
-        console.log("[STRIPE] Could not save address value:", e);
-      }
-    }
-
-    // If elements exist and we're updating, preserve scroll position
     const stripeWrap = document.getElementById("baStripeWrap");
     const scrollPos = wasMounted ? window.scrollY : null;
+    let loadingOverlay = null;
+
+    if (wasMounted && preserveState) {
+      // Add subtle loading overlay instead of clearing everything
+      loadingOverlay = document.createElement("div");
+      loadingOverlay.id = "baStripeLoadingOverlay";
+      loadingOverlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255,255,255,0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 12px;
+      `;
+      loadingOverlay.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:24px;height:24px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:13px;color:#666;font-weight:700">Updating payment amount...</div>
+        </div>
+      `;
+      if (stripeWrap) {
+        const existingOverlay = stripeWrap.querySelector("#baStripeLoadingOverlay");
+        if (existingOverlay) existingOverlay.remove();
+        stripeWrap.style.position = "relative";
+        stripeWrap.appendChild(loadingOverlay);
+      }
+    }
 
     // Unmount old elements if they exist (Stripe requires this before mounting new ones)
     if (wasMounted) {
@@ -445,17 +446,6 @@
     if (!linkMount) throw new Error("Missing baLinkAuthMount container");
     linkAuthElement.mount("#baLinkAuthMount");
 
-    // Restore saved email if available
-    if (savedEmailValue && linkAuthElement) {
-      try {
-        // Link authentication element doesn't support setValue, but we can trigger change
-        // The email is already stored in billingEmail global variable, so validation will work
-        billingEmail = savedEmailValue;
-      } catch (e) {
-        console.log("[STRIPE] Could not restore email:", e);
-      }
-    }
-
     linkAuthElement.on("change", (event) => {
       billingEmail = (event && event.value && event.value.email) ? String(event.value.email) : "";
       const ok = validateBillingUI();
@@ -467,27 +457,11 @@
     addressElement = elements.create("address", {
       mode: "billing",
       fields: { phone: "always" },
-      defaultValues: savedAddressValue ? {
-        address: savedAddressValue.address || { country: "US" },
-        name: savedAddressValue.name || undefined,
-        phone: savedAddressValue.phone || undefined
-      } : { address: { country: "US" } }
+      defaultValues: { address: { country: "US" } }
     });
 
     if (!addrMount) throw new Error("Missing baAddressMount container");
     addressElement.mount("#baAddressMount");
-
-    // Restore address completeness state
-    if (savedAddressValue) {
-      billingAddressComplete = true;
-      // Trigger validation after a short delay to allow element to render
-      setTimeout(() => {
-        const ok = validateBillingUI();
-        const m = document.getElementById("baStripeMsg");
-        if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
-        setConfirmEnabled(ok);
-      }, 100);
-    }
 
     addressElement.on("change", (event) => {
       billingAddressComplete = !!(event && event.complete);
@@ -4432,20 +4406,16 @@
           setSelMsg("");
           setPaymentButtonsDisabled(false);
           
-          // Update PaymentIntent handling:
-          // - If client_secret changed: New PaymentIntent created, remount Elements (preserves address via saved values)
-          // - If client_secret same: PaymentIntent updated, Elements will use updated amount on confirmPayment
-          //   Note: Apple Pay button may show old amount visually, but actual payment will use correct amount
+          // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
           if (result.client_secret && paymentElement) {
-            if (result.client_secret !== currentClientSecret) {
-              // New PaymentIntent - remount to get new instance
-              try {
-                await mountStripePaymentElement(result.client_secret, true, false);
-              } catch (e) {
-                console.error("Failed to update Stripe Elements:", e);
-              }
+            try {
+              // Use preserveState=true to avoid full remount if possible
+              await mountStripePaymentElement(result.client_secret, true);
+              // Don't show message - it's disruptive
+            } catch (e) {
+              console.error("Failed to update Stripe Elements:", e);
+              // Don't fail the update - selection was saved successfully
             }
-            // If same client_secret, no remount needed - Stripe will use updated PaymentIntent amount on confirm
           }
         })
         .catch((e) => {
@@ -4508,17 +4478,13 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Only remount if client_secret changed (new PaymentIntent created)
-              // If same client_secret, PaymentIntent was updated and Stripe will use correct amount on confirmPayment
+              // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
-                if (result.client_secret !== currentClientSecret) {
-                  try {
-                    await mountStripePaymentElement(result.client_secret, true, false);
-                  } catch (remountErr) {
-                    console.error("Failed to update Stripe Elements:", remountErr);
-                  }
+                try {
+                  await mountStripePaymentElement(result.client_secret, true);
+                } catch (remountErr) {
+                  console.error("Failed to update Stripe Elements:", remountErr);
                 }
-                // Same client_secret: No remount needed, Stripe uses updated amount automatically
               }
             } catch (e) {
               // REVERT on error
@@ -4562,17 +4528,13 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Only remount if client_secret changed (new PaymentIntent created)
-              // If same client_secret, PaymentIntent was updated and Stripe will use correct amount on confirmPayment
+              // If a new client_secret was returned, update Stripe Elements gracefully
               if (result.client_secret && paymentElement) {
-                if (result.client_secret !== currentClientSecret) {
-                  try {
-                    await mountStripePaymentElement(result.client_secret, true, false);
-                  } catch (remountErr) {
-                    console.error("Failed to update Stripe Elements:", remountErr);
-                  }
+                try {
+                  await mountStripePaymentElement(result.client_secret, true);
+                } catch (remountErr) {
+                  console.error("Failed to update Stripe Elements:", remountErr);
                 }
-                // Same client_secret: No remount needed, Stripe uses updated amount automatically
               }
             } catch (e) {
               // REVERT on error
@@ -4639,10 +4601,9 @@
             setSelMsg("");
             
             // If a new client_secret was returned, update Stripe Elements gracefully
-            // Force remount to ensure Apple Pay/Google Pay show the updated amount
             if (result.client_secret && paymentElement) {
               try {
-                await mountStripePaymentElement(result.client_secret, true, true);
+                await mountStripePaymentElement(result.client_secret, true);
               } catch (remountErr) {
                 console.error("Failed to update Stripe Elements:", remountErr);
               }
@@ -4659,11 +4620,10 @@
             console.error("[TIP_SELECTION] Failed to save custom tip:", e);
           }
           
-          // Only remount if client_secret changed (new PaymentIntent created)
-          // If same client_secret, PaymentIntent was updated and will use correct amount on confirm
-          if (result.client_secret && paymentElement && result.client_secret !== currentClientSecret) {
+          // If a new client_secret was returned, update Stripe Elements gracefully
+          if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true, false);
+              await mountStripePaymentElement(result.client_secret, true);
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
@@ -4718,10 +4678,9 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
-          // Force remount to ensure Apple Pay/Google Pay show the updated amount
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true, true);
+              await mountStripePaymentElement(result.client_secret, true);
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
@@ -5069,15 +5028,10 @@
           if (res.ok && payload.client_secret) {
             // Success - initialize Stripe Elements
             console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
-            try {
-              await mountStripePaymentElement(payload.client_secret, false);
-              await waitForStripeReady(8000);
-            } catch (mountError) {
-              console.error("[BOOK_FLOW] Error mounting Stripe Elements:", mountError);
-              // Continue anyway to reveal sections - user can refresh if needed
-            }
+            await mountStripePaymentElement(payload.client_secret, false);
+            await waitForStripeReady(8000);
             
-            // NOW that Stripe elements are fully loaded (or attempted), reveal sections and hide sticky bar
+            // NOW that Stripe elements are fully loaded, reveal sections and hide sticky bar
             if (extrasSection) {
               extrasSection.style.display = "block";
             }
