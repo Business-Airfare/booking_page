@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secure Payment | Business Air Travel</title>
   <meta name="description" content="Secure online payment for Business Air Travel bookings. Fast, encrypted, and protected checkout.">
+  <link href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <!-- =========================
@@ -56,7 +57,7 @@
 
   function renderLoading(){
     root.innerHTML = `
-      <div style="position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:system-ui;background:#fff;z-index:99999">
+      <div style="position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:'PT Serif',serif;background:#fff;z-index:99999">
         <div style="width:32px;height:32px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
         <div style="font-weight:700;font-size:15px;color:#333">Loading booking page</div>
       </div>
@@ -70,7 +71,7 @@
 
   function renderError(msg){
     root.innerHTML =
-      '<div style="padding:24px;font-family:system-ui;color:#b00020">Error: ' +
+      '<div style="padding:24px;font-family:\'PT Serif\',serif;color:#b00020">Error: ' +
       escapeHtml(msg) + '</div>';
   }
 
@@ -979,7 +980,7 @@
   function renderPaid(data){
     const pax = (data.passengers || []).join(", ");
     root.innerHTML = `
-      <div style="padding:24px;font-family:system-ui;max-width:920px;margin:0 auto">
+      <div style="padding:24px;font-family:'PT Serif',serif;max-width:920px;margin:0 auto">
         <div style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
           <div style="font-weight:900;font-size:16px;margin-bottom:4px">Payment received ✅</div>
           <div style="opacity:.9">Thank you. Your agent will follow up with the next steps.</div>
@@ -1340,7 +1341,7 @@
         position:fixed; right:14px; bottom:92px; z-index:99999;
         max-width:340px; padding:10px 12px; border-radius:10px;
         background:${ok ? "#0b6b2f" : "#b00020"}; color:#fff;
-        font-weight:800; font-family:system-ui; box-shadow:0 10px 24px rgba(0,0,0,.18);
+        font-weight:800; font-family:'PT Serif',serif; box-shadow:0 10px 24px rgba(0,0,0,.18);
         opacity:0; transform:translateY(8px); transition:.18s ease;
       `;
       document.body.appendChild(el);
@@ -2007,6 +2008,7 @@
   body{
     margin: 0;
     padding: 0;
+    font-family: 'PT Serif', serif;
   }
   html{
     margin: 0;
@@ -2235,7 +2237,6 @@
   }
 
   .baWrap{
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     background: var(--ba-bg);
     color: var(--ba-text);
     -webkit-font-smoothing: antialiased;
@@ -2260,7 +2261,6 @@
   }
 
   .baSectionTitle{
-    font-family: Georgia, "Times New Roman", serif;
     font-weight: 800;
     font-size: 34px;
     margin: 0 0 14px;
@@ -2298,7 +2298,6 @@
     border-bottom: 1px solid #efefef;
   }
   .baCard__route{
-    font-family: Georgia, "Times New Roman", serif;
     font-weight: 800;
     font-size: 26px;
     letter-spacing: -0.02em;
@@ -2495,7 +2494,6 @@
   .baPaxCard.is-collapsed{ cursor:pointer; }
   .baPaxCard__head{
     padding: 18px 18px;
-    font-family: Georgia, "Times New Roman", serif;
     font-weight: 800;
     font-size: 26px;
     border-bottom: 1px solid #efefef;
@@ -2515,7 +2513,6 @@
     margin-left: 8px;
     font-size: 12px;
     font-weight: 700;
-    font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif;
     color: #8a8a8a;
     display: none;
   }
