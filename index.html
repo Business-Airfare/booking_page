@@ -289,6 +289,7 @@
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
   let previousPaymentMethodType = null; // Track previous payment method to detect switches
+  let isConfirmingPayment = false; // Flag to prevent remounts during payment confirmation
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -402,6 +403,12 @@
   async function mountStripePaymentElement(clientSecret, preserveState = false, forceRemount = false){
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
+
+    // CRITICAL: Never remount during payment confirmation - it will erase user input
+    if (isConfirmingPayment) {
+      console.warn("[STRIPE] Payment confirmation in progress - blocking remount to preserve user input");
+      return; // Skip remount entirely
+    }
 
     // If we already have elements and the client_secret hasn't changed, don't remount
     // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret is same)
@@ -603,6 +610,12 @@
     
     // Listen for payment method changes to track selected method
     paymentElement.on("change", async (event) => {
+      // CRITICAL: Do NOT remount if payment confirmation is in progress
+      if (isConfirmingPayment) {
+        console.log("[STRIPE] Payment confirmation in progress - skipping payment method change remount");
+        return;
+      }
+      
       if (event && event.value && event.value.type) {
         const newPaymentMethodType = event.value.type;
         const oldPaymentMethodType = selectedPaymentMethodType;
@@ -618,11 +631,12 @@
         
         // Force remount when switching from credit card to wallet payment
         // This ensures wallet payment shows the correct amount
+        // BUT only if payment confirmation is NOT in progress
         const walletMethods = ["apple_pay", "google_pay"];
         const isSwitchingToWallet = walletMethods.includes(newPaymentMethodType);
         const wasCard = oldPaymentMethodType === "card" || oldPaymentMethodType === null;
         
-        if (isSwitchingToWallet && wasCard && currentClientSecret) {
+        if (isSwitchingToWallet && wasCard && currentClientSecret && !isConfirmingPayment) {
           console.log("[STRIPE] Switching from card to wallet payment - forcing remount to ensure correct amount");
           try {
             // Force remount to refresh wallet payment with current PaymentIntent amount
@@ -787,6 +801,10 @@
   async function confirmStripePayment(){
     console.log("[BOOK_FLOW] Pay button clicked - will record acceptance, call start_payment, then confirm with Stripe");
     
+    // CRITICAL: Set flag to prevent remounts during payment confirmation
+    isConfirmingPayment = true;
+    
+    try {
     // HARD VALIDATION: Check all required checkboxes before proceeding
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     if (!termsCheckbox || !termsCheckbox.checked) {
@@ -972,6 +990,11 @@
     });
     
     return paymentIntent;
+    } finally {
+      // Always reset the flag, even if payment fails
+      isConfirmingPayment = false;
+      console.log("[BOOK_FLOW] Payment confirmation completed, remount flag reset");
+    }
   }
 
   // ---------- selection update ----------
