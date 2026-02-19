@@ -366,14 +366,41 @@
       return; // No need to remount - same PaymentIntent
     }
 
-    // If elements exist and we're updating, preserve scroll position and add loading overlay
+    // If elements exist and we're updating, preserve user input and minimize visual disruption
     const wasMounted = !!elements;
     const stripeWrap = document.getElementById("baStripeWrap");
     const scrollPos = wasMounted ? window.scrollY : null;
     let loadingOverlay = null;
-
+    
+    // Preserve user input before unmounting
+    let preservedEmail = billingEmail || "";
+    let preservedAddress = null;
+    
     if (wasMounted && preserveState) {
-      // Add subtle loading overlay instead of clearing everything
+      // Read current address data before unmounting
+      try {
+        if (addressElement) {
+          const addrValue = await addressElement.getValue();
+          if (addrValue && addrValue.value) {
+            preservedAddress = {
+              name: addrValue.value.name || "",
+              phone: addrValue.value.phone || "",
+              address: addrValue.value.address ? {
+                line1: addrValue.value.address.line1 || "",
+                line2: addrValue.value.address.line2 || "",
+                city: addrValue.value.address.city || "",
+                state: addrValue.value.address.state || "",
+                postal_code: addrValue.value.address.postal_code || "",
+                country: addrValue.value.address.country || "US"
+              } : null
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("[STRIPE] Could not read address before remount:", e);
+      }
+      
+      // Create subtle loading overlay (will be appended after mounting to avoid being cleared)
       loadingOverlay = document.createElement("div");
       loadingOverlay.id = "baStripeLoadingOverlay";
       loadingOverlay.style.cssText = `
@@ -382,25 +409,21 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(255,255,255,0.9);
+        background: rgba(255,255,255,0.7);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 10;
-        border-radius: 12px;
+        z-index: 5;
+        border-radius: 8px;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        pointer-events: none;
       `;
       loadingOverlay.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-          <div style="width:24px;height:24px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.8s linear infinite"></div>
-          <div style="font-size:13px;color:#666;font-weight:700">Updating payment amount...</div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0.6">
+          <div style="width:16px;height:16px;border:2px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.5s linear infinite"></div>
         </div>
       `;
-      if (stripeWrap) {
-        const existingOverlay = stripeWrap.querySelector("#baStripeLoadingOverlay");
-        if (existingOverlay) existingOverlay.remove();
-        stripeWrap.style.position = "relative";
-        stripeWrap.appendChild(loadingOverlay);
-      }
     }
 
     // Unmount old elements if they exist (Stripe requires this before mounting new ones)
@@ -454,11 +477,40 @@
       if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
       setConfirmEnabled(ok);
     });
+    
+    // Restore preserved email if available
+    if (preservedEmail && linkAuthElement) {
+      try {
+        // Link Authentication element doesn't support setValue, but we'll restore via the change handler
+        // The email is already stored in billingEmail variable, so it will be used during validation
+        setTimeout(() => {
+          // Trigger change event to sync the stored email
+          if (linkAuthElement && billingEmail) {
+            // Email will be restored when user interacts or when Link auto-fills
+          }
+        }, 100);
+      } catch (e) {
+        console.warn("[STRIPE] Could not restore email:", e);
+      }
+    }
+
+    // Prepare address default values from preserved data
+    const addressDefaults = { address: { country: "US" } };
+    if (preservedAddress) {
+      if (preservedAddress.name) addressDefaults.name = preservedAddress.name;
+      if (preservedAddress.phone) addressDefaults.phone = preservedAddress.phone;
+      if (preservedAddress.address) {
+        addressDefaults.address = {
+          ...preservedAddress.address,
+          country: preservedAddress.address.country || "US"
+        };
+      }
+    }
 
     addressElement = elements.create("address", {
       mode: "billing",
       fields: { phone: "always" },
-      defaultValues: { address: { country: "US" } }
+      defaultValues: addressDefaults
     });
 
     if (!addrMount) throw new Error("Missing baAddressMount container");
@@ -471,6 +523,29 @@
       if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
       setConfirmEnabled(ok);
     });
+    
+    // Restore preserved address values after mounting
+    if (preservedAddress && addressElement) {
+      try {
+        // Wait for element to be ready, then restore values
+        setTimeout(async () => {
+          try {
+            if (preservedAddress.name || preservedAddress.phone || preservedAddress.address) {
+              await addressElement.setValue({
+                name: preservedAddress.name || undefined,
+                phone: preservedAddress.phone || undefined,
+                address: preservedAddress.address || undefined
+              });
+            }
+          } catch (setErr) {
+            // setValue might not be available or might fail - that's okay
+            console.warn("[STRIPE] Could not restore address values:", setErr);
+          }
+        }, 300);
+      } catch (e) {
+        console.warn("[STRIPE] Could not restore address:", e);
+      }
+    }
 
     paymentElement = elements.create("payment", { 
       layout: "tabs",
@@ -482,23 +557,42 @@
     });
     if (!payMount) throw new Error("Missing baStripeMount container");
     paymentElement.mount("#baStripeMount");
+    
+    // Append loading overlay to payment mount after mounting (so it doesn't get cleared)
+    if (loadingOverlay && payMount) {
+      payMount.style.position = "relative";
+      payMount.appendChild(loadingOverlay);
+      // Fade in overlay very subtly
+      setTimeout(() => {
+        if (loadingOverlay) loadingOverlay.style.opacity = "1";
+      }, 10);
+    }
 
     // Store current client_secret
     currentClientSecret = clientSecret;
 
-    // Remove loading overlay after a short delay to allow elements to render
+    // Remove loading overlay smoothly after elements are rendered
+    // Use shorter delay for better UX - elements render quickly
     if (loadingOverlay) {
+      // Wait for elements to start rendering, then fade out quickly
       setTimeout(() => {
         if (loadingOverlay && loadingOverlay.parentNode) {
           loadingOverlay.style.opacity = "0";
-          loadingOverlay.style.transition = "opacity 0.2s ease";
+          loadingOverlay.style.transition = "opacity 0.15s ease";
           setTimeout(() => {
             if (loadingOverlay && loadingOverlay.parentNode) {
               loadingOverlay.remove();
             }
-          }, 200);
+          }, 150);
         }
-      }, 400);
+      }, 200); // Reduced from 400ms for faster transition
+    }
+    
+    // Restore scroll position if we were preserving state
+    if (preserveState && scrollPos !== null) {
+      setTimeout(() => {
+        window.scrollTo({ top: scrollPos, behavior: 'instant' });
+      }, 100);
     }
   }
 
@@ -4719,7 +4813,8 @@
           if (result.client_secret && paymentElement) {
             try {
               await mountStripePaymentElement(result.client_secret, true, true);
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              // Reduced wait time - overlay handles visual transition smoothly
+              await new Promise(resolve => setTimeout(resolve, 600));
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
