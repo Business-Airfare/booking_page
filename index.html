@@ -26,6 +26,18 @@
   const root = document.getElementById("baPayRoot");
   if (!root) return;
 
+  // Set favicon
+  (function setFavicon() {
+    const faviconUrl = "https://images.squarespace-cdn.com/content/v1/693df150a1e76702647bd948/5ca3d812-982e-41d8-a00d-153573571d08/image+png+compressed.png?format=100w";
+    let link = document.querySelector("link[rel*='icon']") || document.createElement("link");
+    link.type = "image/png";
+    link.rel = "icon";
+    link.href = faviconUrl;
+    if (!document.querySelector("link[rel*='icon']")) {
+      document.head.appendChild(link);
+    }
+  })();
+
   // ---------- helpers ----------
   function escapeHtml(s){
     return String(s ?? "").replace(/[&<>"']/g, m => (
@@ -459,7 +471,14 @@
       setConfirmEnabled(ok);
     });
 
-    paymentElement = elements.create("payment", { layout: "tabs" });
+    paymentElement = elements.create("payment", { 
+      layout: "tabs",
+      paymentMethodOrder: ["link", "apple_pay", "google_pay", "card"],
+      wallets: {
+        applePay: "auto",
+        googlePay: "auto"
+      }
+    });
     if (!payMount) throw new Error("Missing baStripeMount container");
     paymentElement.mount("#baStripeMount");
 
@@ -3873,7 +3892,7 @@
                 <label class="baTermsAgreeLabel">
                   <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
                   <span class="baTermsAgreeText">
-                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="#" class="baTermsLink">Privacy Policy</a> and <a href="https://www.business-airfare.com/convention" target="_blank" rel="noopener noreferrer" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="#" class="baTermsLink">Privacy Policy</a>.
+                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a> and <a href="https://www.business-airfare.com/convention" target="_blank" rel="noopener noreferrer" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a>.
                   </span>
                 </label>
                 <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
@@ -4765,6 +4784,11 @@
         link.setAttribute("href", termsUrl);
         link.setAttribute("target", "_blank");
         link.setAttribute("rel", "noopener noreferrer");
+      } else if (linkText.includes("Privacy Policy")) {
+        // Set href to privacy policy URL
+        link.setAttribute("href", "https://www.business-airfare.com/privacy-policy");
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer");
       }
       link.addEventListener("click", (e) => {
         e.preventDefault();
@@ -4772,7 +4796,8 @@
           // Open in new tab
           window.open(termsUrl, "_blank", "noopener,noreferrer");
         } else if (linkText.includes("Privacy Policy")) {
-          createPopup("Privacy Policy", "<p>Privacy Policy content will be displayed here.</p>");
+          // Open privacy policy in new tab
+          window.open("https://www.business-airfare.com/privacy-policy", "_blank", "noopener,noreferrer");
         } else if (linkText.includes("airline liability limitations")) {
           // Open convention page in new tab
           window.open("https://www.business-airfare.com/convention", "_blank", "noopener,noreferrer");
