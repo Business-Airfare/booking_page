@@ -287,9 +287,51 @@
   let linkAuthElement = null;
   let addressElement = null;
   let currentClientSecret = null; // Track current PaymentIntent client_secret
+  let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
 
   let billingEmail = "";
   let billingAddressComplete = false;
+  
+  // Helper function to check if wallet payment methods require remount
+  function shouldForceRemountForWalletPayment() {
+    // Only force remount if Apple Pay or Google Pay is selected/available
+    // Credit card payments don't cache amount, so no remount needed
+    if (!paymentElement) return false;
+    
+    // Primary check: if user has selected a wallet payment method, we need to remount
+    const walletMethods = ["apple_pay", "google_pay"];
+    if (selectedPaymentMethodType && walletMethods.includes(selectedPaymentMethodType)) {
+      console.log("[STRIPE] Wallet payment method selected (" + selectedPaymentMethodType + "), force remount needed");
+      return true;
+    }
+    
+    // Secondary check: if wallet buttons are visible, user might use them
+    // Check if payment element has wallet methods available by looking for wallet-related elements
+    try {
+      const payMount = document.getElementById("baStripeMount");
+      if (payMount) {
+        // Check for Stripe wallet payment buttons (they're typically in iframes)
+        // Look for elements that indicate wallet methods are available
+        const hasWalletIndicators = payMount.querySelectorAll("iframe").length > 2; // Wallet methods add extra iframes
+        
+        // Also check if there are multiple payment method tabs (wallet + card = multiple tabs)
+        const tabs = payMount.querySelectorAll('[role="tab"], .tab, [data-testid*="tab"]');
+        if (tabs.length > 1) {
+          // Multiple tabs likely means wallet methods are available
+          console.log("[STRIPE] Multiple payment method tabs detected, wallet methods likely available");
+          // Only remount if we're not sure it's just card - be conservative
+          // Actually, let's not remount based on this alone - wait for user selection
+        }
+      }
+    } catch (e) {
+      console.warn("[STRIPE] Error detecting wallet methods:", e);
+    }
+    
+    // Default: don't force remount for credit card payments
+    // Only remount if user has explicitly selected a wallet payment method
+    console.log("[STRIPE] No wallet payment method selected, skipping force remount");
+    return false;
+  }
   
   // ---------- Acceptance state (global scope so validateBillingUI can access it) ----------
   let acceptanceCompleted = false;
@@ -557,6 +599,26 @@
     });
     if (!payMount) throw new Error("Missing baStripeMount container");
     paymentElement.mount("#baStripeMount");
+    
+    // Track selected payment method type to determine if remount is needed
+    paymentElement.on("ready", () => {
+      // Check if wallet payment methods are available
+      try {
+        const paymentMethodTypes = paymentElement?.getElement?.()?.paymentMethodTypes || [];
+        // If wallet methods are available, we may need to remount when amount changes
+        console.log("[STRIPE] Available payment methods:", paymentMethodTypes);
+      } catch (e) {
+        // Ignore - method might not be available
+      }
+    });
+    
+    // Listen for payment method changes to track selected method
+    paymentElement.on("change", (event) => {
+      if (event && event.value && event.value.type) {
+        selectedPaymentMethodType = event.value.type;
+        console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+      }
+    });
     
     // Append loading overlay to payment mount after mounting (so it doesn't get cleared)
     if (loadingOverlay && payMount) {
@@ -4541,14 +4603,17 @@
           setSelMsg("");
           setPaymentButtonsDisabled(false);
           
-          // Always remount Elements when selection changes to ensure Apple Pay refreshes its cached amount
-          // Even if client_secret is the same, the PaymentIntent amount changed, so we need to refresh Apple Pay
+          // Remount Elements when selection changes
+          // Only force remount for wallet payments (Apple Pay/Google Pay) - they cache the amount
+          // Credit card payments don't need remount as they pick up PaymentIntent updates automatically
           if (result.client_secret && paymentElement) {
             try {
-              // Force remount even if client_secret is same - PaymentIntent amount has changed
-              await mountStripePaymentElement(result.client_secret, true, true);
-              // Wait for Apple Pay to fully initialize after remount
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              const needsForceRemount = shouldForceRemountForWalletPayment();
+              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+              // Only wait if we forced remount (for wallet payments)
+              if (needsForceRemount) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+              }
             } catch (e) {
               console.error("Failed to update Stripe Elements:", e);
               // Don't fail the update - selection was saved successfully
@@ -4615,11 +4680,14 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Always remount Elements when selection changes to ensure Apple Pay refreshes
+              // Remount Elements when selection changes - only force remount for wallet payments
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true, true);
-                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  const needsForceRemount = shouldForceRemountForWalletPayment();
+                  await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+                  if (needsForceRemount) {
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                  }
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4666,11 +4734,14 @@
               setPaymentButtonsDisabled(false);
               setSelMsg("");
               
-              // Always remount Elements when selection changes to ensure Apple Pay refreshes
+              // Remount Elements when selection changes - only force remount for wallet payments
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true, true);
-                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  const needsForceRemount = shouldForceRemountForWalletPayment();
+                  await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+                  if (needsForceRemount) {
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                  }
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4739,11 +4810,14 @@
             setPaymentButtonsDisabled(false);
             setSelMsg("");
             
-            // Always remount Elements when selection changes to ensure Apple Pay refreshes
+            // Remount Elements when selection changes - only force remount for wallet payments
             if (result.client_secret && paymentElement) {
               try {
-                await mountStripePaymentElement(result.client_secret, true, true);
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                const needsForceRemount = shouldForceRemountForWalletPayment();
+                await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+                if (needsForceRemount) {
+                  await new Promise(resolve => setTimeout(resolve, 600));
+                }
               } catch (remountErr) {
                 console.error("Failed to update Stripe Elements:", remountErr);
               }
@@ -4809,12 +4883,14 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
-          // Always remount Elements when selection changes to ensure Apple Pay refreshes
+          // Remount Elements when selection changes - only force remount for wallet payments
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true, true);
-              // Reduced wait time - overlay handles visual transition smoothly
-              await new Promise(resolve => setTimeout(resolve, 600));
+              const needsForceRemount = shouldForceRemountForWalletPayment();
+              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+              if (needsForceRemount) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+              }
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
