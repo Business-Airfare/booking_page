@@ -362,15 +362,28 @@
 
     // If we already have elements and the client_secret hasn't changed, don't remount
     // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret stayed the same)
-    if (preserveState && elements && currentClientSecret === clientSecret && !forceRemount) {
+    // IMPORTANT: Only skip remount if preserveState is true AND elements exist AND client_secret matches
+    const shouldSkipRemount = preserveState && elements && currentClientSecret && currentClientSecret === clientSecret && !forceRemount;
+    if (shouldSkipRemount) {
+      console.log("[STRIPE] Skipping remount - same PaymentIntent", { currentClientSecret, clientSecret });
       return; // No need to remount - same PaymentIntent
     }
+    
+    console.log("[STRIPE] Mounting Stripe Elements", { 
+      preserveState, 
+      hasElements: !!elements, 
+      currentClientSecret, 
+      newClientSecret: clientSecret,
+      forceRemount,
+      shouldSkipRemount
+    });
 
     // If elements exist and we're updating, preserve user input (address and email)
     const wasMounted = !!elements;
     let savedAddressValue = null;
     let savedEmailValue = billingEmail; // Already stored in global variable
     
+    // Only try to save address if we're preserving state and address element exists
     if (wasMounted && preserveState && addressElement) {
       try {
         // Save address values before unmounting
@@ -379,6 +392,7 @@
           savedAddressValue = addrValue.value;
         }
       } catch (e) {
+        // If getValue fails, continue anyway - don't block mounting
         console.log("[STRIPE] Could not save address value:", e);
       }
     }
@@ -5055,10 +5069,15 @@
           if (res.ok && payload.client_secret) {
             // Success - initialize Stripe Elements
             console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
-            await mountStripePaymentElement(payload.client_secret, false);
-            await waitForStripeReady(8000);
+            try {
+              await mountStripePaymentElement(payload.client_secret, false);
+              await waitForStripeReady(8000);
+            } catch (mountError) {
+              console.error("[BOOK_FLOW] Error mounting Stripe Elements:", mountError);
+              // Continue anyway to reveal sections - user can refresh if needed
+            }
             
-            // NOW that Stripe elements are fully loaded, reveal sections and hide sticky bar
+            // NOW that Stripe elements are fully loaded (or attempted), reveal sections and hide sticky bar
             if (extrasSection) {
               extrasSection.style.display = "block";
             }
