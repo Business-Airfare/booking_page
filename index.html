@@ -356,12 +356,13 @@
     return result;
   }
 
-  async function mountStripePaymentElement(clientSecret, preserveState = false){
+  async function mountStripePaymentElement(clientSecret, preserveState = false, forceRemount = false){
     if (!window.Stripe) throw new Error("Stripe.js failed to load");
     if (!stripe) stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
     // If we already have elements and the client_secret hasn't changed, don't remount
-    if (preserveState && elements && currentClientSecret === clientSecret) {
+    // UNLESS forceRemount is true (needed when PaymentIntent amount changed but client_secret stayed the same)
+    if (preserveState && elements && currentClientSecret === clientSecret && !forceRemount) {
       return; // No need to remount - same PaymentIntent
     }
 
@@ -4407,10 +4408,11 @@
           setPaymentButtonsDisabled(false);
           
           // If a new client_secret was returned (PaymentIntent was updated/recreated), update Stripe Elements
+          // Force remount to ensure Apple Pay/Google Pay show the updated amount
           if (result.client_secret && paymentElement) {
             try {
-              // Use preserveState=true to avoid full remount if possible
-              await mountStripePaymentElement(result.client_secret, true);
+              // Force remount when amount changes to refresh wallet payment methods (Apple Pay, Google Pay)
+              await mountStripePaymentElement(result.client_secret, true, true);
               // Don't show message - it's disruptive
             } catch (e) {
               console.error("Failed to update Stripe Elements:", e);
@@ -4479,9 +4481,10 @@
               setSelMsg("");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
+              // Force remount to ensure Apple Pay/Google Pay show the updated amount
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true);
+                  await mountStripePaymentElement(result.client_secret, true, true);
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4529,9 +4532,10 @@
               setSelMsg("");
               
               // If a new client_secret was returned, update Stripe Elements gracefully
+              // Force remount to ensure Apple Pay/Google Pay show the updated amount
               if (result.client_secret && paymentElement) {
                 try {
-                  await mountStripePaymentElement(result.client_secret, true);
+                  await mountStripePaymentElement(result.client_secret, true, true);
                 } catch (remountErr) {
                   console.error("Failed to update Stripe Elements:", remountErr);
                 }
@@ -4601,9 +4605,10 @@
             setSelMsg("");
             
             // If a new client_secret was returned, update Stripe Elements gracefully
+            // Force remount to ensure Apple Pay/Google Pay show the updated amount
             if (result.client_secret && paymentElement) {
               try {
-                await mountStripePaymentElement(result.client_secret, true);
+                await mountStripePaymentElement(result.client_secret, true, true);
               } catch (remountErr) {
                 console.error("Failed to update Stripe Elements:", remountErr);
               }
@@ -4621,9 +4626,10 @@
           }
           
           // If a new client_secret was returned, update Stripe Elements gracefully
+          // Force remount to ensure Apple Pay/Google Pay show the updated amount
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true);
+              await mountStripePaymentElement(result.client_secret, true, true);
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
@@ -4678,9 +4684,10 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
+          // Force remount to ensure Apple Pay/Google Pay show the updated amount
           if (result.client_secret && paymentElement) {
             try {
-              await mountStripePaymentElement(result.client_secret, true);
+              await mountStripePaymentElement(result.client_secret, true, true);
             } catch (remountErr) {
               console.error("Failed to update Stripe Elements:", remountErr);
             }
