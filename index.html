@@ -18,7 +18,12 @@
 
 <!-- Payment Processing Overlay -->
 <div id="baPaymentOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:10000;align-items:center;justify-content:center;flex-direction:column;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
+  <!-- Wallet Authorization State -->
+  <div id="baPaymentOverlayAuth" style="display:none;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
+    <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Authorize the payment in your wallet</div>
+  </div>
+  <!-- Payment Processing State -->
+  <div id="baPaymentOverlayProcessing" style="display:none;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
     <div style="width:64px;height:64px;border:4px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 1s linear infinite;"></div>
     <div id="baPaymentPercentage" style="font-size:24px;font-weight:700;color:#d1ad54;line-height:1;">0%</div>
     <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Your payment is being processed.<br>Do not close or refresh this page.</div>
@@ -107,11 +112,27 @@
     }, updateInterval);
   }
   
+  function showWalletAuthorizationOverlay(){
+    const overlay = document.getElementById("baPaymentOverlay");
+    const authState = document.getElementById("baPaymentOverlayAuth");
+    const processingState = document.getElementById("baPaymentOverlayProcessing");
+    
+    if (overlay && authState && processingState) {
+      overlay.style.display = "flex";
+      authState.style.display = "flex";
+      processingState.style.display = "none";
+    }
+  }
+  
   function showPaymentOverlay(){
     const overlay = document.getElementById("baPaymentOverlay");
+    const authState = document.getElementById("baPaymentOverlayAuth");
+    const processingState = document.getElementById("baPaymentOverlayProcessing");
     
-    if (overlay) {
+    if (overlay && authState && processingState) {
       overlay.style.display = "flex";
+      authState.style.display = "none";
+      processingState.style.display = "flex";
       
       // Reset percentage to 0
       currentPaymentPercent = 0;
@@ -145,8 +166,19 @@
 
   function hidePaymentOverlay(){
     const overlay = document.getElementById("baPaymentOverlay");
+    const authState = document.getElementById("baPaymentOverlayAuth");
+    const processingState = document.getElementById("baPaymentOverlayProcessing");
+    
     if (overlay) {
       overlay.style.display = "none";
+    }
+    
+    if (authState) {
+      authState.style.display = "none";
+    }
+    
+    if (processingState) {
+      processingState.style.display = "none";
     }
     
     // Clear percentage interval
@@ -5699,10 +5731,26 @@
           confirmBtn.style.pointerEvents = "none";
           if (msg) msg.textContent = "Processing payment…";
           
-          // Show payment processing overlay
-          showPaymentOverlay();
+          // Check if wallet payment method is selected
+          const walletMethods = ["apple_pay", "google_pay"];
+          const isWalletPayment = selectedPaymentMethodType && walletMethods.includes(selectedPaymentMethodType);
+          
+          // For wallet payments, show authorization overlay first
+          // For card payments, show processing overlay immediately
+          if (isWalletPayment) {
+            showWalletAuthorizationOverlay();
+          } else {
+            showPaymentOverlay();
+          }
 
+          // When confirmStripePayment is called, wallet UI will appear (for wallet payments)
+          // After wallet authorization completes (when confirmStripePayment resolves), switch to processing overlay
           const pi = await confirmStripePayment();
+          
+          // Switch to processing overlay after wallet authorization is complete
+          if (isWalletPayment) {
+            showPaymentOverlay();
+          }
 
           const st = pi && pi.status ? pi.status : "unknown";
           if (st === "succeeded") {
