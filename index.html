@@ -4740,24 +4740,8 @@
           setSaving(false);
           setSelMsg("");
           setPaymentButtonsDisabled(false);
-          
-          // Remount Elements when selection changes
-          // Only force remount for wallet payments (Apple Pay/Google Pay) - they cache the amount
-          // Credit card payments don't need remount as they pick up PaymentIntent updates automatically
-          if (result.client_secret && paymentElement) {
-            try {
-              const needsForceRemount = shouldForceRemountForWalletPayment();
-              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
-              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
-              // Only wait if we forced remount (for wallet payments)
-              if (needsForceRemount) {
-                await new Promise(resolve => setTimeout(resolve, 600));
-              }
-            } catch (e) {
-              console.error("Failed to update Stripe Elements:", e);
-              // Don't fail the update - selection was saved successfully
-            }
-          }
+          // No remount: backend (update_selection) updates the PaymentIntent amount in place.
+          // Same client_secret remains valid; wallet/card will charge the correct amount at confirm.
         })
         .catch((e) => {
           // REVERT on error
@@ -4992,19 +4976,8 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
-          // Remount Elements when selection changes - only force remount for wallet payments
-          if (result.client_secret && paymentElement) {
-            try {
-              const needsForceRemount = shouldForceRemountForWalletPayment();
-              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
-              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
-              if (needsForceRemount) {
-                await new Promise(resolve => setTimeout(resolve, 600));
-              }
-            } catch (remountErr) {
-              console.error("Failed to update Stripe Elements:", remountErr);
-            }
-          }
+          // No remount: backend (update_selection) updates the PaymentIntent amount in place.
+          // Same client_secret remains valid; wallet/card will charge the correct amount at confirm.
         } catch (e) {
           updateTotalsUI();
           updateTipAgreementUI(); // Update button state on error
