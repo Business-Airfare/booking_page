@@ -18,12 +18,7 @@
 
 <!-- Payment Processing Overlay -->
 <div id="baPaymentOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:10000;align-items:center;justify-content:center;flex-direction:column;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <!-- Wallet Authorization State -->
-  <div id="baPaymentOverlayAuth" style="display:none;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
-    <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Authorize the payment in your wallet</div>
-  </div>
-  <!-- Payment Processing State -->
-  <div id="baPaymentOverlayProcessing" style="display:none;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
     <div style="width:64px;height:64px;border:4px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 1s linear infinite;"></div>
     <div id="baPaymentPercentage" style="font-size:24px;font-weight:700;color:#d1ad54;line-height:1;">0%</div>
     <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Your payment is being processed.<br>Do not close or refresh this page.</div>
@@ -112,27 +107,11 @@
     }, updateInterval);
   }
   
-  function showWalletAuthorizationOverlay(){
-    const overlay = document.getElementById("baPaymentOverlay");
-    const authState = document.getElementById("baPaymentOverlayAuth");
-    const processingState = document.getElementById("baPaymentOverlayProcessing");
-    
-    if (overlay && authState && processingState) {
-      overlay.style.display = "flex";
-      authState.style.display = "flex";
-      processingState.style.display = "none";
-    }
-  }
-  
   function showPaymentOverlay(){
     const overlay = document.getElementById("baPaymentOverlay");
-    const authState = document.getElementById("baPaymentOverlayAuth");
-    const processingState = document.getElementById("baPaymentOverlayProcessing");
     
-    if (overlay && authState && processingState) {
+    if (overlay) {
       overlay.style.display = "flex";
-      authState.style.display = "none";
-      processingState.style.display = "flex";
       
       // Reset percentage to 0
       currentPaymentPercent = 0;
@@ -166,19 +145,8 @@
 
   function hidePaymentOverlay(){
     const overlay = document.getElementById("baPaymentOverlay");
-    const authState = document.getElementById("baPaymentOverlayAuth");
-    const processingState = document.getElementById("baPaymentOverlayProcessing");
-    
     if (overlay) {
       overlay.style.display = "none";
-    }
-    
-    if (authState) {
-      authState.style.display = "none";
-    }
-    
-    if (processingState) {
-      processingState.style.display = "none";
     }
     
     // Clear percentage interval
@@ -439,6 +407,7 @@
   let remountingForWalletType = null; // When remounting after user chose wallet: "apple_pay" | "google_pay" so we keep that tab selected
 
   let billingEmail = "";
+  let payerEmail = ""; // Payer email for receipt (separate from Stripe billing email)
   let billingAddressComplete = false;
   
   // Helper function to check if wallet payment methods require remount
@@ -490,7 +459,10 @@
       const res = await fetch(START_PAYMENT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ public_id: publicId })
+        body: JSON.stringify({ 
+          public_id: publicId,
+          payer_email: payerEmail || null
+        })
       });
       const payload = await res.json().catch(() => ({}));
       if (res.ok && payload.client_secret) {
@@ -530,6 +502,24 @@
   }
 
   function validateBillingUI(){
+    // Validate payer email (required for receipt)
+    const payerEmailInput = document.getElementById("baPayerEmail");
+    const payerEmailValue = payerEmailInput ? payerEmailInput.value.trim().toLowerCase() : "";
+    payerEmail = payerEmailValue;
+    const payerEmailOk = !!(payerEmail && /^\S+@\S+\.\S+$/.test(payerEmail));
+    
+    // Show/hide error for payer email
+    const payerEmailErr = document.querySelector(".baPayerEmailErr");
+    if (payerEmailInput && payerEmailErr) {
+      if (payerEmailInput.value && !payerEmailOk) {
+        payerEmailErr.style.display = "block";
+        payerEmailInput.style.borderColor = "#d92d20";
+      } else {
+        payerEmailErr.style.display = "none";
+        payerEmailInput.style.borderColor = payerEmailOk ? "#e7e7e7" : "#e7e7e7";
+      }
+    }
+    
     const emailOk = !!(billingEmail && billingEmail.includes("@"));
     const addrOk = !!billingAddressComplete;
     
@@ -552,17 +542,19 @@
     // Note: acceptanceCompleted is set by updateTermsAgreementUI/updateTipAgreementUI
     const acceptanceOk = acceptanceCompleted;
     
-    const result = emailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
+    const result = payerEmailOk && emailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
     
     // Debug logging - always log to help diagnose issues
     console.log("[BOOK_FLOW] validateBillingUI result:", {
       result,
+      payerEmailOk,
       emailOk,
       addrOk,
       termsOk,
       tipsOk,
       acceptanceOk,
       acceptanceCompleted,
+      payerEmail: payerEmail ? (payerEmail.substring(0, 3) + "***") : null,
       billingEmail: billingEmail ? (billingEmail.substring(0, 3) + "***") : null,
       billingAddressComplete,
       timestamp: new Date().toISOString()
@@ -1012,7 +1004,10 @@
             const updateRes = await fetch(START_PAYMENT, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ public_id: publicId })
+              body: JSON.stringify({ 
+                public_id: publicId,
+                payer_email: payerEmail || null
+              })
             });
             const updatePayload = await updateRes.json().catch(() => ({}));
             if (updateRes.ok && updatePayload.client_secret) {
@@ -1064,7 +1059,10 @@
       const refreshRes = await fetch(START_PAYMENT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ public_id: publicId })
+        body: JSON.stringify({ 
+          public_id: publicId,
+          payer_email: payerEmail || null
+        })
       });
       const refreshPayload = await refreshRes.json().catch(() => ({}));
       if (refreshRes.ok && refreshPayload.client_secret) {
@@ -4325,6 +4323,11 @@
             <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
 
             <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
+              <div class="baPayerEmailWrap" style="margin-bottom:12px">
+                <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:14px">Email<span class="baReq" style="color:#d92d20;margin-left:2px">*</span></label>
+                <input id="baPayerEmail" type="email" class="baBoxInput" placeholder="your@email.com" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:6px;font-size:15px;box-sizing:border-box">
+                <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
+              </div>
               <div class="baStripeEmailWrap" style="margin-bottom:12px">
                 <div id="baLinkAuthMount"></div>
               </div>
@@ -5230,6 +5233,18 @@
       });
     }
 
+    // Wire up payer email field
+    const payerEmailInput = document.getElementById("baPayerEmail");
+    if (payerEmailInput) {
+      payerEmailInput.addEventListener("input", () => {
+        payerEmail = payerEmailInput.value.trim().toLowerCase();
+        setConfirmEnabled(validateBillingUI());
+      });
+      payerEmailInput.addEventListener("blur", () => {
+        validateBillingUI();
+      });
+    }
+
     // Wire up terms links (if they exist in the new section)
     // Update links to use terms_url from server if available
     const termsLinks = document.querySelectorAll(".baTermsLink");
@@ -5476,7 +5491,10 @@
           const res = await fetch(START_PAYMENT, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_id: publicId })
+            body: JSON.stringify({ 
+              public_id: publicId,
+              payer_email: payerEmail || null
+            })
           });
           
           const payload = await res.json().catch(() => ({}));
@@ -5611,7 +5629,10 @@
         const res = await fetch(START_PAYMENT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_id: publicId })
+          body: JSON.stringify({ 
+            public_id: publicId,
+            payer_email: payerEmail || null
+          })
         });
 
         const payload = await res.json().catch(() => ({}));
@@ -5731,26 +5752,10 @@
           confirmBtn.style.pointerEvents = "none";
           if (msg) msg.textContent = "Processing payment…";
           
-          // Check if wallet payment method is selected
-          const walletMethods = ["apple_pay", "google_pay"];
-          const isWalletPayment = selectedPaymentMethodType && walletMethods.includes(selectedPaymentMethodType);
-          
-          // For wallet payments, show authorization overlay first
-          // For card payments, show processing overlay immediately
-          if (isWalletPayment) {
-            showWalletAuthorizationOverlay();
-          } else {
-            showPaymentOverlay();
-          }
+          // Show payment processing overlay
+          showPaymentOverlay();
 
-          // When confirmStripePayment is called, wallet UI will appear (for wallet payments)
-          // After wallet authorization completes (when confirmStripePayment resolves), switch to processing overlay
           const pi = await confirmStripePayment();
-          
-          // Switch to processing overlay after wallet authorization is complete
-          if (isWalletPayment) {
-            showPaymentOverlay();
-          }
 
           const st = pi && pi.status ? pi.status : "unknown";
           if (st === "succeeded") {
