@@ -600,7 +600,7 @@
     const loadingOverlay = document.createElement("div");
     loadingOverlay.id = "baStripeLoadingOverlay";
     loadingOverlay.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:center;z-index:10;border-radius:8px;pointer-events:none";
-    loadingOverlay.innerHTML = "<div style=\"display:flex;flex-direction:column;align-items:center;gap:8px\"><div style=\"width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite\"></div></div>";
+    loadingOverlay.innerHTML = "<div style=\"display:flex;flex-direction:column;align-items:center;gap:8px\"><div style=\"width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite\"></div><span style=\"font-size:14px;font-weight:600;color:#333\">Updating Your Selection...</span></div>";
     formContentWrap.appendChild(loadingOverlay);
   }
 
@@ -767,6 +767,7 @@
       loadingOverlay.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
           <div style="width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite"></div>
+          <span style="font-size:14px;font-weight:600;color:#333">Updating Your Selection...</span>
         </div>
       `;
       if (formContentWrap) {
@@ -953,7 +954,7 @@
       const fallbackTimeout = setTimeout(removeStripeLoadingOverlayById, 8000);
       paymentElement.on("ready", () => {
         clearTimeout(fallbackTimeout);
-        setTimeout(removeStripeLoadingOverlayById, 100);
+        setTimeout(removeStripeLoadingOverlayById, 1000);
       });
     }
     
