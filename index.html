@@ -749,6 +749,7 @@
         if (wrapHeight > 0) formContentWrap.style.minHeight = wrapHeight + "px";
         formContentWrap.appendChild(loadingOverlay);
       }
+      setConfirmEnabled(false);
     }
     
     if (wasMounted && preserveState) {
@@ -927,6 +928,7 @@
       loadingOverlay.style.opacity = "0";
       setTimeout(() => {
         if (loadingOverlay && loadingOverlay.parentNode) loadingOverlay.remove();
+        setConfirmEnabled(validateBillingUI());
       }, 200);
     };
     if (loadingOverlay) {
