@@ -2175,26 +2175,23 @@
       width: 27px;
       height: 27px;
     }
-    /* Billing Email field: match Stripe Elements sizing on mobile */
-    /* Stripe Elements use fontSizeBase: 38px with zoom: 0.70, visually appearing ~26-27px */
-    /* To match visually, set base size to ~26px which becomes ~18px after zoom */
-    /* But user wants smaller font, so match Stripe's visual appearance more closely */
+    /* Email field: ~2x larger on mobile for readability and tap target */
     #baStripeWrap .baPayerEmailWrap{
       width: 100% !important;
-      margin-bottom: 14px !important;
+      margin-bottom: 28px !important;
       box-sizing: border-box !important;
     }
     #baStripeWrap .baPayerEmailWrap .baLbl{
-      font-size: 14px !important;
-      margin-bottom: 6px !important;
+      font-size: 28px !important;
+      margin-bottom: 12px !important;
       line-height: 1.4 !important;
       display: block !important;
       font-weight: 500 !important;
     }
     #baStripeWrap .baPayerEmailWrap .baBoxInput{
-      font-size: 16px !important;
-      padding: 14px 16px !important;
-      min-height: 52px !important;
+      font-size: 32px !important;
+      padding: 28px 32px !important;
+      min-height: 104px !important;
       height: auto !important;
       line-height: 1.5 !important;
       width: 100% !important;
@@ -2205,8 +2202,8 @@
       border-width: 1px !important;
     }
     #baStripeWrap .baPayerEmailErr{
-      font-size: 12px !important;
-      margin-top: 4px !important;
+      font-size: 24px !important;
+      margin-top: 8px !important;
     }
   }
 
@@ -4318,7 +4315,7 @@
 
             <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
               <div class="baPayerEmailWrap" style="margin-bottom:12px">
-                <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:14px">Billing Email</label>
+                <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:14px">Email</label>
                 <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" class="baBoxInput" placeholder="your@email.com" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:6px;font-size:15px;box-sizing:border-box">
                 <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
               </div>
