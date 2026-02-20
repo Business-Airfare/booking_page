@@ -303,6 +303,11 @@
   let billingEmail = "";
   let billingAddressComplete = false;
   
+  // Helper: true when we're on a mobile viewport (matches Stripe mobile breakpoint used elsewhere)
+  function isMobileViewport() {
+    return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
+  }
+
   // Helper function to check if wallet payment methods require remount
   function shouldForceRemountForWalletPayment() {
     // Only force remount if Apple Pay or Google Pay is selected/available
@@ -316,30 +321,14 @@
       return true;
     }
     
-    // Secondary check: if wallet buttons are visible, user might use them
-    // Check if payment element has wallet methods available by looking for wallet-related elements
-    try {
-      const payMount = document.getElementById("baStripeMount");
-      if (payMount) {
-        // Check for Stripe wallet payment buttons (they're typically in iframes)
-        // Look for elements that indicate wallet methods are available
-        const hasWalletIndicators = payMount.querySelectorAll("iframe").length > 2; // Wallet methods add extra iframes
-        
-        // Also check if there are multiple payment method tabs (wallet + card = multiple tabs)
-        const tabs = payMount.querySelectorAll('[role="tab"], .tab, [data-testid*="tab"]');
-        if (tabs.length > 1) {
-          // Multiple tabs likely means wallet methods are available
-          console.log("[STRIPE] Multiple payment method tabs detected, wallet methods likely available");
-          // Only remount if we're not sure it's just card - be conservative
-          // Actually, let's not remount based on this alone - wait for user selection
-        }
-      }
-    } catch (e) {
-      console.warn("[STRIPE] Error detecting wallet methods:", e);
+    // On mobile, the Payment Element "change" event often does not fire when the user selects wallet
+    // (e.g. Apple Pay / Google Pay), so selectedPaymentMethodType can stay "card". Always force remount
+    // when the amount changes on mobile so the charged amount is correct regardless of payment method.
+    if (isMobileViewport()) {
+      console.log("[STRIPE] Mobile: force remount so wallet amount stays correct");
+      return true;
     }
     
-    // Default: don't force remount for credit card payments
-    // Only remount if user has explicitly selected a wallet payment method
     console.log("[STRIPE] No wallet payment method selected, skipping force remount");
     return false;
   }
@@ -628,16 +617,8 @@
     // Listen for payment method changes to track selected method
     paymentElement.on("change", (event) => {
       if (event && event.value && event.value.type) {
-        const previousType = selectedPaymentMethodType;
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
-        // When user switches payment method, uncheck tip agreement so they must re-acknowledge before paying
-        if (previousType != null && previousType !== selectedPaymentMethodType) {
-          const tipAgree = document.getElementById("baTipAgree");
-          if (tipAgree) {
-            tipAgree.checked = false;
-          }
-        }
       }
     });
     
