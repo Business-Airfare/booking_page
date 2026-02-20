@@ -1346,7 +1346,13 @@
         .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
         .baPaidConfGreen{ text-align:center; }
         @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
-        @media (max-width:768px){ .baPaidConfTop{ font-size:6.25rem; } .baPaidConfTop .baPaidConfTitle{ font-size:1em; } }
+        @media (max-width:768px){
+          .baPaidConfTop{ font-size:6.25rem; }
+          .baPaidConfTop .baPaidConfTitle{ font-size:1em; }
+          .baPaidConfTop .baPaidConfRow .baPaidConfRowLabel{ font-size:2.1875rem !important; }
+          .baPaidConfTop .baPaidConfRow .baPaidConfRowVal{ font-size:2.8125rem !important; }
+          .baPaidConfTop .baPaidConfPaxSection .baPaidConfPaxLabel{ font-size:2.1875rem !important; }
+        }
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
         <div class="baPaidConfTop">
@@ -1368,8 +1374,8 @@
             </div>
           </div>
 
-          <div style="margin-bottom:8px">
-            <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75;margin-bottom:6px">Passenger details</div>
+          <div class="baPaidConfPaxSection" style="margin-bottom:8px">
+            <div class="baPaidConfRowLabel baPaidConfPaxLabel" style="font-size:0.875em;opacity:.75;margin-bottom:6px">Passenger details</div>
             ${passengersHtml}
           </div>
         </div>
