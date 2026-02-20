@@ -20,7 +20,8 @@
 <div id="baPaymentOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:10000;align-items:center;justify-content:center;flex-direction:column;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <div style="display:flex;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
     <div style="width:64px;height:64px;border:4px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 1s linear infinite;"></div>
-    <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Payment is being processed,<br>do not refresh this page</div>
+    <div id="baPaymentPercentage" style="font-size:24px;font-weight:700;color:#d1ad54;line-height:1;">0%</div>
+    <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Your payment is being processed.<br>Do not close or refresh this page.</div>
   </div>
 </div>
 
@@ -65,10 +66,47 @@
   }
 
   // ---------- payment overlay ----------
+  let paymentPercentageInterval = null;
+  
+  function setPaymentPercentage(percent){
+    const percentageEl = document.getElementById("baPaymentPercentage");
+    if (percentageEl) {
+      percentageEl.textContent = Math.min(100, Math.max(0, Math.floor(percent))) + "%";
+    }
+  }
+  
   function showPaymentOverlay(){
     const overlay = document.getElementById("baPaymentOverlay");
+    
     if (overlay) {
       overlay.style.display = "flex";
+      
+      // Reset percentage to 0
+      setPaymentPercentage(0);
+      
+      // Clear any existing interval
+      if (paymentPercentageInterval) {
+        clearInterval(paymentPercentageInterval);
+      }
+      
+      // Start percentage counter animation
+      let currentPercent = 0;
+      const targetPercent = 100;
+      const duration = 30000; // 30 seconds total
+      const updateInterval = 100; // Update every 100ms
+      const incrementPerUpdate = (targetPercent / duration) * updateInterval;
+      
+      paymentPercentageInterval = setInterval(() => {
+        currentPercent += incrementPerUpdate;
+        if (currentPercent >= targetPercent) {
+          currentPercent = targetPercent;
+          if (paymentPercentageInterval) {
+            clearInterval(paymentPercentageInterval);
+            paymentPercentageInterval = null;
+          }
+        }
+        setPaymentPercentage(currentPercent);
+      }, updateInterval);
     }
   }
 
@@ -77,6 +115,15 @@
     if (overlay) {
       overlay.style.display = "none";
     }
+    
+    // Clear percentage interval
+    if (paymentPercentageInterval) {
+      clearInterval(paymentPercentageInterval);
+      paymentPercentageInterval = null;
+    }
+    
+    // Reset percentage display
+    setPaymentPercentage(0);
   }
 
   function renderLoading(){
@@ -5637,8 +5684,13 @@
                 const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
                 const fresh = await res.json();
                 if (fresh && (fresh.paid_at || fresh.status === "paid")) {
-                  hidePaymentOverlay(); // Hide overlay before navigating to confirmation
-                  renderSession(fresh);
+                  // Set percentage to 100% before navigating
+                  setPaymentPercentage(100);
+                  // Small delay to show 100% before hiding overlay
+                  setTimeout(() => {
+                    hidePaymentOverlay(); // Hide overlay before navigating to confirmation
+                    renderSession(fresh);
+                  }, 300);
                   return; // Success - stop retrying
                 }
                 
