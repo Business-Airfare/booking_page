@@ -4740,8 +4740,20 @@
           setSaving(false);
           setSelMsg("");
           setPaymentButtonsDisabled(false);
-          // No remount: backend (update_selection) updates the PaymentIntent amount in place.
-          // Same client_secret remains valid; wallet/card will charge the correct amount at confirm.
+          // When wallet is selected, remount so the wallet reads the updated amount from the backend.
+          // Backend (update_selection) already updated the PaymentIntent; remount refreshes the wallet display.
+          if (result.client_secret && paymentElement) {
+            try {
+              const needsForceRemount = shouldForceRemountForWalletPayment();
+              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
+              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+              if (needsForceRemount) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+              }
+            } catch (e) {
+              console.error("Failed to update Stripe Elements:", e);
+            }
+          }
         })
         .catch((e) => {
           // REVERT on error
@@ -4976,8 +4988,19 @@
           setSaving(false);
           setPaymentButtonsDisabled(false);
           setSelMsg("");
-          // No remount: backend (update_selection) updates the PaymentIntent amount in place.
-          // Same client_secret remains valid; wallet/card will charge the correct amount at confirm.
+          // When wallet is selected, remount so the wallet reads the updated amount from the backend.
+          if (result.client_secret && paymentElement) {
+            try {
+              const needsForceRemount = shouldForceRemountForWalletPayment();
+              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
+              await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+              if (needsForceRemount) {
+                await new Promise(resolve => setTimeout(resolve, 600));
+              }
+            } catch (remountErr) {
+              console.error("Failed to update Stripe Elements:", remountErr);
+            }
+          }
         } catch (e) {
           updateTotalsUI();
           updateTipAgreementUI(); // Update button state on error
