@@ -745,6 +745,8 @@
         </div>
       `;
       if (formContentWrap) {
+        var wrapHeight = formContentWrap.offsetHeight;
+        if (wrapHeight > 0) formContentWrap.style.minHeight = wrapHeight + "px";
         formContentWrap.appendChild(loadingOverlay);
       }
     }
