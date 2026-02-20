@@ -1292,10 +1292,6 @@
     }
     const passengersHtml = passengerCards.length ? passengerCards.join("") : "";
 
-    const agentName = data.agent_name ? String(data.agent_name).trim() : "";
-    const agentPhone = data.agent_phone ? String(data.agent_phone).trim() : "";
-    const agentLine = (agentName || agentPhone) ? `<div class="baPaidConfAgent">Have any questions? Get in touch with your agent${agentName ? " " + escapeHtml(agentName) : ""}${agentPhone ? " at " + escapeHtml(agentPhone) : ""}.</div>` : "";
-
     const journeys = Array.isArray(data.journeys) ? data.journeys : [];
     const itineraryHtml = journeys.length ? journeys.map(buildJourneyCardHtml).join("") : "";
 
@@ -1348,23 +1344,18 @@
         .baPaidConf .baPaidPaxSummaryGender{ display:inline-block; min-width:52px; text-align:center; }
         .baPaidConf .baPaidPaxSummaryDot{ opacity:.6; }
         .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
-        .baPaidConfAgent{ margin-top:14px; margin-bottom:14px; opacity:.9; font-size:1em; }
+        .baPaidConfGreen{ text-align:center; }
         @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
-        @media (max-width:768px){ .baPaidConfTop{ font-size:2.5rem; } }
+        @media (max-width:768px){ .baPaidConfTop{ font-size:6.25rem; } .baPaidConfTop .baPaidConfTitle{ font-size:1em; } }
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
         <div class="baPaidConfTop">
           <div class="baPaidConfGreen" style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
-            <div class="baPaidConfTitle" style="font-weight:900;font-size:2.5rem;margin-bottom:4px;line-height:1.2">Thank You For Booking With Us. ✅</div>
+            <div class="baPaidConfTitle" style="font-weight:900;font-size:2.5rem;margin-bottom:4px;line-height:1.2">Thank You For Booking With Us.</div>
             <div class="baPaidConfSub" style="opacity:.9;font-size:1em">Your tickets will be sent to your email as soon as they are booked.</div>
           </div>
-          ${agentLine}
 
           <div class="baPaidConfRow" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px">
-            <div>
-              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Passengers</div>
-              <div class="baPaidConfRowVal" style="font-weight:700;font-size:1em">${paxCount} passenger${paxCount !== 1 ? "s" : ""}</div>
-            </div>
             <div>
               <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Paid</div>
               <div class="baPaidConfRowVal" style="font-weight:900;font-size:1.125em">
