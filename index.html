@@ -749,7 +749,6 @@
         if (wrapHeight > 0) formContentWrap.style.minHeight = wrapHeight + "px";
         formContentWrap.appendChild(loadingOverlay);
       }
-      setConfirmEnabled(false);
     }
     
     if (wasMounted && preserveState) {
@@ -928,7 +927,6 @@
       loadingOverlay.style.opacity = "0";
       setTimeout(() => {
         if (loadingOverlay && loadingOverlay.parentNode) loadingOverlay.remove();
-        setConfirmEnabled(validateBillingUI());
       }, 200);
     };
     if (loadingOverlay) {
@@ -4453,13 +4451,12 @@
                   <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
                   <div id="baStripeMount"></div>
                 </div>
+                <button id="baStripeConfirm"
+                  style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
+                  disabled>
+                  Pay now
+                </button>
               </div>
-
-              <button id="baStripeConfirm"
-                style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
-                disabled>
-                Pay now
-              </button>
 
               <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
 
