@@ -647,7 +647,10 @@
     paymentElement.on("ready", () => {
       // Keep wallet selected when we remounted for wallet; otherwise default to card
       selectedPaymentMethodType = remountingForWalletType || "card";
-      if (remountingForWalletType) remountingForWalletType = null;
+      if (remountingForWalletType) {
+        lastWalletRemountAt = Date.now(); // prevent "change" event from triggering a second remount
+        remountingForWalletType = null;
+      }
       // Check if wallet payment methods are available
       try {
         const paymentMethodTypes = paymentElement?.getElement?.()?.paymentMethodTypes || [];
