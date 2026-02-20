@@ -299,7 +299,6 @@
   let addressElement = null;
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
-  let lastWalletRemountAt = 0; // Debounce: avoid remount loop when wallet is selected
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -614,6 +613,8 @@
     
     // Track selected payment method type to determine if remount is needed
     paymentElement.on("ready", () => {
+      // Default to "card" when Elements load (card is first in paymentMethodOrder)
+      selectedPaymentMethodType = "card";
       // Check if wallet payment methods are available
       try {
         const paymentMethodTypes = paymentElement?.getElement?.()?.paymentMethodTypes || [];
@@ -629,18 +630,6 @@
       if (event && event.value && event.value.type) {
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
-        // When user chooses a wallet (Apple Pay / Google Pay), remount so the wallet reads the correct total amount
-        const walletMethods = ["apple_pay", "google_pay"];
-        if (walletMethods.includes(selectedPaymentMethodType) && currentClientSecret) {
-          const now = Date.now();
-          if (now - lastWalletRemountAt > 2000) {
-            lastWalletRemountAt = now;
-            console.log("[STRIPE] Wallet selected – remounting elements to apply correct total");
-            mountStripePaymentElement(currentClientSecret, true, true).catch(err =>
-              console.error("[STRIPE] Wallet remount failed:", err)
-            );
-          }
-        }
       }
     });
     
@@ -901,18 +890,18 @@
       });
       const refreshPayload = await refreshRes.json().catch(() => ({}));
       if (refreshRes.ok && refreshPayload.client_secret) {
-        // Only remount if PaymentIntent was recreated (client_secret changed) AND Elements aren't already mounted
-        // Avoid remounting if Elements are already mounted - it disrupts Apple Pay
         if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
           console.log("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
           currentClientSecret = refreshPayload.client_secret;
           await mountStripePaymentElement(refreshPayload.client_secret, false);
           await new Promise(resolve => setTimeout(resolve, 1500));
         } else if (refreshPayload.client_secret !== currentClientSecret) {
-          // PaymentIntent was recreated but Elements are already mounted
-          // Update the client_secret reference but don't remount to avoid disrupting Apple Pay
-          console.log("[BOOK_FLOW] PaymentIntent recreated but Elements already mounted - Stripe will use updated amount");
+          // PaymentIntent was recreated (e.g. amount changed) but Elements are already mounted.
+          // Remount so the correct amount is used, especially when user switched to wallet (Apple/Google Pay).
+          console.log("[BOOK_FLOW] PaymentIntent recreated with new amount - remounting Elements so charge amount is correct");
           currentClientSecret = refreshPayload.client_secret;
+          await mountStripePaymentElement(refreshPayload.client_secret, true, true);
+          await new Promise(resolve => setTimeout(resolve, 800));
         } else {
           console.log("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
         }
