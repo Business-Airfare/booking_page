@@ -299,6 +299,7 @@
   let addressElement = null;
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
+  let lastWalletRemountAt = 0; // Debounce: avoid remount loop when wallet is selected
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -628,6 +629,18 @@
       if (event && event.value && event.value.type) {
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+        // When user chooses a wallet (Apple Pay / Google Pay), remount so the wallet reads the correct total amount
+        const walletMethods = ["apple_pay", "google_pay"];
+        if (walletMethods.includes(selectedPaymentMethodType) && currentClientSecret) {
+          const now = Date.now();
+          if (now - lastWalletRemountAt > 2000) {
+            lastWalletRemountAt = now;
+            console.log("[STRIPE] Wallet selected – remounting elements to apply correct total");
+            mountStripePaymentElement(currentClientSecret, true, true).catch(err =>
+              console.error("[STRIPE] Wallet remount failed:", err)
+            );
+          }
+        }
       }
     });
     
