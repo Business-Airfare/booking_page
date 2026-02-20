@@ -618,6 +618,8 @@
   // When user selects Apple Pay or Google Pay, remount Stripe elements with current amount from backend
   async function remountStripeForWalletAmount() {
     if (walletRemountInProgress) return;
+    const walletType = selectedPaymentMethodType;
+    if (!walletType || !["apple_pay", "google_pay"].includes(walletType)) return;
     walletRemountInProgress = true;
     try {
       const res = await fetch(START_PAYMENT, {
@@ -631,7 +633,7 @@
       const payload = await res.json().catch(() => ({}));
       if (res.ok && payload.client_secret) {
         console.log("[STRIPE] Remounting Elements for wallet so amount is correct");
-        remountingForWalletType = selectedPaymentMethodType; // keep wallet tab selected after remount
+        remountingForWalletType = walletType; // use value captured at start so a stray "change" during fetch doesn't flip to card
         await mountStripePaymentElement(payload.client_secret, true, true);
         lastWalletRemountAt = Date.now();
       }
@@ -932,16 +934,20 @@
     
     // Listen for payment method changes to track selected method
     paymentElement.on("change", (event) => {
-      if (event && event.value && event.value.type) {
-        selectedPaymentMethodType = event.value.type;
-        console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
-        // When user selects a wallet method, show overlay instantly then remount with current amount
-        const walletMethods = ["apple_pay", "google_pay"];
-        if (walletMethods.includes(selectedPaymentMethodType)) {
-          if (!walletRemountInProgress && (Date.now() - lastWalletRemountAt > 2000)) {
-            showStripeLoadingOverlay();
-            remountStripeForWalletAmount();
-          }
+      if (!event || !event.value || !event.value.type) return;
+      const newType = event.value.type;
+      // Ignore spurious "card" from newly mounted element right after a wallet remount (Stripe can fire change(card) after "ready")
+      if (newType === "card" && (Date.now() - lastWalletRemountAt < 3000) && selectedPaymentMethodType && ["apple_pay", "google_pay"].includes(selectedPaymentMethodType)) {
+        return;
+      }
+      selectedPaymentMethodType = newType;
+      console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+      // When user selects a wallet method, show overlay instantly then remount with current amount
+      const walletMethods = ["apple_pay", "google_pay"];
+      if (walletMethods.includes(selectedPaymentMethodType)) {
+        if (!walletRemountInProgress && (Date.now() - lastWalletRemountAt > 2000)) {
+          showStripeLoadingOverlay();
+          remountStripeForWalletAmount();
         }
       }
     });
