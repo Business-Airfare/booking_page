@@ -5304,6 +5304,8 @@
             console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
             await mountStripePaymentElement(payload.client_secret, false);
             await waitForStripeReady(8000);
+            // Extra delay so Stripe elements are fully mounted before reveal - user won't see loading state
+            await new Promise(resolve => setTimeout(resolve, 3000));
             
             // NOW that Stripe elements are fully loaded, reveal sections and hide sticky bar
             if (extrasSection) {
