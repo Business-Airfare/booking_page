@@ -1265,20 +1265,36 @@
     const pdArr = getPassengerDetailsArray(data);
     const paxCount = (pdArr && pdArr.length) ? pdArr.length : (Array.isArray(data.passengers) && data.passengers.length) ? data.passengers.length : 1;
 
-    const passengerLines = [];
+    const passengerCards = [];
     for (let i = 0; i < paxCount; i++) {
       const pax = getPassengerFromSession(data, i);
       const first = pax.first_name || "Passenger";
       const last = pax.last_name || String(i + 1);
       const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "—";
       const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
-      passengerLines.push(`${escapeHtml(first + " " + last)} · ${escapeHtml(displayGender)} · DOB ${escapeHtml(displayDob)}`);
+      passengerCards.push(`
+        <div class="baPaidPaxCard">
+          <div class="baPaidPaxCard__head">Passenger ${i + 1}</div>
+          <div class="baPaidPaxCard__summary">
+            <div class="baPaidPaxSummaryName">
+              <span class="baPaidPaxSummaryFirst">${escapeHtml(first)}</span>
+              <span class="baPaidPaxSummaryDivider" aria-hidden="true"></span>
+              <span class="baPaidPaxSummaryLast">${escapeHtml(last)}</span>
+            </div>
+            <div class="baPaidPaxSummaryMeta">
+              <span class="baPaidPaxSummaryGender">${escapeHtml(displayGender)}</span>
+              <span class="baPaidPaxSummaryDot">·</span>
+              <span class="baPaidPaxSummaryDob">DOB ${escapeHtml(displayDob)}</span>
+            </div>
+          </div>
+        </div>
+      `);
     }
-    const passengersHtml = passengerLines.length ? passengerLines.join("<br>") : "—";
+    const passengersHtml = passengerCards.length ? passengerCards.join("") : "";
 
     const agentName = data.agent_name ? String(data.agent_name).trim() : "";
     const agentPhone = data.agent_phone ? String(data.agent_phone).trim() : "";
-    const agentLine = (agentName || agentPhone) ? `<div style="margin-top:8px;opacity:.9">Have any questions? Get in touch with your agent${agentName ? " " + escapeHtml(agentName) : ""}${agentPhone ? " at " + escapeHtml(agentPhone) : ""}.</div>` : "";
+    const agentLine = (agentName || agentPhone) ? `<div class="baPaidConfAgent">Have any questions? Get in touch with your agent${agentName ? " " + escapeHtml(agentName) : ""}${agentPhone ? " at " + escapeHtml(agentPhone) : ""}.</div>` : "";
 
     const journeys = Array.isArray(data.journeys) ? data.journeys : [];
     const itineraryHtml = journeys.length ? journeys.map(buildJourneyCardHtml).join("") : "";
@@ -1322,29 +1338,48 @@
         .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:14px 0; margin:0; }
         .baPaidConf .baLayRow__text{ font-size:14px; font-weight:700; color:#6b6b6b; }
         .baPaidConf .baLayRow__dur{ font-weight:800; color:#6b6b6b; }
-        @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } }
+        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:10px; overflow:hidden; margin-bottom:14px; box-shadow:0 10px 24px rgba(0,0,0,.05); font-size:1em; }
+        .baPaidConf .baPaidPaxCard__head{ font-family:Georgia,'Times New Roman',serif; font-weight:800; font-size:1.625em; padding:18px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
+        .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:700; color:#4b4b4b; flex-wrap:wrap; }
+        .baPaidConf .baPaidPaxSummaryName{ flex:1 1 auto; max-width:65%; font-size:1.067em; font-weight:800; padding:10px 12px; border:1px solid #e7e7e7; border-radius:6px; background:#fff; display:flex; align-items:center; justify-content:center; gap:10px; line-height:1.25; min-width:0; }
+        .baPaidConf .baPaidPaxSummaryFirst,.baPaidConf .baPaidPaxSummaryLast{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .baPaidConf .baPaidPaxSummaryDivider{ width:1px; height:60%; background:#dcdcdc; display:inline-block; flex-shrink:0; }
+        .baPaidConf .baPaidPaxSummaryMeta{ display:flex; align-items:center; gap:6px; flex:0 1 auto; min-width:0; color:#6a6a6a; font-weight:600; }
+        .baPaidConf .baPaidPaxSummaryGender{ display:inline-block; min-width:52px; text-align:center; }
+        .baPaidConf .baPaidPaxSummaryDot{ opacity:.6; }
+        .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
+        .baPaidConfAgent{ margin-top:14px; margin-bottom:14px; opacity:.9; font-size:1em; }
+        @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
+        @media (max-width:768px){ .baPaidConfTop{ font-size:2.5rem; } }
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
-        <div style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
-          <div style="font-weight:900;font-size:16px;margin-bottom:4px">Thank You For Booking With Us. ✅</div>
-          <div style="opacity:.9">Your tickets will be sent to your email as soon as they are booked.</div>
-          ${agentLine}
-        </div>
-
-        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:14px;opacity:.75">Passengers</div>
-            <div style="font-weight:700;line-height:1.5">${passengersHtml}</div>
+        <div class="baPaidConfTop">
+          <div class="baPaidConfGreen" style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
+            <div class="baPaidConfTitle" style="font-weight:900;font-size:2.5rem;margin-bottom:4px;line-height:1.2">Thank You For Booking With Us. ✅</div>
+            <div class="baPaidConfSub" style="opacity:.9;font-size:1em">Your tickets will be sent to your email as soon as they are booked.</div>
           </div>
-          <div>
-            <div style="font-size:14px;opacity:.75">Paid</div>
-            <div style="font-weight:900;font-size:18px">
-              ${fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount)} ${escapeHtml(data.currency || "USD")}
+          ${agentLine}
+
+          <div class="baPaidConfRow" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+            <div>
+              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Passengers</div>
+              <div class="baPaidConfRowVal" style="font-weight:700;font-size:1em">${paxCount} passenger${paxCount !== 1 ? "s" : ""}</div>
+            </div>
+            <div>
+              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Paid</div>
+              <div class="baPaidConfRowVal" style="font-weight:900;font-size:1.125em">
+                ${fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount)} ${escapeHtml(data.currency || "USD")}
+              </div>
+            </div>
+            <div>
+              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Paid at</div>
+              <div class="baPaidConfRowVal" style="font-weight:800;font-size:1em">${escapeHtml(paidAtStr)}</div>
             </div>
           </div>
-          <div>
-            <div style="font-size:14px;opacity:.75">Paid at</div>
-            <div style="font-weight:800">${escapeHtml(paidAtStr)}</div>
+
+          <div style="margin-bottom:8px">
+            <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75;margin-bottom:6px">Passenger details</div>
+            ${passengersHtml}
           </div>
         </div>
 
