@@ -650,11 +650,20 @@
     if (addrMount) addrMount.innerHTML = "";
     if (payMount) payMount.innerHTML = "";
 
-    // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
+    // UI only: Stripe Appearance API for mobile (font/spacing/weight). Does not affect payment processing, Stripe API calls, webhooks, or backend.
     // Adjust fontSizeBase (e.g. 16px–24px) and spacingUnit (e.g. 4px–8px) to change text/box size on mobile.
     const isMobileStripe = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
     const stripeAppearance = isMobileStripe
-      ? { theme: "stripe", variables: { fontSizeBase: "38px", spacingUnit: "8px" } }
+      ? {
+          theme: "stripe",
+          variables: {
+            fontSizeBase: "38px",
+            spacingUnit: "8px",
+            fontWeightNormal: "700",
+            fontWeightMedium: "700",
+            fontWeightBold: "700"
+          }
+        }
       : { theme: "stripe" };
 
     // Create new elements
