@@ -714,9 +714,41 @@
     const stripeWrap = document.getElementById("baStripeWrap");
     const scrollPos = wasMounted ? window.scrollY : null;
     let loadingOverlay = null;
+    const elementsWrap = document.getElementById("baStripeElementsWrap");
     
     // Preserve user input before unmounting
     let preservedAddress = null;
+    
+    if (wasMounted) {
+      // Show loading overlay immediately over Stripe elements area (blurred background + spinner) so user doesn't see remount
+      loadingOverlay = document.createElement("div");
+      loadingOverlay.id = "baStripeLoadingOverlay";
+      loadingOverlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255,255,255,0.75);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 8px;
+        pointer-events: none;
+      `;
+      loadingOverlay.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite"></div>
+        </div>
+      `;
+      if (elementsWrap) {
+        elementsWrap.style.position = "relative";
+        elementsWrap.appendChild(loadingOverlay);
+      }
+    }
     
     if (wasMounted && preserveState) {
       // Read current address data before unmounting
@@ -741,31 +773,6 @@
       } catch (e) {
         console.warn("[STRIPE] Could not read address before remount:", e);
       }
-      
-      // Create subtle loading overlay (will be appended after mounting to avoid being cleared)
-      loadingOverlay = document.createElement("div");
-      loadingOverlay.id = "baStripeLoadingOverlay";
-      loadingOverlay.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(255,255,255,0.95);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10;
-        border-radius: 8px;
-        opacity: 1;
-        transition: opacity 0.2s ease;
-        pointer-events: none;
-      `;
-      loadingOverlay.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-          <div style="width:40px;height:40px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite"></div>
-        </div>
-      `;
     }
 
     // Unmount old elements if they exist (Stripe requires this before mounting new ones)
@@ -788,13 +795,6 @@
     
     if (addrMount) addrMount.innerHTML = "";
     if (payMount) payMount.innerHTML = "";
-
-    // Show loading circle in place of Stripe elements during remount (wallet / TCS / tips)
-    if (loadingOverlay && payMount) {
-      payMount.style.position = "relative";
-      payMount.style.minHeight = "140px";
-      payMount.appendChild(loadingOverlay);
-    }
 
     // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
     // On mobile only: make text inside input boxes bold (user-typed content); labels stay default via rules.
@@ -882,30 +882,9 @@
     });
     if (!payMount) throw new Error("Missing baStripeMount container");
     paymentElement.mount("#baStripeMount");
-
-    // Fallback: remove loading overlay after timeout in case "ready" never fires
-    let overlayFallbackId = null;
-    if (loadingOverlay) {
-      overlayFallbackId = setTimeout(() => {
-        const el = document.getElementById("baStripeLoadingOverlay");
-        if (el && el.parentNode) {
-          el.style.opacity = "0";
-          setTimeout(() => el.remove(), 200);
-        }
-      }, 8000);
-    }
     
     // Track selected payment method type to determine if remount is needed
     paymentElement.on("ready", () => {
-      // Remove loading overlay when Stripe elements are ready (user no longer sees remount state)
-      if (overlayFallbackId) clearTimeout(overlayFallbackId);
-      const overlayEl = document.getElementById("baStripeLoadingOverlay");
-      if (overlayEl && overlayEl.parentNode) {
-        overlayEl.style.opacity = "0";
-        setTimeout(() => {
-          if (overlayEl.parentNode) overlayEl.remove();
-        }, 200);
-      }
       // Keep wallet selected when we remounted for wallet; otherwise default to card
       selectedPaymentMethodType = remountingForWalletType || "card";
       if (remountingForWalletType) {
@@ -936,9 +915,26 @@
         }
       }
     });
-
+    
     // Store current client_secret
     currentClientSecret = clientSecret;
+
+    // Remove loading overlay only when Stripe Elements are fully ready (so user never sees half-mounted elements)
+    const removeStripeLoadingOverlay = () => {
+      if (!loadingOverlay || !loadingOverlay.parentNode) return;
+      loadingOverlay.style.transition = "opacity 0.2s ease";
+      loadingOverlay.style.opacity = "0";
+      setTimeout(() => {
+        if (loadingOverlay && loadingOverlay.parentNode) loadingOverlay.remove();
+      }, 200);
+    };
+    if (loadingOverlay) {
+      const fallbackTimeout = setTimeout(removeStripeLoadingOverlay, 8000);
+      paymentElement.on("ready", () => {
+        clearTimeout(fallbackTimeout);
+        setTimeout(removeStripeLoadingOverlay, 100);
+      });
+    }
     
     // Restore scroll position if we were preserving state
     if (preserveState && scrollPos !== null) {
@@ -4450,8 +4446,10 @@
                 <div id="baAddressMount"></div>
               </div>
 
-              <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
-              <div id="baStripeMount"></div>
+              <div id="baStripeElementsWrap" style="position:relative;min-height:160px">
+                <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
+                <div id="baStripeMount"></div>
+              </div>
 
               <button id="baStripeConfirm"
                 style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
