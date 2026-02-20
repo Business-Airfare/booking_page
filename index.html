@@ -4741,11 +4741,13 @@
           setSelMsg("");
           setPaymentButtonsDisabled(false);
           // When wallet is selected, remount so the wallet reads the updated amount from the backend.
-          // Backend (update_selection) already updated the PaymentIntent; remount refreshes the wallet display.
           if (result.client_secret && paymentElement) {
             try {
               const needsForceRemount = shouldForceRemountForWalletPayment();
-              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
+              if (needsForceRemount && selectedPaymentMethodType) {
+                remountingForWalletType = selectedPaymentMethodType;
+                lastWalletRemountAt = Date.now(); // block "change" from triggering a second remount (it can fire before "ready")
+              }
               await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
               if (needsForceRemount) {
                 await new Promise(resolve => setTimeout(resolve, 600));
@@ -4992,7 +4994,10 @@
           if (result.client_secret && paymentElement) {
             try {
               const needsForceRemount = shouldForceRemountForWalletPayment();
-              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
+              if (needsForceRemount && selectedPaymentMethodType) {
+                remountingForWalletType = selectedPaymentMethodType;
+                lastWalletRemountAt = Date.now(); // block "change" from triggering a second remount (it can fire before "ready")
+              }
               await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
               if (needsForceRemount) {
                 await new Promise(resolve => setTimeout(resolve, 600));
