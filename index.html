@@ -299,15 +299,12 @@
   let addressElement = null;
   let currentClientSecret = null; // Track current PaymentIntent client_secret
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
+  let walletRemountInProgress = false; // Prevent concurrent remounts when user selects wallet
+  let lastWalletRemountAt = 0; // Skip remount if we just remounted for wallet (avoids double remount when new element shows card then user clicks wallet again)
 
   let billingEmail = "";
   let billingAddressComplete = false;
   
-  // Helper: true when we're on a mobile viewport (matches Stripe mobile breakpoint used elsewhere)
-  function isMobileViewport() {
-    return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
-  }
-
   // Helper function to check if wallet payment methods require remount
   function shouldForceRemountForWalletPayment() {
     // Only force remount if Apple Pay or Google Pay is selected/available
@@ -321,16 +318,55 @@
       return true;
     }
     
-    // On mobile, the Payment Element "change" event often does not fire when the user selects wallet
-    // (e.g. Apple Pay / Google Pay), so selectedPaymentMethodType can stay "card". Always force remount
-    // when the amount changes on mobile so the charged amount is correct regardless of payment method.
-    if (isMobileViewport()) {
-      console.log("[STRIPE] Mobile: force remount so wallet amount stays correct");
-      return true;
+    // Secondary check: if wallet buttons are visible, user might use them
+    // Check if payment element has wallet methods available by looking for wallet-related elements
+    try {
+      const payMount = document.getElementById("baStripeMount");
+      if (payMount) {
+        // Check for Stripe wallet payment buttons (they're typically in iframes)
+        // Look for elements that indicate wallet methods are available
+        const hasWalletIndicators = payMount.querySelectorAll("iframe").length > 2; // Wallet methods add extra iframes
+        
+        // Also check if there are multiple payment method tabs (wallet + card = multiple tabs)
+        const tabs = payMount.querySelectorAll('[role="tab"], .tab, [data-testid*="tab"]');
+        if (tabs.length > 1) {
+          // Multiple tabs likely means wallet methods are available
+          console.log("[STRIPE] Multiple payment method tabs detected, wallet methods likely available");
+          // Only remount if we're not sure it's just card - be conservative
+          // Actually, let's not remount based on this alone - wait for user selection
+        }
+      }
+    } catch (e) {
+      console.warn("[STRIPE] Error detecting wallet methods:", e);
     }
     
+    // Default: don't force remount for credit card payments
+    // Only remount if user has explicitly selected a wallet payment method
     console.log("[STRIPE] No wallet payment method selected, skipping force remount");
     return false;
+  }
+
+  // When user selects Apple Pay or Google Pay, remount Stripe elements with current amount from backend
+  async function remountStripeForWalletAmount() {
+    if (walletRemountInProgress) return;
+    walletRemountInProgress = true;
+    try {
+      const res = await fetch(START_PAYMENT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_id: publicId })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (res.ok && payload.client_secret) {
+        console.log("[STRIPE] Remounting Elements for wallet so amount is correct");
+        await mountStripePaymentElement(payload.client_secret, true, true);
+        lastWalletRemountAt = Date.now();
+      }
+    } catch (e) {
+      console.warn("[STRIPE] Wallet remount failed:", e);
+    } finally {
+      walletRemountInProgress = false;
+    }
   }
   
   // ---------- Acceptance state (global scope so validateBillingUI can access it) ----------
@@ -619,6 +655,13 @@
       if (event && event.value && event.value.type) {
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+        // When user selects a wallet method, remount with current amount so the charge is correct
+        const walletMethods = ["apple_pay", "google_pay"];
+        if (walletMethods.includes(selectedPaymentMethodType)) {
+          if (!walletRemountInProgress && (Date.now() - lastWalletRemountAt > 2000)) {
+            remountStripeForWalletAmount();
+          }
+        }
       }
     });
     
