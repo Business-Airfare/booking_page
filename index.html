@@ -714,13 +714,13 @@
     const stripeWrap = document.getElementById("baStripeWrap");
     const scrollPos = wasMounted ? window.scrollY : null;
     let loadingOverlay = null;
-    const elementsWrap = document.getElementById("baStripeElementsWrap");
+    const formContentWrap = document.getElementById("baStripeFormContentWrap");
     
     // Preserve user input before unmounting
     let preservedAddress = null;
     
     if (wasMounted) {
-      // Show loading overlay immediately over Stripe elements area (blurred background + spinner) so user doesn't see remount
+      // Show loading overlay over entire Stripe form content (billing address + payment details) so user doesn't see remount
       loadingOverlay = document.createElement("div");
       loadingOverlay.id = "baStripeLoadingOverlay";
       loadingOverlay.style.cssText = `
@@ -744,9 +744,8 @@
           <div style="width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite"></div>
         </div>
       `;
-      if (elementsWrap) {
-        elementsWrap.style.position = "relative";
-        elementsWrap.appendChild(loadingOverlay);
+      if (formContentWrap) {
+        formContentWrap.appendChild(loadingOverlay);
       }
     }
     
@@ -4442,13 +4441,14 @@
                 <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
               </div>
 
-              <div class="baStripeAddressWrap" style="margin-bottom:14px">
-                <div id="baAddressMount"></div>
-              </div>
-
-              <div id="baStripeElementsWrap" style="position:relative;min-height:160px">
-                <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
-                <div id="baStripeMount"></div>
+              <div id="baStripeFormContentWrap" style="position:relative;min-height:280px">
+                <div class="baStripeAddressWrap" style="margin-bottom:14px">
+                  <div id="baAddressMount"></div>
+                </div>
+                <div id="baStripeElementsWrap" style="min-height:160px">
+                  <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
+                  <div id="baStripeMount"></div>
+                </div>
               </div>
 
               <button id="baStripeConfirm"
