@@ -940,6 +940,7 @@
           // Remount so the correct amount is used, especially when user switched to wallet (Apple/Google Pay).
           console.log("[BOOK_FLOW] PaymentIntent recreated with new amount - remounting Elements so charge amount is correct");
           currentClientSecret = refreshPayload.client_secret;
+          if (selectedPaymentMethodType && ["apple_pay", "google_pay"].includes(selectedPaymentMethodType)) remountingForWalletType = selectedPaymentMethodType;
           await mountStripePaymentElement(refreshPayload.client_secret, true, true);
           await new Promise(resolve => setTimeout(resolve, 800));
         } else {
@@ -4743,6 +4744,7 @@
           if (result.client_secret && paymentElement) {
             try {
               const needsForceRemount = shouldForceRemountForWalletPayment();
+              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
               await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
               // Only wait if we forced remount (for wallet payments)
               if (needsForceRemount) {
@@ -4991,6 +4993,7 @@
           if (result.client_secret && paymentElement) {
             try {
               const needsForceRemount = shouldForceRemountForWalletPayment();
+              if (needsForceRemount && selectedPaymentMethodType) remountingForWalletType = selectedPaymentMethodType;
               await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
               if (needsForceRemount) {
                 await new Promise(resolve => setTimeout(resolve, 600));
