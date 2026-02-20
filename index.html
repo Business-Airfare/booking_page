@@ -16,6 +16,14 @@
 
 <div id="baPayRoot"></div>
 
+<!-- Payment Processing Overlay -->
+<div id="baPaymentOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:10000;align-items:center;justify-content:center;flex-direction:column;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;padding:40px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:400px;text-align:center;">
+    <div style="width:64px;height:64px;border:4px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 1s linear infinite;"></div>
+    <div style="font-size:18px;font-weight:600;color:#111;line-height:1.4;">Payment is being processed,<br>do not refresh this page</div>
+  </div>
+</div>
+
 <!-- Stripe.js -->
 <script src="https://js.stripe.com/v3"></script>
 
@@ -54,6 +62,21 @@
     return String(s ?? "").replace(/[&<>"']/g, m => (
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
     ));
+  }
+
+  // ---------- payment overlay ----------
+  function showPaymentOverlay(){
+    const overlay = document.getElementById("baPaymentOverlay");
+    if (overlay) {
+      overlay.style.display = "flex";
+    }
+  }
+
+  function hidePaymentOverlay(){
+    const overlay = document.getElementById("baPaymentOverlay");
+    if (overlay) {
+      overlay.style.display = "none";
+    }
   }
 
   function renderLoading(){
@@ -5595,6 +5618,9 @@
           confirmBtn.style.cursor = "not-allowed";
           confirmBtn.style.pointerEvents = "none";
           if (msg) msg.textContent = "Processing payment…";
+          
+          // Show payment processing overlay
+          showPaymentOverlay();
 
           const pi = await confirmStripePayment();
 
@@ -5611,6 +5637,7 @@
                 const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
                 const fresh = await res.json();
                 if (fresh && (fresh.paid_at || fresh.status === "paid")) {
+                  hidePaymentOverlay(); // Hide overlay before navigating to confirmation
                   renderSession(fresh);
                   return; // Success - stop retrying
                 }
@@ -5622,6 +5649,7 @@
                 } else {
                   // After max retries, still show success message but don't navigate
                   // Payment was successful in Stripe, backend just hasn't updated yet
+                  hidePaymentOverlay(); // Hide overlay if backend hasn't updated after retries
                   console.warn("[BOOK_FLOW] Payment succeeded but session not marked as paid after retries");
                 }
               } catch (err) {
@@ -5630,6 +5658,8 @@
                 if (retryCount < maxRetries) {
                   retryCount++;
                   setTimeout(checkPaidStatus, retryDelay);
+                } else {
+                  hidePaymentOverlay(); // Hide overlay if we've exhausted retries
                 }
               }
             };
@@ -5637,12 +5667,15 @@
             // Start checking after initial delay
             setTimeout(checkPaidStatus, retryDelay);
           } else if (st === "processing") {
+            // Keep overlay visible for processing status
             if (msg) msg.textContent = "Payment processing. Please wait — confirmation will update shortly.";
           } else {
+            hidePaymentOverlay(); // Hide overlay for other statuses
             if (msg) msg.textContent = "Payment status: " + st + ". If this looks wrong, contact your agent.";
           }
 
         } catch (e) {
+          hidePaymentOverlay(); // Hide overlay on error
           const errorMsg = e && e.message ? e.message : String(e);
           console.error("[BOOK_FLOW] Payment error:", errorMsg);
           if (msg) {
