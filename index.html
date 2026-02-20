@@ -239,6 +239,22 @@
     return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
   }
 
+  // "February 2nd, 2026, 5:45PM" for paid confirmation
+  function formatPaidAtDisplay(isoStr){
+    if (!isoStr) return "—";
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return "—";
+    const month = d.toLocaleDateString(undefined, { month:"long" });
+    const day = d.getDate();
+    const year = d.getFullYear();
+    const ord = (n) => { const v = n % 100; const suf = (v >= 11 && v <= 13) ? "th" : ([1,2,3].includes(n % 10) ? ["st","nd","rd"][n % 10 - 1] : "th"); return n + suf; };
+    const h = d.getHours(), m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = (h % 12) || 12;
+    const timeStr = `${h12}:${String(m).padStart(2,"0")}${ampm}`;
+    return `${month} ${ord(day)}, ${year}, ${timeStr}`;
+  }
+
   function minsToHM(mins){
     if (mins == null || !Number.isFinite(mins)) return "—";
     const m = Math.max(0, Math.round(mins));
@@ -392,6 +408,129 @@
 
   function segmentMealText(s){
     return String(s?.meal || s?.meal_text || s?.service_meal || "").trim();
+  }
+
+  // Top-level journey card HTML (used by payment form and paid confirmation)
+  function buildJourneyCardHtml(j){
+    const segs = Array.isArray(j?.segments) ? j.segments : [];
+    if (!segs.length) return "";
+
+    const first = segs[0];
+    const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
+    const headerDate = departDay ? dateHeaderLabel(departDay) : "—";
+
+    const cp = cityPairFromJourney(j);
+    const routeTitle = (cp.fromCity && cp.toCity)
+      ? `${escapeHtml(cp.fromCity)} <span class="baArr">→</span> ${escapeHtml(cp.toCity)}`
+      : `${escapeHtml(cp.fromIata || "—")} <span class="baArr">→</span> ${escapeHtml(cp.toIata || "—")}`;
+
+    const travelTime = minsToHM(j.total_travel_minutes);
+
+    let firstNextDayIdx = -1;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      const depDate = (s.depart_local || "").slice(0,10);
+      const arrDate = (s.arrive_local || "").slice(0,10);
+      if (depDate && arrDate && depDate !== arrDate) {
+        firstNextDayIdx = i;
+        break;
+      }
+    }
+
+    return `
+      <article class="baCard">
+        <header class="baCard__head">
+          <div class="baCard__headL">
+            <div class="baCard__route">${routeTitle}</div>
+            <div class="baCard__date">${escapeHtml(headerDate)}</div>
+          </div>
+          <div class="baCard__tt">Travel time: ${escapeHtml(travelTime)}</div>
+        </header>
+
+        <div class="baFlights">
+          ${segs.map((s, idx) => {
+            const carrier = s.marketing_carrier || "";
+            const cabin = s.cabin ? formatCabinName(s.cabin) : cabinFromClass(s.booking_class, carrier);
+            const depTime = fmt12(s.depart_local);
+            const arrTime = fmt12(s.arrive_local);
+            const depMD = monthDayLabel(s.depart_local);
+            const arrMD = monthDayLabel(s.arrive_local);
+            const shouldHighlight = firstNextDayIdx >= 0 && idx >= firstNextDayIdx;
+            const flightTime = segmentFlightTime(s);
+            const meal = segmentMealText(s);
+            const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
+            const operator = String(s.operating_carrier_name || s.operating_carrier || s.operator || "").trim();
+            const lo = (Array.isArray(j.layovers) && j.layovers[idx]) ? j.layovers[idx] : null;
+
+            return `
+              <div class="baFlightBlock">
+                <div class="baFlight">
+                  <div class="baFlight__main">
+                    <div class="baTL" aria-hidden="true">
+                      <span class="baTL__dot"></span>
+                      <span class="baTL__chev"></span>
+                      <span class="baTL__chev"></span>
+                      <span class="baTL__chev"></span>
+                      <span class="baTL__dot baTL__dot--end"></span>
+                    </div>
+
+                    <div class="baLeft">
+                      <div class="baRow">
+                        <div class="baTimeLine">
+                          <span class="baTime">${escapeHtml(depTime)}</span>
+                          <span class="baMD">${escapeHtml(depMD)}</span>
+                        </div>
+                        <div class="baLocLine">
+                          <span class="baCity">${escapeHtml(s.origin_city || "")},</span>
+                          <span class="baIata">${escapeHtml(s.origin || "")}</span>
+                        </div>
+                      </div>
+
+                      <div class="baRow baRow--meta">
+                        ${flightTime ? `<div class="baMetaRow">${escapeHtml(flightTime)}</div>` : ``}
+                        ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
+                      </div>
+
+                      <div class="baRow baRow--arrival">
+                        <div class="baTimeLine">
+                          <span class="baTime">${escapeHtml(arrTime)}</span>
+                          <span class="baMD ${shouldHighlight ? 'baMD--nextDay' : ''}">${escapeHtml(arrMD)}</span>
+                        </div>
+                        <div class="baLocLine">
+                          <span class="baCity">${escapeHtml(s.destination_city || "")},</span>
+                          <span class="baIata">${escapeHtml(s.destination || "")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="baAir">
+                    ${carrier ? `
+                      <img class="baAir__logo" src="${logoUrl(carrier)}" alt="${escapeHtml(carrier)}" onerror="this.style.display='none'">
+                    ` : ""}
+                    <div class="baAir__meta">
+                      <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
+                      <span class="baAir__sep">|</span>
+                      <span class="baAir__cab">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
+                    </div>
+                    ${operator ? `<div class="baAir__op">${escapeHtml(operator)}</div>` : ``}
+                  </div>
+                </div>
+
+                ${lo ? `
+                  <div class="baLayRow">
+                    <div class="baLayRow__text">
+                      <span class="baLayRow__dur">${escapeHtml(minsToHM(lo.minutes))} layover</span>
+                      <span class="baLayRow__in"> in ${escapeHtml(lo.at_city || lo.at || "")}</span>
+                    </div>
+                  </div>
+                ` : ``}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </article>
+    `;
   }
 
   // ---------- Stripe state ----------
@@ -1123,18 +1262,79 @@
 
   // ---------- Paid UI ----------
   function renderPaid(data){
-    const pax = (data.passengers || []).join(", ");
+    const pdArr = getPassengerDetailsArray(data);
+    const paxCount = (pdArr && pdArr.length) ? pdArr.length : (Array.isArray(data.passengers) && data.passengers.length) ? data.passengers.length : 1;
+
+    const passengerLines = [];
+    for (let i = 0; i < paxCount; i++) {
+      const pax = getPassengerFromSession(data, i);
+      const first = pax.first_name || "Passenger";
+      const last = pax.last_name || String(i + 1);
+      const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "—";
+      const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
+      passengerLines.push(`${escapeHtml(first + " " + last)} · ${escapeHtml(displayGender)} · DOB ${escapeHtml(displayDob)}`);
+    }
+    const passengersHtml = passengerLines.length ? passengerLines.join("<br>") : "—";
+
+    const agentName = data.agent_name ? String(data.agent_name).trim() : "";
+    const agentPhone = data.agent_phone ? String(data.agent_phone).trim() : "";
+    const agentLine = (agentName || agentPhone) ? `<div style="margin-top:8px;opacity:.9">Have any questions? Get in touch with your agent${agentName ? " " + escapeHtml(agentName) : ""}${agentPhone ? " at " + escapeHtml(agentPhone) : ""}.</div>` : "";
+
+    const journeys = Array.isArray(data.journeys) ? data.journeys : [];
+    const itineraryHtml = journeys.length ? journeys.map(buildJourneyCardHtml).join("") : "";
+
+    const paidAtStr = formatPaidAtDisplay(data.paid_at);
+
     root.innerHTML = `
-      <div style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
+      <style>
+        .baPaidConf .baCard{ background:#fff; border:1px solid #e7e7e7; border-radius:10px; overflow:hidden; margin-bottom:16px; box-shadow:0 10px 24px rgba(0,0,0,.05); }
+        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:18px 20px 14px; border-bottom:1px solid #efefef; }
+        .baPaidConf .baCard__route{ font-family:Georgia,'Times New Roman',serif; font-weight:800; font-size:26px; letter-spacing:-0.02em; line-height:1.1; }
+        .baPaidConf .baArr{ margin:0 10px; }
+        .baPaidConf .baCard__date{ margin-top:8px; font-size:15px; opacity:.75; font-weight:650; }
+        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:700; white-space:nowrap; padding-top:8px; margin-right:20px; }
+        .baPaidConf .baFlights{ padding:8px 0; }
+        .baPaidConf .baFlightBlock{ padding:0 20px; }
+        .baPaidConf .baFlight{ display:grid; grid-template-columns:1fr 250px; gap:16px; padding:16px 0; border-top:1px solid #f1f1f1; }
+        .baPaidConf .baFlightBlock:first-child .baFlight{ border-top:0; }
+        .baPaidConf .baFlight__main{ display:grid; grid-template-columns:22px 1fr; gap:14px; align-items:flex-start; min-width:0; }
+        .baPaidConf .baTL{ width:22px; margin-top:6px; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.8; }
+        .baPaidConf .baTL__dot{ width:10px; height:10px; border-radius:50%; background:#d0d0d0; }
+        .baPaidConf .baTL__dot--end{ background:#fff; border:2px solid #d0d0d0; width:10px; height:10px; }
+        .baPaidConf .baTL__chev{ width:8px; height:6px; border-left:2px solid #d7d7d7; border-bottom:2px solid #d7d7d7; transform:rotate(-45deg); margin-left:1px; }
+        .baPaidConf .baRow{ display:grid; grid-template-columns:150px 1fr; gap:10px; align-items:baseline; min-width:0; }
+        .baPaidConf .baTimeLine{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+        .baPaidConf .baTime{ font-size:16px; font-weight:800; line-height:1.1; white-space:nowrap; }
+        .baPaidConf .baMD{ font-size:13px; font-weight:700; opacity:.65; white-space:nowrap; }
+        .baPaidConf .baMD--nextDay{ color:#c56a00; opacity:.85; }
+        .baPaidConf .baLocLine{ font-size:15px; font-weight:800; line-height:1.2; min-width:0; }
+        .baPaidConf .baCity,.baPaidConf .baIata{ display:inline; }
+        .baPaidConf .baIata{ font-weight:800; margin-left:5px; opacity:.85; }
+        .baPaidConf .baRow--meta{ margin-top:14px; grid-template-columns:1fr; gap:6px; }
+        .baPaidConf .baRow--meta + .baRow{ margin-top:16px; }
+        .baPaidConf .baMetaRow{ font-size:12px; font-weight:700; opacity:.68; line-height:1.35; }
+        .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-width:0; padding-top:6px; }
+        .baPaidConf .baAir__logo{ width:90px; height:28px; object-fit:contain; }
+        .baPaidConf .baAir__meta{ font-size:14px; opacity:.75; font-weight:700; white-space:nowrap; }
+        .baPaidConf .baAir__fn{ font-weight:800; opacity:.9; }
+        .baPaidConf .baAir__sep{ margin:0 8px; opacity:.5; }
+        .baPaidConf .baAir__op{ font-size:13px; opacity:.6; font-weight:650; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:14px 0; margin:0; }
+        .baPaidConf .baLayRow__text{ font-size:14px; font-weight:700; color:#6b6b6b; }
+        .baPaidConf .baLayRow__dur{ font-weight:800; color:#6b6b6b; }
+        @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } }
+      </style>
+      <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
         <div style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:14px">
-          <div style="font-weight:900;font-size:16px;margin-bottom:4px">Payment received ✅</div>
-          <div style="opacity:.9">Thank you. Your agent will follow up with the next steps.</div>
+          <div style="font-weight:900;font-size:16px;margin-bottom:4px">Thank You For Booking With Us. ✅</div>
+          <div style="opacity:.9">Your tickets will be sent to your email as soon as they are booked.</div>
+          ${agentLine}
         </div>
 
         <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
           <div>
             <div style="font-size:14px;opacity:.75">Passengers</div>
-            <div style="font-weight:700">${escapeHtml(pax || "—")}</div>
+            <div style="font-weight:700;line-height:1.5">${passengersHtml}</div>
           </div>
           <div>
             <div style="font-size:14px;opacity:.75">Paid</div>
@@ -1144,13 +1344,14 @@
           </div>
           <div>
             <div style="font-size:14px;opacity:.75">Paid at</div>
-            <div style="font-weight:800">${escapeHtml(data.paid_at ? new Date(data.paid_at).toLocaleString() : "—")}</div>
+            <div style="font-weight:800">${escapeHtml(paidAtStr)}</div>
           </div>
         </div>
 
-        <div style="margin-top:18px">
+        <div style="margin-top:24px">
           <h2 style="margin:0 0 12px;font-size:34px;letter-spacing:-0.02em">Flight Itinerary</h2>
-          <div style="opacity:.85">You can keep this page for your records.</div>
+          <div style="opacity:.85;margin-bottom:16px">You can keep this page for your records.</div>
+          ${itineraryHtml}
         </div>
       </div>
     `;
@@ -1878,133 +2079,7 @@
     // FLIGHTS
     // ----------------------------
     function journeyCardHtml(j){
-      const segs = Array.isArray(j?.segments) ? j.segments : [];
-      if (!segs.length) return "";
-
-      const first = segs[0];
-      const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
-      const headerDate = departDay ? dateHeaderLabel(departDay) : "—";
-
-      const cp = cityPairFromJourney(j);
-      const routeTitle = (cp.fromCity && cp.toCity)
-        ? `${escapeHtml(cp.fromCity)} <span class="baArr">→</span> ${escapeHtml(cp.toCity)}`
-        : `${escapeHtml(cp.fromIata || "—")} <span class="baArr">→</span> ${escapeHtml(cp.toIata || "—")}`;
-
-      const travelTime = minsToHM(j.total_travel_minutes);
-      
-      // Find first segment with next-day arrival to determine which subsequent segments to highlight
-      let firstNextDayIdx = -1;
-      for (let i = 0; i < segs.length; i++) {
-        const s = segs[i];
-        const depDate = (s.depart_local || "").slice(0,10);
-        const arrDate = (s.arrive_local || "").slice(0,10);
-        if (depDate && arrDate && depDate !== arrDate) {
-          firstNextDayIdx = i;
-          break;
-        }
-      }
-
-      return `
-        <article class="baCard">
-          <header class="baCard__head">
-            <div class="baCard__headL">
-              <div class="baCard__route">${routeTitle}</div>
-              <div class="baCard__date">${escapeHtml(headerDate)}</div>
-            </div>
-            <div class="baCard__tt">Travel time: ${escapeHtml(travelTime)}</div>
-          </header>
-
-          <div class="baFlights">
-            ${segs.map((s, idx) => {
-              const carrier = s.marketing_carrier || "";
-              // Use cabin from backend if available, otherwise fall back to cabinFromClass
-              const cabin = s.cabin ? formatCabinName(s.cabin) : cabinFromClass(s.booking_class, carrier);
-
-              const depTime = fmt12(s.depart_local);
-              const arrTime = fmt12(s.arrive_local);
-              const depMD = monthDayLabel(s.depart_local);
-              const arrMD = monthDayLabel(s.arrive_local);
-
-              // Highlight all segments from the first one with next-day arrival onwards
-              const shouldHighlight = firstNextDayIdx >= 0 && idx >= firstNextDayIdx;
-
-              const flightTime = segmentFlightTime(s);
-              const meal = segmentMealText(s);
-
-              const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
-              const operator = String(s.operating_carrier_name || s.operating_carrier || s.operator || "").trim();
-
-              const lo = (Array.isArray(j.layovers) && j.layovers[idx]) ? j.layovers[idx] : null;
-
-              return `
-                <div class="baFlightBlock">
-                  <div class="baFlight">
-                    <div class="baFlight__main">
-                      <div class="baTL" aria-hidden="true">
-                        <span class="baTL__dot"></span>
-                        <span class="baTL__chev"></span>
-                        <span class="baTL__chev"></span>
-                        <span class="baTL__chev"></span>
-                        <span class="baTL__dot baTL__dot--end"></span>
-                      </div>
-
-                      <div class="baLeft">
-                        <div class="baRow">
-                          <div class="baTimeLine">
-                            <span class="baTime">${escapeHtml(depTime)}</span>
-                            <span class="baMD">${escapeHtml(depMD)}</span>
-                          </div>
-                          <div class="baLocLine">
-                            <span class="baCity">${escapeHtml(s.origin_city || "")},</span>
-                            <span class="baIata">${escapeHtml(s.origin || "")}</span>
-                          </div>
-                        </div>
-
-                        <div class="baRow baRow--meta">
-                          ${flightTime ? `<div class="baMetaRow">${escapeHtml(flightTime)}</div>` : ``}
-                          ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
-                        </div>
-
-                        <div class="baRow baRow--arrival">
-                          <div class="baTimeLine">
-                            <span class="baTime">${escapeHtml(arrTime)}</span>
-                            <span class="baMD ${shouldHighlight ? 'baMD--nextDay' : ''}">${escapeHtml(arrMD)}</span>
-                          </div>
-                          <div class="baLocLine">
-                            <span class="baCity">${escapeHtml(s.destination_city || "")},</span>
-                            <span class="baIata">${escapeHtml(s.destination || "")}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="baAir">
-                      ${carrier ? `
-                        <img class="baAir__logo" src="${logoUrl(carrier)}" alt="${escapeHtml(carrier)}" onerror="this.style.display='none'">
-                      ` : ""}
-                      <div class="baAir__meta">
-                        <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
-                        <span class="baAir__sep">|</span>
-                        <span class="baAir__cab">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
-                      </div>
-                      ${operator ? `<div class="baAir__op">${escapeHtml(operator)}</div>` : ``}
-                    </div>
-                  </div>
-
-                  ${lo ? `
-                    <div class="baLayRow">
-                      <div class="baLayRow__text">
-                        <span class="baLayRow__dur">${escapeHtml(minsToHM(lo.minutes))} layover</span>
-                        <span class="baLayRow__in"> in ${escapeHtml(lo.at_city || lo.at || "")}</span>
-                      </div>
-                    </div>
-                  ` : ``}
-                </div>
-              `;
-            }).join("")}
-          </div>
-        </article>
-      `;
+      return buildJourneyCardHtml(j);
     }
 
     // ----------------------------
