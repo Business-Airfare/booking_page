@@ -301,6 +301,7 @@
   let selectedPaymentMethodType = null; // Track selected payment method type (e.g., "apple_pay", "google_pay", "card")
   let walletRemountInProgress = false; // Prevent concurrent remounts when user selects wallet
   let lastWalletRemountAt = 0; // Skip remount if we just remounted for wallet (avoids double remount when new element shows card then user clicks wallet again)
+  let remountingForWalletType = null; // When remounting after user chose wallet: "apple_pay" | "google_pay" so we keep that tab selected
 
   let billingEmail = "";
   let billingAddressComplete = false;
@@ -359,6 +360,7 @@
       const payload = await res.json().catch(() => ({}));
       if (res.ok && payload.client_secret) {
         console.log("[STRIPE] Remounting Elements for wallet so amount is correct");
+        remountingForWalletType = selectedPaymentMethodType; // keep wallet tab selected after remount
         await mountStripePaymentElement(payload.client_secret, true, true);
         lastWalletRemountAt = Date.now();
       }
@@ -625,9 +627,14 @@
       }
     }
 
+    // When remounting for wallet, put that wallet first so it stays selected after remount
+    const walletFirst = remountingForWalletType && ["apple_pay", "google_pay"].includes(remountingForWalletType);
+    const paymentMethodOrder = walletFirst
+      ? [remountingForWalletType, "card", "link", ...["apple_pay", "google_pay"].filter(m => m !== remountingForWalletType)]
+      : ["card", "link", "apple_pay", "google_pay"];
     paymentElement = elements.create("payment", { 
       layout: "tabs",
-      paymentMethodOrder: ["card", "link", "apple_pay", "google_pay"],
+      paymentMethodOrder,
       wallets: {
         applePay: "auto",
         googlePay: "auto"
@@ -638,8 +645,9 @@
     
     // Track selected payment method type to determine if remount is needed
     paymentElement.on("ready", () => {
-      // Default to "card" when Elements load (card is first in paymentMethodOrder)
-      selectedPaymentMethodType = "card";
+      // Keep wallet selected when we remounted for wallet; otherwise default to card
+      selectedPaymentMethodType = remountingForWalletType || "card";
+      if (remountingForWalletType) remountingForWalletType = null;
       // Check if wallet payment methods are available
       try {
         const paymentMethodTypes = paymentElement?.getElement?.()?.paymentMethodTypes || [];
