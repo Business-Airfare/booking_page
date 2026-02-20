@@ -2045,7 +2045,7 @@
   .baHeaderTop{
     max-width: 1220px;
     margin: 0 auto;
-    padding: 4px 18px;
+    padding: 9px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2148,9 +2148,31 @@
     background: rgba(0,0,0,0.15);
     flex-shrink: 0;
   }
+  .baHeaderMobileNav{ display: none; }
+  .baHeaderMobileNavBtn{
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0; border: none; background: transparent;
+    color: #111; cursor: pointer; border-radius: 8px;
+  }
+  .baHeaderMobileNavBtn:hover{ background: rgba(0,0,0,.06); }
+  .baHeaderMobileNavBtn svg{ width: 24px; height: 24px; }
+  .baHeaderMobileNavBtn .baHeaderMobileNavBtn-iconMobile{ display: none; }
+  .baHeaderMobileNavDropdown{
+    display: none; position: absolute; left: 0; top: 100%; margin-top: 4px;
+    min-width: 200px; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+    padding: 8px 0; z-index: 10000;
+  }
+  .baHeaderMobileNavDropdown.is-open{ display: block; }
+  .baHeaderMobileNavDropdown a{
+    display: block; padding: 12px 16px; color: #111; text-decoration: none; font-weight: 700; font-size: 14px;
+    letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .baHeaderMobileNavDropdown a:hover{ background: rgba(0,0,0,.06); }
+  .baHeaderMobileNavWrap{ position: relative; }
+  .baHeaderPhoneMobile{ display: none; }
   .baHeaderProgress{
     background: #2f2f2f;
-    padding: 12px 18px;
+    padding: 22px 18px;
   }
   .baHeaderProgressInner{
     max-width: 1220px;
@@ -2228,9 +2250,19 @@
     background: var(--ba-accent);
   }
   @media (max-width: 980px){
-    .baHeaderTop{ padding: 10px 18px; }
-    .baHeaderNav{ gap: 16px; }
-    .baHeaderRight{ gap: 16px; }
+    .baHeaderTop{ padding: 9px 14px; justify-content: space-between; gap: 12px; }
+    .baHeaderProgress{ padding: 16px 18px; }
+    .baHeaderNav{ display: none; }
+    .baHeaderMobileNav{ display: flex; align-items: center; flex-shrink: 0; order: -1; }
+    .baHeaderMobileNavBtn{ width: 48px; height: 48px; }
+    .baHeaderMobileNavBtn .baHeaderMobileNavBtn-iconDesktop{ display: none; }
+    .baHeaderMobileNavBtn .baHeaderMobileNavBtn-iconMobile{ display: block; width: 32px; height: 32px; }
+    .baHeaderPhoneMobile{ display: flex; align-items: center; flex-shrink: 0; order: 0; }
+    .baHeaderRight .baHeaderPhone{ display: none; }
+    .baHeaderRight .baHeaderDivider:first-of-type{ display: none; }
+    .baHeaderRight{ gap: 16px; flex: 1; justify-content: flex-end; min-width: 0; order: 1; }
+    .baHeaderPhone{ font-size: 21px; white-space: nowrap; }
+    .baHeaderPhone a{ white-space: nowrap; }
     .baHeaderProgressInner{ grid-template-columns: 1fr; align-items: center; gap: 16px; text-align: center; }
     .baHeaderProgressLeft{ display: flex; flex-direction: column; align-items: center; }
     .baHeaderProgressSteps{ width: 100%; justify-content: center; }
@@ -3106,7 +3138,7 @@
   .baSticky{
     position:fixed; left:0; right:0; bottom:0; z-index:9999;
     background:#2f2f2f; color:#fff;
-    padding: 10px 14px;
+    padding: 20px 14px;
     box-shadow: 0 -8px 22px rgba(0,0,0,.18);
   }
   .baStickyIn{
@@ -3134,7 +3166,18 @@
     flex-shrink: 0;
   }
   @media (max-width: 980px){
-    .baStickyMessage{ display: none; }
+    .baSticky .baStickyLeft{ display: none; }
+    .baSticky .baStickyMessage{ display: none; }
+    .baSticky .baStickyIn{ display: flex; }
+    .baSticky .baStickyRight{ display: grid !important; grid-template-columns: 1fr auto; gap: 14px; align-items: center; flex: 1; min-width: 0; }
+    .baSticky .baStickyPrice{ justify-self: center; text-align: center; min-width: 0; grid-column: 1; }
+    .baSticky .baStickyPriceTop{ justify-content: center; }
+    .baSticky .baStickyAmt{ font-size: 38px !important; }
+    .baSticky .baStickyCur{ font-size: 19px !important; }
+    .baSticky .baStickySub{ font-size: 19px !important; }
+    .baSticky .baCTA{ padding: 16px 24px; min-height: 52px; justify-self: end; grid-column: 2; grid-row: 1; }
+    .baSticky .baCTATitle{ font-size: 24px; }
+    .baSticky .baCTARight{ font-size: 18px; }
   }
   .baStickyLogo{
     width: 96px; height: 44px; border-radius: 8px; background:#fff;
@@ -3855,6 +3898,30 @@
       <a href="https://www.business-airfare.com/privacy-policy">Privacy Policy</a>
       <a href="https://www.business-airfare.com/terms-and-conditions">Terms & Conditions</a>
     </div>
+    <div class="baHeaderMobileNav">
+      <div class="baHeaderMobileNavWrap">
+        <button class="baHeaderMobileNavBtn" type="button" aria-label="Menu" id="baMobileNavBtn">
+          <svg class="baHeaderMobileNavBtn-iconDesktop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+          <svg class="baHeaderMobileNavBtn-iconMobile" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2.25"/><circle cx="12" cy="12" r="2.25"/><circle cx="12" cy="19" r="2.25"/></svg>
+        </button>
+        <div class="baHeaderMobileNavDropdown" id="baMobileNavDropdown">
+          <a href="https://www.business-airfare.com/faqs">FAQs</a>
+          <a href="https://www.business-airfare.com/about">About</a>
+          <a href="https://www.business-airfare.com/privacy-policy">Privacy Policy</a>
+          <a href="https://www.business-airfare.com/terms-and-conditions">Terms & Conditions</a>
+        </div>
+      </div>
+    </div>
+    <div class="baHeaderPhoneMobile">${agentPhone ? `
+      <div class="baHeaderPhone">
+        <a href="tel:${escapeHtml(agentPhone.replace(/[^\d+]/g, ''))}">
+          <svg class="baHeaderPhoneIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>${escapeHtml(fmtPhoneDisplay(agentPhone))}</span>
+        </a>
+      </div>
+    ` : ""}</div>
     <div class="baHeaderRight">
       ${(agentPhone || agentName) ? `
         <div class="baHeaderAgentRow">
@@ -4324,6 +4391,20 @@
     `;
 
     wirePassengerAccordion(paxCount);
+
+    (function initMobileNav() {
+      const btn = document.getElementById("baMobileNavBtn");
+      const dropdown = document.getElementById("baMobileNavDropdown");
+      if (!btn || !dropdown) return;
+      btn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        dropdown.classList.toggle("is-open");
+      });
+      dropdown.querySelectorAll("a").forEach(function(a) {
+        a.addEventListener("click", function() { dropdown.classList.remove("is-open"); });
+      });
+      document.addEventListener("click", function() { dropdown.classList.remove("is-open"); });
+    })();
 
     // ✅ Wire passenger autosave AFTER HTML exists
     wirePassengerAutosave(data.public_id, paxCount);
