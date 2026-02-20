@@ -590,6 +590,31 @@
     return false;
   }
 
+  // Show blurred overlay instantly (e.g. when user switches to wallet or changes TCS/tips with wallet selected)
+  function showStripeLoadingOverlay() {
+    if (document.getElementById("baStripeLoadingOverlay")) return;
+    const formContentWrap = document.getElementById("baStripeFormContentWrap");
+    if (!formContentWrap) return;
+    var wrapHeight = formContentWrap.offsetHeight;
+    if (wrapHeight > 0) formContentWrap.style.minHeight = wrapHeight + "px";
+    const loadingOverlay = document.createElement("div");
+    loadingOverlay.id = "baStripeLoadingOverlay";
+    loadingOverlay.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:center;z-index:10;border-radius:8px;pointer-events:none";
+    loadingOverlay.innerHTML = "<div style=\"display:flex;flex-direction:column;align-items:center;gap:8px\"><div style=\"width:32px;height:32px;border:3px solid #eee;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite\"></div></div>";
+    formContentWrap.appendChild(loadingOverlay);
+  }
+
+  function removeStripeLoadingOverlayById() {
+    const el = document.getElementById("baStripeLoadingOverlay");
+    if (!el || !el.parentNode) return;
+    el.style.transition = "opacity 0.2s ease";
+    el.style.opacity = "0";
+    setTimeout(function() {
+      const e = document.getElementById("baStripeLoadingOverlay");
+      if (e && e.parentNode) e.remove();
+    }, 200);
+  }
+
   // When user selects Apple Pay or Google Pay, remount Stripe elements with current amount from backend
   async function remountStripeForWalletAmount() {
     if (walletRemountInProgress) return;
@@ -719,8 +744,8 @@
     // Preserve user input before unmounting
     let preservedAddress = null;
     
-    if (wasMounted) {
-      // Show loading overlay over entire Stripe form content (billing address + payment details) so user doesn't see remount
+    if (wasMounted && !document.getElementById("baStripeLoadingOverlay")) {
+      // Show loading overlay if not already shown (e.g. by showStripeLoadingOverlay() when user switched to wallet / changed TCS or tips)
       loadingOverlay = document.createElement("div");
       loadingOverlay.id = "baStripeLoadingOverlay";
       loadingOverlay.style.cssText = `
@@ -749,6 +774,8 @@
         if (wrapHeight > 0) formContentWrap.style.minHeight = wrapHeight + "px";
         formContentWrap.appendChild(loadingOverlay);
       }
+    } else if (wasMounted) {
+      loadingOverlay = document.getElementById("baStripeLoadingOverlay");
     }
     
     if (wasMounted && preserveState) {
@@ -907,10 +934,11 @@
       if (event && event.value && event.value.type) {
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
-        // When user selects a wallet method, remount with current amount so the charge is correct
+        // When user selects a wallet method, show overlay instantly then remount with current amount
         const walletMethods = ["apple_pay", "google_pay"];
         if (walletMethods.includes(selectedPaymentMethodType)) {
           if (!walletRemountInProgress && (Date.now() - lastWalletRemountAt > 2000)) {
+            showStripeLoadingOverlay();
             remountStripeForWalletAmount();
           }
         }
@@ -921,19 +949,11 @@
     currentClientSecret = clientSecret;
 
     // Remove loading overlay only when Stripe Elements are fully ready (so user never sees half-mounted elements)
-    const removeStripeLoadingOverlay = () => {
-      if (!loadingOverlay || !loadingOverlay.parentNode) return;
-      loadingOverlay.style.transition = "opacity 0.2s ease";
-      loadingOverlay.style.opacity = "0";
-      setTimeout(() => {
-        if (loadingOverlay && loadingOverlay.parentNode) loadingOverlay.remove();
-      }, 200);
-    };
-    if (loadingOverlay) {
-      const fallbackTimeout = setTimeout(removeStripeLoadingOverlay, 8000);
+    if (document.getElementById("baStripeLoadingOverlay")) {
+      const fallbackTimeout = setTimeout(removeStripeLoadingOverlayById, 8000);
       paymentElement.on("ready", () => {
         clearTimeout(fallbackTimeout);
-        setTimeout(removeStripeLoadingOverlay, 1000);
+        setTimeout(removeStripeLoadingOverlayById, 1000);
       });
     }
     
@@ -4969,7 +4989,7 @@
     
     function handleCareSelection(newSelected) {
       if (selectionLocked || isExpired) return;
-      
+      if (shouldForceRemountForWalletPayment()) showStripeLoadingOverlay();
       const wasSelected = careSelected;
       
       // OPTIMISTIC UPDATE: Update UI immediately
@@ -5224,6 +5244,7 @@
     if (tipAgree) {
       tipAgree.addEventListener("change", async () => {
         if (selectionLocked || isExpired) return;
+        if (shouldForceRemountForWalletPayment()) showStripeLoadingOverlay();
         tipAgreed = !!tipAgree.checked;
         updateTotalsUI();
         updateTipAgreementUI(); // This now also updates Pay Now button state
