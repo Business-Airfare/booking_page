@@ -520,7 +520,6 @@
       }
     }
     
-    const emailOk = !!(billingEmail && billingEmail.includes("@"));
     const addrOk = !!billingAddressComplete;
     
     // Check terms and conditions checkbox - ALWAYS required
@@ -542,20 +541,18 @@
     // Note: acceptanceCompleted is set by updateTermsAgreementUI/updateTipAgreementUI
     const acceptanceOk = acceptanceCompleted;
     
-    const result = payerEmailOk && emailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
+    const result = payerEmailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
     
     // Debug logging - always log to help diagnose issues
     console.log("[BOOK_FLOW] validateBillingUI result:", {
       result,
       payerEmailOk,
-      emailOk,
       addrOk,
       termsOk,
       tipsOk,
       acceptanceOk,
       acceptanceCompleted,
       payerEmail: payerEmail ? (payerEmail.substring(0, 3) + "***") : null,
-      billingEmail: billingEmail ? (billingEmail.substring(0, 3) + "***") : null,
       billingAddressComplete,
       timestamp: new Date().toISOString()
     });
@@ -580,7 +577,6 @@
     let loadingOverlay = null;
     
     // Preserve user input before unmounting
-    let preservedEmail = billingEmail || "";
     let preservedAddress = null;
     
     if (wasMounted && preserveState) {
@@ -636,9 +632,6 @@
     // Unmount old elements if they exist (Stripe requires this before mounting new ones)
     if (wasMounted) {
       try {
-        if (linkAuthElement) {
-          try { linkAuthElement.unmount(); } catch(e) {}
-        }
         if (addressElement) {
           try { addressElement.unmount(); } catch(e) {}
         }
@@ -651,11 +644,9 @@
     }
 
     // Clear mount containers
-    const linkMount = document.getElementById("baLinkAuthMount");
     const addrMount = document.getElementById("baAddressMount");
     const payMount = document.getElementById("baStripeMount");
     
-    if (linkMount) linkMount.innerHTML = "";
     if (addrMount) addrMount.innerHTML = "";
     if (payMount) payMount.innerHTML = "";
 
@@ -672,34 +663,6 @@
       appearance: stripeAppearance,
       loader: "auto"
     });
-
-    linkAuthElement = elements.create("linkAuthentication");
-    if (!linkMount) throw new Error("Missing baLinkAuthMount container");
-    linkAuthElement.mount("#baLinkAuthMount");
-
-    linkAuthElement.on("change", (event) => {
-      billingEmail = (event && event.value && event.value.email) ? String(event.value.email) : "";
-      const ok = validateBillingUI();
-      const m = document.getElementById("baStripeMsg");
-      if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
-      setConfirmEnabled(ok);
-    });
-    
-    // Restore preserved email if available
-    if (preservedEmail && linkAuthElement) {
-      try {
-        // Link Authentication element doesn't support setValue, but we'll restore via the change handler
-        // The email is already stored in billingEmail variable, so it will be used during validation
-        setTimeout(() => {
-          // Trigger change event to sync the stored email
-          if (linkAuthElement && billingEmail) {
-            // Email will be restored when user interacts or when Link auto-fills
-          }
-        }, 100);
-      } catch (e) {
-        console.warn("[STRIPE] Could not restore email:", e);
-      }
-    }
 
     // Prepare address default values from preserved data
     const addressDefaults = { address: { country: "US" } };
@@ -878,29 +841,25 @@
         // Check if paymentElement exists and mount container has content
         if (paymentElement && elements) {
           const payMount = document.getElementById("baStripeMount");
-          const linkMount = document.getElementById("baLinkAuthMount");
           const addrMount = document.getElementById("baAddressMount");
           
-          if (payMount && linkMount && addrMount) {
+          if (payMount && addrMount) {
             // Check for iframes (Stripe Elements render as iframes)
             const paymentIframe = payMount.querySelector("iframe");
-            const linkIframe = linkMount.querySelector("iframe");
             const addrIframe = addrMount.querySelector("iframe");
             
             const hasPaymentIframe = paymentIframe !== null;
-            const hasLinkIframe = linkIframe !== null;
             const hasAddrIframe = addrIframe !== null;
             
-            // All three elements should have iframes when ready
-            if (hasPaymentIframe && hasLinkIframe && hasAddrIframe) {
+            // Both elements should have iframes when ready
+            if (hasPaymentIframe && hasAddrIframe) {
               // Verify iframes are actually loaded (not just present)
               // Check if iframes have dimensions (loaded iframes have width/height)
               const paymentLoaded = paymentIframe.offsetWidth > 0 && paymentIframe.offsetHeight > 0;
-              const linkLoaded = linkIframe.offsetWidth > 0 && linkIframe.offsetHeight > 0;
               const addrLoaded = addrIframe.offsetWidth > 0 && addrIframe.offsetHeight > 0;
               
-              // All iframes must be loaded for consecutive checks to count
-              if (paymentLoaded && linkLoaded && addrLoaded) {
+              // Both iframes must be loaded for consecutive checks to count
+              if (paymentLoaded && addrLoaded) {
                 // Track when we first detected stable iframes
                 if (firstStableDetectionTime === null) {
                   firstStableDetectionTime = Date.now();
@@ -1028,8 +987,10 @@
       }
     }
 
-    if (!linkAuthElement) throw new Error("Email element not initialized.");
-    if (!billingEmail) throw new Error("Please enter a valid billing email.");
+    // Validate payer email (required for receipt)
+    if (!payerEmail || !/^\S+@\S+\.\S+$/.test(payerEmail)) {
+      throw new Error("Please enter a valid email address.");
+    }
 
     if (!addressElement) throw new Error("Address element not initialized.");
     const addr = await addressElement.getValue();
@@ -1095,7 +1056,7 @@
         payment_method_data: {
           billing_details: {
             name: billingName,
-            email: billingEmail,
+            email: payerEmail,
             phone: phone || undefined,
             address: address || undefined,
           }
@@ -4327,9 +4288,6 @@
                 <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:14px">Email<span class="baReq" style="color:#d92d20;margin-left:2px">*</span></label>
                 <input id="baPayerEmail" type="email" class="baBoxInput" placeholder="your@email.com" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:6px;font-size:15px;box-sizing:border-box">
                 <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
-              </div>
-              <div class="baStripeEmailWrap" style="margin-bottom:12px">
-                <div id="baLinkAuthMount"></div>
               </div>
 
               <div class="baStripeAddressWrap" style="margin-bottom:14px">
