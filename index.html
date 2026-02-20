@@ -751,19 +751,19 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(255,255,255,0.7);
+        background: rgba(255,255,255,0.95);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 5;
+        z-index: 10;
         border-radius: 8px;
-        opacity: 0;
-        transition: opacity 0.15s ease;
+        opacity: 1;
+        transition: opacity 0.2s ease;
         pointer-events: none;
       `;
       loadingOverlay.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0.6">
-          <div style="width:16px;height:16px;border:2px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.5s linear infinite"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:40px;height:40px;border:3px solid #f0f0f0;border-top-color:#d1ad54;border-radius:50%;animation:spin 0.7s linear infinite"></div>
         </div>
       `;
     }
@@ -788,6 +788,13 @@
     
     if (addrMount) addrMount.innerHTML = "";
     if (payMount) payMount.innerHTML = "";
+
+    // Show loading circle in place of Stripe elements during remount (wallet / TCS / tips)
+    if (loadingOverlay && payMount) {
+      payMount.style.position = "relative";
+      payMount.style.minHeight = "140px";
+      payMount.appendChild(loadingOverlay);
+    }
 
     // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
     // On mobile only: make text inside input boxes bold (user-typed content); labels stay default via rules.
@@ -875,9 +882,30 @@
     });
     if (!payMount) throw new Error("Missing baStripeMount container");
     paymentElement.mount("#baStripeMount");
+
+    // Fallback: remove loading overlay after timeout in case "ready" never fires
+    let overlayFallbackId = null;
+    if (loadingOverlay) {
+      overlayFallbackId = setTimeout(() => {
+        const el = document.getElementById("baStripeLoadingOverlay");
+        if (el && el.parentNode) {
+          el.style.opacity = "0";
+          setTimeout(() => el.remove(), 200);
+        }
+      }, 8000);
+    }
     
     // Track selected payment method type to determine if remount is needed
     paymentElement.on("ready", () => {
+      // Remove loading overlay when Stripe elements are ready (user no longer sees remount state)
+      if (overlayFallbackId) clearTimeout(overlayFallbackId);
+      const overlayEl = document.getElementById("baStripeLoadingOverlay");
+      if (overlayEl && overlayEl.parentNode) {
+        overlayEl.style.opacity = "0";
+        setTimeout(() => {
+          if (overlayEl.parentNode) overlayEl.remove();
+        }, 200);
+      }
       // Keep wallet selected when we remounted for wallet; otherwise default to card
       selectedPaymentMethodType = remountingForWalletType || "card";
       if (remountingForWalletType) {
@@ -908,36 +936,9 @@
         }
       }
     });
-    
-    // Append loading overlay to payment mount after mounting (so it doesn't get cleared)
-    if (loadingOverlay && payMount) {
-      payMount.style.position = "relative";
-      payMount.appendChild(loadingOverlay);
-      // Fade in overlay very subtly
-      setTimeout(() => {
-        if (loadingOverlay) loadingOverlay.style.opacity = "1";
-      }, 10);
-    }
 
     // Store current client_secret
     currentClientSecret = clientSecret;
-
-    // Remove loading overlay smoothly after elements are rendered
-    // Use shorter delay for better UX - elements render quickly
-    if (loadingOverlay) {
-      // Wait for elements to start rendering, then fade out quickly
-      setTimeout(() => {
-        if (loadingOverlay && loadingOverlay.parentNode) {
-          loadingOverlay.style.opacity = "0";
-          loadingOverlay.style.transition = "opacity 0.15s ease";
-          setTimeout(() => {
-            if (loadingOverlay && loadingOverlay.parentNode) {
-              loadingOverlay.remove();
-            }
-          }, 150);
-        }
-      }, 200); // Reduced from 400ms for faster transition
-    }
     
     // Restore scroll position if we were preserving state
     if (preserveState && scrollPos !== null) {
