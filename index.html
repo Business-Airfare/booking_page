@@ -5601,13 +5601,41 @@
           const st = pi && pi.status ? pi.status : "unknown";
           if (st === "succeeded") {
             if (msg) msg.textContent = "Payment successful. Thank you!";
-            setTimeout(async () => {
+            // Retry logic to check for paid status (backend webhook may take time)
+            let retryCount = 0;
+            const maxRetries = 10;
+            const retryDelay = 1500; // Start with 1.5s delay
+            
+            const checkPaidStatus = async () => {
               try {
                 const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
                 const fresh = await res.json();
-                if (fresh && (fresh.paid_at || fresh.status === "paid")) renderSession(fresh);
-              } catch (_) {}
-            }, 1500);
+                if (fresh && (fresh.paid_at || fresh.status === "paid")) {
+                  renderSession(fresh);
+                  return; // Success - stop retrying
+                }
+                
+                // If not paid yet and we haven't exceeded max retries, retry
+                if (retryCount < maxRetries) {
+                  retryCount++;
+                  setTimeout(checkPaidStatus, retryDelay);
+                } else {
+                  // After max retries, still show success message but don't navigate
+                  // Payment was successful in Stripe, backend just hasn't updated yet
+                  console.warn("[BOOK_FLOW] Payment succeeded but session not marked as paid after retries");
+                }
+              } catch (err) {
+                console.error("[BOOK_FLOW] Error checking paid status:", err);
+                // Retry on error if we haven't exceeded max retries
+                if (retryCount < maxRetries) {
+                  retryCount++;
+                  setTimeout(checkPaidStatus, retryDelay);
+                }
+              }
+            };
+            
+            // Start checking after initial delay
+            setTimeout(checkPaidStatus, retryDelay);
           } else if (st === "processing") {
             if (msg) msg.textContent = "Payment processing. Please wait — confirmation will update shortly.";
           } else {
