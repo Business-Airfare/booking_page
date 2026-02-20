@@ -628,8 +628,16 @@
     // Listen for payment method changes to track selected method
     paymentElement.on("change", (event) => {
       if (event && event.value && event.value.type) {
+        const previousType = selectedPaymentMethodType;
         selectedPaymentMethodType = event.value.type;
         console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+        // When user switches payment method, uncheck tip agreement so they must re-acknowledge before paying
+        if (previousType != null && previousType !== selectedPaymentMethodType) {
+          const tipAgree = document.getElementById("baTipAgree");
+          if (tipAgree) {
+            tipAgree.checked = false;
+          }
+        }
       }
     });
     
