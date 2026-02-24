@@ -1217,8 +1217,12 @@
       // Don't throw - proceed with existing PaymentIntent
     }
     
+    // 3DS/SCA: confirmPayment with redirect "if_required" shows challenge inline when possible,
+    // or redirects to issuer and back to return_url; we handle redirect return in handleStripeRedirectReturn().
+    // See: https://docs.stripe.com/payments/strong-customer-authentication
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
+      clientSecret: currentClientSecret,
       confirmParams: {
         return_url: window.location.href,
         payment_method_data: {
@@ -5898,6 +5902,7 @@
 
           const pi = await confirmStripePayment();
 
+          // PaymentIntent status after confirm (3DS: succeeded when challenge completed; processing for async methods)
           const st = pi && pi.status ? pi.status : "unknown";
           if (st === "succeeded") {
             if (msg) msg.textContent = "Payment successful. Thank you!";
@@ -5973,6 +5978,82 @@
     }
   }
 
+  // ---------- 3DS redirect return (SCA) ----------
+  // When Stripe redirects back after 3D Secure authentication, URL contains payment_intent_client_secret and redirect_status.
+  // See: https://docs.stripe.com/payments/strong-customer-authentication#redirect-based
+  function clearStripeRedirectParams() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("payment_intent");
+    url.searchParams.delete("payment_intent_client_secret");
+    url.searchParams.delete("redirect_status");
+    const newSearch = url.searchParams.toString();
+    window.history.replaceState({}, "", (url.pathname || "/") + (newSearch ? "?" + newSearch : ""));
+  }
+
+  async function handleStripeRedirectReturn() {
+    const clientSecret = qs("payment_intent_client_secret");
+    const redirectStatus = qs("redirect_status");
+    if (!clientSecret || !redirectStatus) return;
+
+    if (redirectStatus === "failed") {
+      clearStripeRedirectParams();
+      renderError("Payment authentication failed. Please try again or use a different card.");
+      const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data) renderSession(data);
+      return;
+    }
+
+    const stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+    const { paymentIntent, error: retrieveError } = await stripeInstance.retrievePaymentIntent(clientSecret);
+    clearStripeRedirectParams();
+
+    if (retrieveError) {
+      renderError("Could not verify payment status: " + (retrieveError.message || "Please check your session."));
+      const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data) renderSession(data);
+      return;
+    }
+
+    const status = paymentIntent && paymentIntent.status ? paymentIntent.status : "";
+    if (status === "succeeded" || status === "processing") {
+      showPaymentOverlay();
+      let retries = 0;
+      let lastSession = null;
+      const maxRetries = 15;
+      const delayMs = 1500;
+      const poll = async () => {
+        const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+        const fresh = await res.json().catch(() => ({}));
+        lastSession = fresh;
+        if (fresh && (fresh.paid_at || fresh.status === "paid")) {
+          if (document.getElementById("baPaymentPercentage")) {
+            const pct = document.getElementById("baPaymentPercentage");
+            if (pct) pct.textContent = "100%";
+          }
+          hidePaymentOverlay();
+          renderSession(fresh);
+          return;
+        }
+        if (retries < maxRetries) {
+          retries++;
+          setTimeout(poll, delayMs);
+        } else {
+          hidePaymentOverlay();
+          renderError("Payment completed but confirmation is delayed. Please refresh the page in a moment.");
+          if (lastSession) renderSession(lastSession);
+        }
+      };
+      setTimeout(poll, delayMs);
+    } else {
+      renderError("Payment status: " + status + ". If you completed authentication, please refresh the page.");
+      const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data) renderSession(data);
+    }
+  }
+
   // ---------- boot ----------
   if (!publicId) {
     renderError("Missing public_id in URL.");
@@ -5980,6 +6061,12 @@
   }
 
   renderLoading();
+
+  // Handle return from Stripe 3DS redirect (required for SCA when issuer uses redirect flow)
+  if (qs("payment_intent_client_secret") && qs("redirect_status")) {
+    handleStripeRedirectReturn().catch((err) => renderError(err && err.message ? err.message : String(err)));
+    return;
+  }
 
   fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" })
     .then(async (res) => {
