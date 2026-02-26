@@ -1685,13 +1685,16 @@
   let expandedPassengerIndex = 0;
 
   function setExpandedPassenger(index){
-    const cards = Array.from(root.querySelectorAll(".baPaxCard[data-pax-card]"));
+    const cards = Array.from(root.querySelectorAll(".baPaxCard[data-pax-card]")).filter(c => c.getAttribute("data-pax-card") !== "modal");
     if (!cards.length) return;
-    const safeIndex = Math.max(0, Math.min(index, cards.length - 1));
+    const indices = cards.map(c => Number(c.getAttribute("data-pax-card"))).filter(n => !Number.isNaN(n));
+    const maxIdx = indices.length ? Math.max(...indices) : 0;
+    const safeIndex = Math.max(0, Math.min(index, maxIdx));
     expandedPassengerIndex = safeIndex;
     cards.forEach(card => {
       const idx = Number(card.getAttribute("data-pax-card"));
-      const isExpanded = idx === expandedPassengerIndex;
+      if (Number.isNaN(idx)) return;
+      const isExpanded = idx === safeIndex;
       card.classList.toggle("is-expanded", isExpanded);
       card.classList.toggle("is-collapsed", !isExpanded);
     });
@@ -2291,6 +2294,95 @@
     }
     function passengerBlockHtml(idx){
       return passengerCardHtml(idx, getPassengerFromSession(data, idx));
+    }
+
+    function passengerCardHtmlForModal(pax){
+      const idx = "modal";
+      const genderName = "baGender_modal";
+      const displayFirst = pax.first_name || "";
+      const displayLast = pax.last_name || "";
+      const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "";
+      const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
+
+      return `
+        <div class="baPaxCard is-expanded" data-pax-card="${idx}">
+          <div class="baPaxCard__head">
+            <div class="baPaxCard__title">New passenger</div>
+          </div>
+          <div class="baPaxCard__summary">
+            <div class="baPaxSummaryName" data-pax-summary-name>
+              <span class="baPaxSummaryFirst" data-pax-summary-first>${escapeHtml(displayFirst)}</span>
+              <span class="baPaxSummaryNameDivider" aria-hidden="true"></span>
+              <span class="baPaxSummaryLast" data-pax-summary-last>${escapeHtml(displayLast)}</span>
+            </div>
+            <div class="baPaxSummaryMeta" data-pax-summary-meta>
+              <span class="baPaxSummaryGender" data-pax-summary-gender>${escapeHtml(displayGender)}</span>
+              <span class="baPaxSummaryDot">·</span>
+              <span class="baPaxSummaryDob" data-pax-summary-dob>DOB ${escapeHtml(displayDob || "—")}</span>
+            </div>
+          </div>
+          <div class="baPaxCard__details">
+            <div class="baPaxGrid">
+            <div class="baPaxGender">
+              <div class="baLbl">Gender<span class="baReq">*</span></div>
+              <div class="baRadioRow">
+                <label class="baRadio">
+                  <input type="radio" name="${genderName}" value="male" data-pax="${idx}" data-field="gender" ${pax.gender==="male" ? "checked" : ""}>
+                  <span>Male</span>
+                </label>
+                <label class="baRadio">
+                  <input type="radio" name="${genderName}" value="female" data-pax="${idx}" data-field="gender" ${pax.gender==="female" ? "checked" : ""}>
+                  <span>Female</span>
+                </label>
+              </div>
+            </div>
+            <div class="baPaxHelp">The passenger names must match the travel documents. Name changes are not allowed.</div>
+            <div class="baField">
+              <label class="baLbl">Last name<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.last_name || "")}" data-pax="${idx}" data-field="last_name" placeholder="Last name">
+              <div class="baErr">Please enter a valid last name.</div>
+            </div>
+            <div class="baField">
+              <label class="baLbl">First name<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.first_name || "")}" data-pax="${idx}" data-field="first_name" placeholder="First name">
+              <div class="baErr">Please enter a valid first name.</div>
+            </div>
+            <div class="baField">
+              <label class="baLbl">Middle name <span style="font-weight:600;opacity:.7">(optional)</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.middle_name || "")}" data-pax="${idx}" data-field="middle_name" placeholder="Middle name">
+              <div class="baErr">Invalid value.</div>
+            </div>
+            <div class="baField">
+              <label class="baLbl">Date of Birth<span class="baReq">*</span></label>
+              <div class="baDateInputWrapper">
+                <input class="baBoxInput" type="text" value="${escapeHtml(pax.dobISO ? formatDobDisplay(pax.dobISO) : "")}" data-pax="${idx}" data-field="date_of_birth" placeholder="01-Jan-1980" readonly>
+                <input type="date" class="baDatePicker" data-pax="${idx}" data-field="date_of_birth_hidden" value="${escapeHtml(pax.dobISO || "")}" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;overflow:hidden;">
+                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date picker">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 2V4M14 2V4M3 8H17M4 4H16C17.1046 4 18 4.89543 18 6V16C18 17.1046 17.1046 18 16 18H4C2.89543 18 2 17.1046 2 16V6C2 4.89543 2.89543 4 4 4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M6 12H6.01M9 12H9.01M12 12H12.01M6 15H6.01M9 15H9.01M12 15H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="baErr">Please enter a valid date of birth.</div>
+            </div>
+            <div class="baField">
+              <label class="baLbl">Email<span class="baReq">*</span></label>
+              <input class="baBoxInput" value="${escapeHtml(pax.email || "")}" data-pax="${idx}" data-field="email" placeholder="Email">
+              <div class="baErr">Please enter a valid email.</div>
+            </div>
+            <div class="baField">
+              <label class="baLbl">Phone<span class="baReq">*</span></label>
+              <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
+                <div style="padding:10px 12px;background:#f7f7f7;border-right:1px solid #e7e7e7;font-weight:700;flex-shrink:0;font-size:15px;line-height:1;display:flex;align-items:center;box-sizing:border-box">+1</div>
+                <input class="baBoxInput" value="${escapeHtml(pax.phone && pax.phone.startsWith('+1') ? pax.phone.slice(2) : (pax.phone || ''))}" data-pax="${idx}" data-field="phone" placeholder="5555555555" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+              </div>
+              <div class="baErr">Please enter a valid phone number.</div>
+            </div>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     const pdArr = getPassengerDetailsArray(data);
@@ -3578,6 +3670,18 @@
   .baAddPassengerBtn:hover:not([disabled]){ background: rgba(209,173,84,.08); color: #8a7318; }
   .baAddPassengerBtn[disabled]{ opacity: .55; cursor: not-allowed; }
 
+  .baAddPaxModalOverlay{ position:fixed; inset:0; z-index:10002; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; background:rgba(0,0,0,.35); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+  .baAddPaxModalPanel{ background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
+  .baAddPaxModalTitle{ font-weight:800; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; }
+  .baAddPaxModalCardWrap{ padding:0 20px; }
+  .baAddPaxModalCardWrap .baPaxCard__head .baPaxHeadRight{ display:none; }
+  .baAddPaxModalFooter{ padding:20px; display:flex; gap:12px; justify-content:flex-end; border-top:1px solid #e9e9e9; }
+  .baAddPaxModalSave{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:0; border-radius:8px; background:var(--ba-accent); color:#111; cursor:pointer; }
+  .baAddPaxModalSave:hover:not([disabled]){ opacity:.9; }
+  .baAddPaxModalSave[disabled]{ opacity:.6; cursor:not-allowed; }
+  .baAddPaxModalCancel{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:2px solid #ccc; border-radius:8px; background:#fff; color:#333; cursor:pointer; }
+  .baAddPaxModalCancel:hover{ background:#f5f5f5; }
+
   .baCTATitle{ font-weight:1000; font-size: 16px; text-align: center; padding: 0 8px; }
   .baCTARight{
     font-weight: 1000;
@@ -4782,52 +4886,123 @@
     // ✅ Wire passenger autosave AFTER HTML exists
     wirePassengerAutosave(data.public_id, paxCount);
 
-    // ---------- Add passenger button (only before Book is clicked) ----------
-    const addPassengerBtn = document.getElementById("baAddPassengerBtn");
-    if (addPassengerBtn) {
-      addPassengerBtn.addEventListener("click", async () => {
-        if (selectionLocked || isExpired || bookButtonClicked) return;
-        addPassengerBtn.disabled = true;
-        const origText = addPassengerBtn.textContent;
-        addPassengerBtn.textContent = "Adding…";
+    // ---------- Add passenger: modal flow (user fills in modal, then Save calls backend) ----------
+    function getModalPassengerPayload(){
+      const box = root.querySelector(".baPaxCard[data-pax-card=\"modal\"]");
+      if (!box) return null;
+      const first = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"first_name\"]");
+      const last = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"last_name\"]");
+      const dob = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
+      const email = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"email\"]");
+      const phone = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"phone\"]");
+      const male = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"male\"]");
+      const female = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"female\"]");
+      const dobVal = (dob && dob.value) ? String(dob.value).trim() : "";
+      const dobIso = /^\d{4}-\d{2}-\d{2}$/.test(dobVal) ? dobVal : parseDobInput(dobVal);
+      const phoneVal = (phone && phone.value) ? String(phone.value).replace(/\D/g, "") : "";
+      const phoneFull = phoneVal.length === 10 ? "+1" + phoneVal : (phoneVal ? "+1" + phoneVal : "");
+      return {
+        first_name: (first && first.value) ? String(first.value).trim() : null,
+        last_name: (last && last.value) ? String(last.value).trim() : null,
+        date_of_birth: dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso) ? dobIso : null,
+        gender: (female && female.checked) ? "female" : (male && male.checked) ? "male" : null,
+        email: (email && email.value) ? String(email.value).trim() : null,
+        phone: phoneFull || null
+      };
+    }
 
+    function wireModalDatePicker(){
+      const modalEl = document.getElementById("baAddPaxModal");
+      if (!modalEl) return;
+      const btn = modalEl.querySelector(".baDatePickerBtn[data-pax=\"modal\"]");
+      const hiddenDateInput = modalEl.querySelector(".baDatePicker[data-pax=\"modal\"]");
+      const visibleTextInput = modalEl.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
+      if (!btn || !hiddenDateInput || !visibleTextInput) return;
+      function syncToHidden() {
+        const textValue = visibleTextInput.value.trim();
+        if (textValue) {
+          const isoDate = parseDobInput(textValue);
+          if (isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) hiddenDateInput.value = isoDate;
+        } else hiddenDateInput.value = "";
+      }
+      hiddenDateInput.addEventListener("change", () => {
+        if (hiddenDateInput.value) {
+          const formatted = formatDobDisplay(hiddenDateInput.value);
+          if (formatted) visibleTextInput.value = formatted;
+        }
+      });
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        syncToHidden();
+        if (hiddenDateInput.showPicker) hiddenDateInput.showPicker(); else hiddenDateInput.click();
+      });
+      visibleTextInput.addEventListener("click", () => { syncToHidden(); if (hiddenDateInput.showPicker) hiddenDateInput.showPicker(); else hiddenDateInput.click(); });
+      syncToHidden();
+    }
+
+    function openAddPaxModal(){
+      const pax1 = getPassengerFromSession(data, 0);
+      const modalPax = { first_name: "", last_name: "", dobISO: "", gender: null, email: pax1.email || "", phone: pax1.phone || "", middle_name: "" };
+      const cardHtml = passengerCardHtmlForModal(modalPax);
+      const overlay = document.createElement("div");
+      overlay.id = "baAddPaxModal";
+      overlay.className = "baAddPaxModalOverlay";
+      overlay.innerHTML = `
+        <div class="baAddPaxModalPanel">
+          <div class="baAddPaxModalTitle">Add passenger</div>
+          <div class="baAddPaxModalCardWrap">${cardHtml}</div>
+          <div class="baAddPaxModalFooter">
+            <button type="button" class="baAddPaxModalCancel">Cancel</button>
+            <button type="button" class="baAddPaxModalSave">Save</button>
+          </div>
+        </div>
+      `;
+      root.appendChild(overlay);
+
+      const panel = overlay.querySelector(".baAddPaxModalPanel");
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) closeAddPaxModal(); });
+      if (panel) panel.addEventListener("click", (e) => e.stopPropagation());
+
+      overlay.querySelector(".baAddPaxModalCancel").addEventListener("click", closeAddPaxModal);
+
+      wireModalDatePicker();
+
+      overlay.querySelector(".baAddPaxModalSave").addEventListener("click", async () => {
+        const ok = validatePassengerBlock("modal");
+        if (!ok) {
+          showPaxToast("Please fix highlighted passenger fields first.", false);
+          const firstBad = overlay.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+          if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        const payload = getModalPassengerPayload();
         const payBtn = document.getElementById("baPayBtn");
         const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
-        const addPaxRow = root.querySelector(".baAddPaxRow");
-        const currentCount = root.querySelectorAll(".baPaxCard[data-pax-card]").length;
-        const newIdx = currentCount;
-        const pax1 = getPassengerFromSession(data, 0);
-        const placeholderPax = { first_name: "", last_name: "", dobISO: "", gender: null, email: pax1.email || "", phone: pax1.phone || "", middle_name: "" };
+        const saveBtn = overlay.querySelector(".baAddPaxModalSave");
+        const addPassengerBtn = document.getElementById("baAddPassengerBtn");
 
         payBtn.disabled = true;
         if (btnTitle) btnTitle.textContent = "Updating...";
-
-        const newCardHtml = passengerCardHtml(newIdx, placeholderPax, true);
-        if (addPaxRow) addPaxRow.insertAdjacentHTML("beforebegin", newCardHtml);
-        setExpandedPassenger(newIdx);
-        const newCard = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
-        if (newCard) wireOnePassengerCard(newCard, newIdx);
+        if (saveBtn) saveBtn.disabled = true;
+        if (addPassengerBtn) addPassengerBtn.disabled = true;
 
         try {
           const res = await fetch(ADD_PASSENGER, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_id: publicId }),
+            body: JSON.stringify({ public_id: publicId, ...payload }),
           });
           const result = await res.json().catch(() => ({}));
           if (!res.ok) {
             const msg = result?.error || "Could not add passenger. Please try again.";
-            if (typeof showPaxToast === "function") showPaxToast(msg, false);
-            else alert(msg);
-            const added = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
-            if (added) added.remove();
-            setExpandedPassenger(0);
+            showPaxToast(msg, false);
             payBtn.disabled = false;
             if (btnTitle) btnTitle.textContent = "BOOK";
-            addPassengerBtn.textContent = origText;
-            addPassengerBtn.disabled = false;
+            if (saveBtn) saveBtn.disabled = false;
+            if (addPassengerBtn) addPassengerBtn.disabled = false;
             return;
           }
+          closeAddPaxModal();
           const perPaxEl = document.getElementById("baStickyPerPax");
           if (perPaxEl && result.passenger_count && result.quote) {
             const newPerPax = Math.round((Number(result.quote.ticket) + Number(result.quote.service)) / result.passenger_count);
@@ -4840,20 +5015,28 @@
           else {
             payBtn.disabled = false;
             if (btnTitle) btnTitle.textContent = "BOOK";
-            addPassengerBtn.textContent = origText;
-            addPassengerBtn.disabled = false;
+            if (addPassengerBtn) addPassengerBtn.disabled = false;
           }
         } catch (e) {
-          if (typeof showPaxToast === "function") showPaxToast("Could not add passenger. Please try again.", false);
-          else alert("Could not add passenger. Please try again.");
-          const added = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
-          if (added) added.remove();
-          setExpandedPassenger(0);
+          showPaxToast("Could not add passenger. Please try again.", false);
           payBtn.disabled = false;
           if (btnTitle) btnTitle.textContent = "BOOK";
-          addPassengerBtn.textContent = origText;
-          addPassengerBtn.disabled = false;
+          if (saveBtn) saveBtn.disabled = false;
+          if (addPassengerBtn) addPassengerBtn.disabled = false;
         }
+      });
+    }
+
+    function closeAddPaxModal(){
+      const el = document.getElementById("baAddPaxModal");
+      if (el) el.remove();
+    }
+
+    const addPassengerBtn = document.getElementById("baAddPassengerBtn");
+    if (addPassengerBtn) {
+      addPassengerBtn.addEventListener("click", () => {
+        if (selectionLocked || isExpired || bookButtonClicked) return;
+        openAddPaxModal();
       });
     }
 
