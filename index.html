@@ -1753,6 +1753,21 @@
     setExpandedPassenger(expandedPassengerIndex);
   }
 
+  function wireOnePassengerCard(cardEl, idx){
+    if (!cardEl) return;
+    cardEl.addEventListener("click", () => {
+      if (cardEl.classList.contains("is-collapsed")) setExpandedPassenger(idx);
+    });
+    const toggle = cardEl.querySelector(".baPaxCard__toggle");
+    if (toggle){
+      toggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (idx !== expandedPassengerIndex) setExpandedPassenger(idx);
+      });
+    }
+  }
+
   // ---------- passenger autosave ----------
   function showPaxToast(text, ok=true){
     let el = document.getElementById("baPaxToast");
@@ -2162,8 +2177,9 @@
     // ----------------------------
     // PASSENGERS UI
     // ----------------------------
-    function passengerBlockHtml(idx){
-      const pax = getPassengerFromSession(data, idx);
+    // Build one passenger card HTML (pax can be from session or placeholder for optimistic add; expanded defaults to idx===0)
+    function passengerCardHtml(idx, pax, expanded){
+      if (expanded === undefined) expanded = (idx === 0);
       const genderName = `baGender_${idx}`;
       const displayFirst = pax.first_name || "Passenger";
       const displayLast = pax.last_name || String(idx + 1);
@@ -2172,7 +2188,7 @@
       const paxNumber = idx + 1;
 
       return `
-        <div class="baPaxCard ${idx === 0 ? "is-expanded" : "is-collapsed"}" data-pax-card="${idx}">
+        <div class="baPaxCard ${expanded ? "is-expanded" : "is-collapsed"}" data-pax-card="${idx}">
           <div class="baPaxCard__head">
             <div class="baPaxCard__title">
               Passenger <span class="baPaxHeadNum">${paxNumber}</span>
@@ -2272,6 +2288,9 @@
           </div>
         </div>
       `;
+    }
+    function passengerBlockHtml(idx){
+      return passengerCardHtml(idx, getPassengerFromSession(data, idx));
     }
 
     const pdArr = getPassengerDetailsArray(data);
@@ -4767,6 +4786,23 @@
         addPassengerBtn.disabled = true;
         const origText = addPassengerBtn.textContent;
         addPassengerBtn.textContent = "Adding…";
+
+        const payBtn = document.getElementById("baPayBtn");
+        const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+        const addPaxRow = root.querySelector(".baAddPaxRow");
+        const currentCount = root.querySelectorAll(".baPaxCard[data-pax-card]").length;
+        const newIdx = currentCount;
+        const placeholderPax = { first_name: "Passenger", last_name: String(newIdx + 1), dobISO: "", gender: null, email: "", phone: "", middle_name: "" };
+
+        payBtn.disabled = true;
+        if (btnTitle) btnTitle.textContent = "Updating...";
+
+        const newCardHtml = passengerCardHtml(newIdx, placeholderPax, true);
+        if (addPaxRow) addPaxRow.insertAdjacentHTML("beforebegin", newCardHtml);
+        setExpandedPassenger(newIdx);
+        const newCard = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
+        if (newCard) wireOnePassengerCard(newCard, newIdx);
+
         try {
           const res = await fetch(ADD_PASSENGER, {
             method: "POST",
@@ -4778,17 +4814,37 @@
             const msg = result?.error || "Could not add passenger. Please try again.";
             if (typeof showPaxToast === "function") showPaxToast(msg, false);
             else alert(msg);
+            const added = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
+            if (added) added.remove();
+            setExpandedPassenger(0);
+            payBtn.disabled = false;
+            if (btnTitle) btnTitle.textContent = "BOOK";
             addPassengerBtn.textContent = origText;
             addPassengerBtn.disabled = false;
             return;
           }
+          const perPaxEl = document.getElementById("baStickyPerPax");
+          if (perPaxEl && result.passenger_count && result.quote) {
+            const newPerPax = Math.round((Number(result.quote.ticket) + Number(result.quote.service)) / result.passenger_count);
+            perPaxEl.textContent = fmtMoney(newPerPax);
+          }
           const sessionRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
           const fresh = await sessionRes.json().catch(() => ({}));
           if (sessionRes.ok && fresh) renderSession(fresh);
-          else { addPassengerBtn.textContent = origText; addPassengerBtn.disabled = false; }
+          else {
+            payBtn.disabled = false;
+            if (btnTitle) btnTitle.textContent = "BOOK";
+            addPassengerBtn.textContent = origText;
+            addPassengerBtn.disabled = false;
+          }
         } catch (e) {
           if (typeof showPaxToast === "function") showPaxToast("Could not add passenger. Please try again.", false);
           else alert("Could not add passenger. Please try again.");
+          const added = root.querySelector(`.baPaxCard[data-pax-card="${newIdx}"]`);
+          if (added) added.remove();
+          setExpandedPassenger(0);
+          payBtn.disabled = false;
+          if (btnTitle) btnTitle.textContent = "BOOK";
           addPassengerBtn.textContent = origText;
           addPassengerBtn.disabled = false;
         }
