@@ -4760,6 +4760,10 @@
     `;
 
     wirePassengerAccordion(paxCount);
+    if (typeof window.__baExpandPassengerIndex === "number" && window.__baExpandPassengerIndex >= 0 && window.__baExpandPassengerIndex < paxCount) {
+      setExpandedPassenger(window.__baExpandPassengerIndex);
+      delete window.__baExpandPassengerIndex;
+    }
 
     (function initMobileNav() {
       const btn = document.getElementById("baMobileNavBtn");
@@ -4792,7 +4796,8 @@
         const addPaxRow = root.querySelector(".baAddPaxRow");
         const currentCount = root.querySelectorAll(".baPaxCard[data-pax-card]").length;
         const newIdx = currentCount;
-        const placeholderPax = { first_name: "Passenger", last_name: String(newIdx + 1), dobISO: "", gender: null, email: "", phone: "", middle_name: "" };
+        const pax1 = getPassengerFromSession(data, 0);
+        const placeholderPax = { first_name: "", last_name: "", dobISO: "", gender: null, email: pax1.email || "", phone: pax1.phone || "", middle_name: "" };
 
         payBtn.disabled = true;
         if (btnTitle) btnTitle.textContent = "Updating...";
@@ -4828,6 +4833,7 @@
             const newPerPax = Math.round((Number(result.quote.ticket) + Number(result.quote.service)) / result.passenger_count);
             perPaxEl.textContent = fmtMoney(newPerPax);
           }
+          window.__baExpandPassengerIndex = result.passenger_count - 1;
           const sessionRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
           const fresh = await sessionRes.json().catch(() => ({}));
           if (sessionRes.ok && fresh) renderSession(fresh);
@@ -4866,7 +4872,8 @@
       const currentBtnText = btnTitle ? (btnTitle.textContent || btnTitle.innerHTML || "") : "";
       const isPreparing = currentBtnText.includes("Preparing") || currentBtnText.includes("Preparing...");
       const isProcessing = currentBtnText.includes("Processing") || currentBtnText.includes("Processing...");
-      const shouldSkipButtonUpdate = isPreparing || isProcessing || isStickyBarHidden;
+      const isUpdating = currentBtnText.includes("Updating") || currentBtnText.includes("Updating...");
+      const shouldSkipButtonUpdate = isPreparing || isProcessing || isUpdating || isStickyBarHidden;
       
       if (t === "00:00:00") {
         if (el1) el1.style.display = "none";
@@ -4876,6 +4883,8 @@
           payBtn.style.opacity = ".55";
           payBtn.style.cursor = "not-allowed";
         }
+        const addPassengerBtnEl = document.getElementById("baAddPassengerBtn");
+        if (addPassengerBtnEl) addPassengerBtnEl.disabled = true;
       } else {
         if (el1) {
           el1.textContent = t;
