@@ -37,6 +37,7 @@
   const START_PAYMENT = SUPABASE_FUNCTIONS_BASE + "/start_payment";
   const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
   const RECORD_ACCEPTANCE = SUPABASE_FUNCTIONS_BASE + "/record_acceptance";
+  const ADD_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/add_passenger";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -2026,6 +2027,7 @@
       (data.expires_at && new Date(data.expires_at).getTime() <= Date.now());
 
     const selectionLocked = !!(data.ui && data.ui.selection_locked);
+    let bookButtonClicked = false; // true after user clicks Book (disables Add passenger)
 
     // Store agent data (available for future UI display)
     const agentName = data.agent_name ? String(data.agent_name) : null;
@@ -3541,6 +3543,22 @@
   }
   .baCTA[disabled]{ opacity:.55; cursor:not-allowed; }
 
+  .baAddPaxRow{ margin-top: 16px; margin-bottom: 16px; }
+  .baAddPassengerBtn{
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    border: 2px solid var(--ba-accent);
+    background: #fff;
+    color: var(--ba-accent);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .15s, color .15s, opacity .15s;
+  }
+  .baAddPassengerBtn:hover:not([disabled]){ background: rgba(209,173,84,.08); color: #8a7318; }
+  .baAddPassengerBtn[disabled]{ opacity: .55; cursor: not-allowed; }
+
   .baCTATitle{ font-weight:1000; font-size: 16px; text-align: center; padding: 0 8px; }
   .baCTARight{
     font-weight: 1000;
@@ -4324,6 +4342,10 @@
         <div class="baPaxWrap">
           ${Array.from({ length: paxCount }).map((_, i) => passengerBlockHtml(i)).join("")}
 
+          <div class="baAddPaxRow">
+            <button type="button" class="baAddPassengerBtn" id="baAddPassengerBtn" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Add another passenger">Add passenger</button>
+          </div>
+
           <div class="baInfoBanner">
             <span class="baInfoIcon">i</span>
             <div>The quoted prices are not guaranteed until the tickets are issued</div>
@@ -4736,6 +4758,42 @@
 
     // ✅ Wire passenger autosave AFTER HTML exists
     wirePassengerAutosave(data.public_id, paxCount);
+
+    // ---------- Add passenger button (only before Book is clicked) ----------
+    const addPassengerBtn = document.getElementById("baAddPassengerBtn");
+    if (addPassengerBtn) {
+      addPassengerBtn.addEventListener("click", async () => {
+        if (selectionLocked || isExpired || bookButtonClicked) return;
+        addPassengerBtn.disabled = true;
+        const origText = addPassengerBtn.textContent;
+        addPassengerBtn.textContent = "Adding…";
+        try {
+          const res = await fetch(ADD_PASSENGER, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ public_id: publicId }),
+          });
+          const result = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const msg = result?.error || "Could not add passenger. Please try again.";
+            if (typeof showPaxToast === "function") showPaxToast(msg, false);
+            else alert(msg);
+            addPassengerBtn.textContent = origText;
+            addPassengerBtn.disabled = false;
+            return;
+          }
+          const sessionRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+          const fresh = await sessionRes.json().catch(() => ({}));
+          if (sessionRes.ok && fresh) renderSession(fresh);
+          else { addPassengerBtn.textContent = origText; addPassengerBtn.disabled = false; }
+        } catch (e) {
+          if (typeof showPaxToast === "function") showPaxToast("Could not add passenger. Please try again.", false);
+          else alert("Could not add passenger. Please try again.");
+          addPassengerBtn.textContent = origText;
+          addPassengerBtn.disabled = false;
+        }
+      });
+    }
 
     // ---------- countdown live update ----------
     let clockTimer = null;
@@ -5818,7 +5876,10 @@
     // Main handler for Book button click - reveals UI and attempts to initialize Stripe Elements
     async function handleBookClick() {
       console.log("[BOOK_FLOW] Book button clicked - revealing UI and attempting to initialize Stripe Elements");
-      
+      bookButtonClicked = true;
+      const addPaxBtn = document.getElementById("baAddPassengerBtn");
+      if (addPaxBtn) { addPaxBtn.disabled = true; }
+
       try {
         // If Optional Services not revealed, reveal them now
         if (!optionalServicesRevealed) {
