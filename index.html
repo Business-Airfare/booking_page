@@ -38,6 +38,7 @@
   const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
   const RECORD_ACCEPTANCE = SUPABASE_FUNCTIONS_BASE + "/record_acceptance";
   const ADD_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/add_passenger";
+  const REMOVE_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/remove_passenger";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -2197,6 +2198,7 @@
               Passenger <span class="baPaxHeadNum">${paxNumber}</span>
             </div>
             <div class="baPaxHeadRight">
+              ${typeof idx === "number" && idx >= 1 ? `<button type="button" class="baPaxCard__remove" data-pax-remove="${idx}" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Remove this passenger">Remove passenger</button>` : ""}
               <span class="baPaxHeadNote">check this passenger's details <span class="baReq">*</span></span>
               <button type="button" class="baPaxCard__toggle" aria-label="Expand passenger details">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -3009,6 +3011,13 @@
     color: #4b4b4b;
     background: #f5f5f5;
   }
+  .baPaxCard__remove{
+    font-family: inherit; font-size: 12px; font-weight: 700;
+    padding: 6px 12px; border: 1px solid #d92d20; border-radius: 6px;
+    background: #fff; color: #d92d20; cursor: pointer;
+  }
+  .baPaxCard__remove:hover:not([disabled]){ background: #b00020; color: #fff; }
+  .baPaxCard__remove[disabled]{ opacity: .55; cursor: not-allowed; }
   .baPaxCard__summary{
     padding: 6px 18px 14px;
     display:flex;
@@ -3681,6 +3690,10 @@
   .baAddPaxModalSave[disabled]{ opacity:.6; cursor:not-allowed; }
   .baAddPaxModalCancel{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:2px solid #ccc; border-radius:8px; background:#fff; color:#333; cursor:pointer; }
   .baAddPaxModalCancel:hover{ background:#f5f5f5; }
+  .baAddPaxModalPanel{ position: relative; }
+  .baAddPaxModalLoading{ display:none; position:absolute; inset:0; background:rgba(255,255,255,.9); border-radius:12px; flex-direction:column; align-items:center; justify-content:center; gap:16px; font-weight:700; font-size:1rem; color:#333; z-index:2; }
+  .baAddPaxModalSpinner{ width:40px; height:40px; border:3px solid #eee; border-top-color:var(--ba-accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
 
   .baCTATitle{ font-weight:1000; font-size: 16px; text-align: center; padding: 0 8px; }
   .baCTARight{
@@ -4951,6 +4964,10 @@
         <div class="baAddPaxModalPanel">
           <div class="baAddPaxModalTitle">Add passenger</div>
           <div class="baAddPaxModalCardWrap">${cardHtml}</div>
+          <div class="baAddPaxModalLoading" id="baAddPaxModalLoading" aria-live="polite">
+            <div class="baAddPaxModalSpinner"></div>
+            <span>Adding passenger</span>
+          </div>
           <div class="baAddPaxModalFooter">
             <button type="button" class="baAddPaxModalCancel">Cancel</button>
             <button type="button" class="baAddPaxModalSave">Save</button>
@@ -4985,6 +5002,8 @@
         if (btnTitle) btnTitle.textContent = "Updating...";
         if (saveBtn) saveBtn.disabled = true;
         if (addPassengerBtn) addPassengerBtn.disabled = true;
+        const loadingEl = overlay.querySelector("#baAddPaxModalLoading");
+        if (loadingEl) loadingEl.style.display = "flex";
 
         try {
           const res = await fetch(ADD_PASSENGER, {
@@ -4996,12 +5015,14 @@
           if (!res.ok) {
             const msg = result?.error || "Could not add passenger. Please try again.";
             showPaxToast(msg, false);
+            if (loadingEl) loadingEl.style.display = "none";
             payBtn.disabled = false;
             if (btnTitle) btnTitle.textContent = "BOOK";
             if (saveBtn) saveBtn.disabled = false;
             if (addPassengerBtn) addPassengerBtn.disabled = false;
             return;
           }
+          if (loadingEl) loadingEl.style.display = "none";
           closeAddPaxModal();
           const perPaxEl = document.getElementById("baStickyPerPax");
           if (perPaxEl && result.passenger_count && result.quote) {
@@ -5019,6 +5040,8 @@
           }
         } catch (e) {
           showPaxToast("Could not add passenger. Please try again.", false);
+          const loadingEl = overlay.querySelector("#baAddPaxModalLoading");
+          if (loadingEl) loadingEl.style.display = "none";
           payBtn.disabled = false;
           if (btnTitle) btnTitle.textContent = "BOOK";
           if (saveBtn) saveBtn.disabled = false;
@@ -5039,6 +5062,54 @@
         openAddPaxModal();
       });
     }
+
+    root.addEventListener("click", async (e) => {
+      const removeBtn = e.target && e.target.closest && e.target.closest(".baPaxCard__remove");
+      if (!removeBtn || removeBtn.disabled) return;
+      if (selectionLocked || isExpired || bookButtonClicked) return;
+      const idx = Number(removeBtn.getAttribute("data-pax-remove"));
+      if (!Number.isInteger(idx) || idx < 1) return;
+
+      removeBtn.disabled = true;
+      const payBtn = document.getElementById("baPayBtn");
+      const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
+      payBtn.disabled = true;
+      if (btnTitle) btnTitle.textContent = "Updating...";
+      const addPassengerBtnEl = document.getElementById("baAddPassengerBtn");
+      if (addPassengerBtnEl) addPassengerBtnEl.disabled = true;
+
+      try {
+        const res = await fetch(REMOVE_PASSENGER, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_id: publicId }),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showPaxToast(result?.error || "Could not remove passenger. Please try again.", false);
+          removeBtn.disabled = false;
+          payBtn.disabled = false;
+          if (btnTitle) btnTitle.textContent = "BOOK";
+          if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
+          return;
+        }
+        const sessionRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
+        const fresh = await sessionRes.json().catch(() => ({}));
+        if (sessionRes.ok && fresh) renderSession(fresh);
+        else {
+          removeBtn.disabled = false;
+          payBtn.disabled = false;
+          if (btnTitle) btnTitle.textContent = "BOOK";
+          if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
+        }
+      } catch (err) {
+        showPaxToast("Could not remove passenger. Please try again.", false);
+        removeBtn.disabled = false;
+        payBtn.disabled = false;
+        if (btnTitle) btnTitle.textContent = "BOOK";
+        if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
+      }
+    });
 
     // ---------- countdown live update ----------
     let clockTimer = null;
@@ -6127,6 +6198,7 @@
       bookButtonClicked = true;
       const addPaxBtn = document.getElementById("baAddPassengerBtn");
       if (addPaxBtn) { addPaxBtn.disabled = true; }
+      root.querySelectorAll(".baPaxCard__remove").forEach(function(b){ b.disabled = true; });
 
       try {
         // If Optional Services not revealed, reveal them now
