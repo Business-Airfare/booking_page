@@ -176,9 +176,32 @@
   }
 
   function renderError(msg){
+    const text = String(msg ?? "");
+    const lower = text.toLowerCase();
+    if (lower.includes("not found")) {
+      root.innerHTML = `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+          <div style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 18px 45px rgba(15,23,42,0.18);padding:32px 28px;text-align:center;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:999px;background:rgba(248,113,113,0.12);margin-bottom:20px;">
+              <span style="font-size:30px;line-height:1;color:#b91c1c;">!</span>
+            </div>
+            <h1 style="font-size:20px;font-weight:600;color:#0f172a;letter-spacing:-0.01em;margin:0 0 8px 0;">
+              This flight option is no longer available
+            </h1>
+            <p style="font-size:14px;line-height:1.6;color:#4b5563;margin:0 0 4px 0;">
+              The secure payment link associated with this quote has expired or was removed.
+            </p>
+            <p style="font-size:14px;line-height:1.6;color:#4b5563;margin:0;">
+              Please contact your travel agent to receive an updated flight option and a new payment link.
+            </p>
+          </div>
+        </div>
+      `;
+      return;
+    }
     root.innerHTML =
       '<div style="padding:24px;font-family:\'Inter\',system-ui,-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#b00020">Error: ' +
-      escapeHtml(msg) + '</div>';
+      escapeHtml(text) + '</div>';
   }
 
   function fmtMoney(cents){
@@ -362,8 +385,7 @@
     const c = String(cls || "").toUpperCase();
     const a = String(carrier || "").toUpperCase();
     if (!c) return "";
-  // BA-specific override: "R" is Business on British Airways (not First)
-  if (a === "BA" && c === "R") return "Business";
+    if (a === "BA" && c === "R") return "Business"; // BA R = Business, not First
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
     if (c === "F" || c === "A") return "First";
     if ("JCDIZP".includes(c)) return "Business";
