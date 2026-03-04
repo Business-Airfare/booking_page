@@ -256,12 +256,17 @@
     const p = dtToParts(localStr);
     if (!p) return "—";
     const d = new Date(Date.UTC(p.y, p.m - 1, p.d));
-    return d.toLocaleDateString(undefined, { month:"short", day:"2-digit" });
+    // Always format in UTC so that a pure calendar date
+    // (e.g. "2026-07-13") is shown as the same date
+    // regardless of the viewer's local timezone.
+    return d.toLocaleDateString(undefined, { month:"short", day:"2-digit", timeZone:"UTC" });
   }
 
   function dateHeaderLabel(yyyy_mm_dd){
     const d = new Date(yyyy_mm_dd + "T00:00:00Z");
-    return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+    // Same UTC-based formatting to avoid +/-1 day shifts
+    // when customers are in timezones west or east of UTC.
+    return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric", timeZone:"UTC" });
   }
 
   // "February 2nd, 2026, 5:45PM" for paid confirmation
