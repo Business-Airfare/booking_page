@@ -1609,32 +1609,34 @@
   function isValidPhone(v){
     const s = String(v || "").trim();
     if (!s) return false; // required
-    // Normalize: remove all non-digits except leading +
+    // Normalize: keep leading +, strip other non-digits
     const normalized = s.replace(/[^\d+]/g, "");
-    // Must start with +1 and have exactly 11 digits total (+1 + 10 digits)
-    if (!normalized.startsWith("+1")) return false;
-    const digitsOnly = normalized.replace(/\+/g, "");
-    return digitsOnly.length === 11 && digitsOnly.startsWith("1");
+    // Must start with + and have 8–15 digits after the +
+    if (!normalized.startsWith("+")) return false;
+    const digitsOnly = normalized.slice(1).replace(/\D/g, "");
+    return digitsOnly.length >= 8 && digitsOnly.length <= 15;
   }
-  
   function normalizePhone(v){
-    if (!v) return "+1";
-    // Remove all non-digits
-    const digits = String(v).replace(/\D/g, "");
-    // If starts with 1, assume it's already country code
-    if (digits.startsWith("1") && digits.length === 11) {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    // If user already provided a +country code, keep it and strip formatting
+    if (s.startsWith("+")) {
+      const digits = s.replace(/[^\d]/g, "");
+      if (!digits) return "";
       return "+" + digits;
     }
-    // Otherwise, assume it's 10 digits US number
+    const digits = s.replace(/\D/g, "");
+    if (!digits) return "";
+    // Common case: 10-digit US/Canada number -> assume +1
     if (digits.length === 10) {
       return "+1" + digits;
     }
-    // If already has +1 prefix
-    if (v.startsWith("+1")) {
-      const rest = v.slice(2).replace(/\D/g, "");
-      if (rest.length === 10) return "+1" + rest;
+    // Generic international: 8–15 digits, prepend +
+    if (digits.length >= 8 && digits.length <= 15) {
+      return "+" + digits;
     }
-    return "+1" + digits.slice(-10);
+    // Fallback: keep last 15 digits with +
+    return "+" + digits.slice(-15);
   }
   function isValidDobISO(v){
     const s = String(v || "").trim();
@@ -1688,9 +1690,9 @@
     const dobIso = /^\d{4}-\d{2}-\d{2}$/.test(dobValue) ? dobValue : parseDobInput(dobValue);
     const dobOk   = isValidDobISO(dobIso);
     const emailOk = isValidEmail(email?.value || "");
-    // For phone, the input field only contains digits (10 digits), we validate with +1 prefix
-    const phoneDigits = phone?.value ? String(phone.value).replace(/\D/g, "") : "";
-    const phoneOk = isValidPhone(phoneDigits.length === 10 ? "+1" + phoneDigits : phoneDigits);
+    // For phone, accept full international number with country code
+    const phoneRaw = phone?.value ? String(phone.value) : "";
+    const phoneOk = isValidPhone(phoneRaw);
 
     setFieldInvalid(first, !firstOk);
     setFieldInvalid(last,  !lastOk);
@@ -2312,10 +2314,9 @@
             </div>
 
             <div class="baField">
-              <label class="baLbl">Phone<span class="baReq">*</span></label>
+              <label class="baLbl">Phone (with country code)<span class="baReq">*</span></label>
               <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
-                <div style="padding:10px 12px;background:#f7f7f7;border-right:1px solid #e7e7e7;font-weight:700;flex-shrink:0;font-size:15px;line-height:1;display:flex;align-items:center;box-sizing:border-box">+1</div>
-                <input class="baBoxInput" value="${escapeHtml(pax.phone && pax.phone.startsWith('+1') ? pax.phone.slice(2) : (pax.phone || ''))}" data-pax="${idx}" data-field="phone" placeholder="5555555555" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" placeholder="+1 201 555 5555 or +44 20 1234 5678" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
               </div>
               <div class="baErr">Please enter a valid phone number.</div>
             </div>
@@ -2404,10 +2405,9 @@
               <div class="baErr">Please enter a valid email.</div>
             </div>
             <div class="baField">
-              <label class="baLbl">Phone<span class="baReq">*</span></label>
+              <label class="baLbl">Phone (with country code)<span class="baReq">*</span></label>
               <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
-                <div style="padding:10px 12px;background:#f7f7f7;border-right:1px solid #e7e7e7;font-weight:700;flex-shrink:0;font-size:15px;line-height:1;display:flex;align-items:center;box-sizing:border-box">+1</div>
-                <input class="baBoxInput" value="${escapeHtml(pax.phone && pax.phone.startsWith('+1') ? pax.phone.slice(2) : (pax.phone || ''))}" data-pax="${idx}" data-field="phone" placeholder="5555555555" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" placeholder="+1 201 555 5555 or +44 20 1234 5678" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
               </div>
               <div class="baErr">Please enter a valid phone number.</div>
             </div>
@@ -4960,8 +4960,8 @@
       const female = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"female\"]");
       const dobVal = (dob && dob.value) ? String(dob.value).trim() : "";
       const dobIso = /^\d{4}-\d{2}-\d{2}$/.test(dobVal) ? dobVal : parseDobInput(dobVal);
-      const phoneVal = (phone && phone.value) ? String(phone.value).replace(/\D/g, "") : "";
-      const phoneFull = phoneVal.length === 10 ? "+1" + phoneVal : (phoneVal ? "+1" + phoneVal : "");
+      const phoneVal = (phone && phone.value) ? String(phone.value).trim() : "";
+      const phoneFull = normalizePhone(phoneVal);
       return {
         first_name: (first && first.value) ? String(first.value).trim() : null,
         last_name: (last && last.value) ? String(last.value).trim() : null,
