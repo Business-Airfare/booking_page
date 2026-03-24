@@ -395,6 +395,7 @@
     if (a === "AF" && c === "R") return "Economy"; // AF R = Economy, not First
     if (a === "LH" && c === "W") return "Economy"; // LH W = Economy, not Premium Economy
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
+    if (a === "AA" && c.charAt(0) === "P") return "Premium Economy"; // AA P = Premium Economy, not Business
     if (c === "F" || c === "A") return "First";
     if ("JCDIZP".includes(c)) return "Business";
     if (c === "W") return "Premium Economy";
