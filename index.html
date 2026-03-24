@@ -391,6 +391,7 @@
     const a = String(carrier || "").toUpperCase();
     if (!c) return "";
     if (a === "BA" && c === "R") return "Business"; // BA R = Business, not First
+    if (a === "AF" && c === "R") return "Economy"; // AF R = Economy, not First
     if (a === "LH" && c === "W") return "Economy"; // LH W = Economy, not Premium Economy
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
     if (c === "F" || c === "A") return "First";
