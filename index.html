@@ -39,6 +39,7 @@
   const RECORD_ACCEPTANCE = SUPABASE_FUNCTIONS_BASE + "/record_acceptance";
   const ADD_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/add_passenger";
   const REMOVE_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/remove_passenger";
+  const TRACK_PAYMENT_LINK_EVENT = SUPABASE_FUNCTIONS_BASE + "/track_payment_link_event";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -47,6 +48,52 @@
 
   const root = document.getElementById("baPayRoot");
   if (!root) return;
+
+  // Track "opened" event once per browser session (per payment link public_id).
+  (function trackPaymentLinkOpenedOnce() {
+    try {
+      if (!publicId) return;
+
+      const tokenKey = `ba_payment_link_open_tracking_token_${publicId}`;
+      const calledKey = `ba_payment_link_open_tracking_called_${publicId}`;
+
+      if (sessionStorage.getItem(calledKey) === "1") return;
+
+      let trackingToken = sessionStorage.getItem(tokenKey);
+      if (!trackingToken) {
+        if (crypto && typeof crypto.randomUUID === "function") {
+          trackingToken = crypto.randomUUID();
+        } else if (crypto && typeof crypto.getRandomValues === "function") {
+          const bytes = new Uint8Array(16);
+          crypto.getRandomValues(bytes);
+          trackingToken = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+        } else {
+          trackingToken = "tok_" + Math.random().toString(16).slice(2);
+        }
+        sessionStorage.setItem(tokenKey, trackingToken);
+      }
+
+      // Fire-and-forget: we don't want to block payment UI load.
+      fetch(TRACK_PAYMENT_LINK_EVENT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tracking_token: trackingToken,
+          event_type: "opened",
+          payment_link_id: publicId,
+          metadata: {},
+        }),
+      })
+        .then((r) => {
+          if (r && r.ok) sessionStorage.setItem(calledKey, "1");
+        })
+        .catch(() => {
+          // best-effort; allow retry on next load if we never marked calledKey
+        });
+    } catch {
+      // ignore
+    }
+  })();
 
   // Set favicon
   (function setFavicon() {
