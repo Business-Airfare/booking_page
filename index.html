@@ -51,51 +51,52 @@
   const root = document.getElementById("baPayRoot");
   if (!root) return;
 
-  // Track "opened" event once per browser session (per payment link public_id).
-  (function trackPaymentLinkOpenedOnce() {
+  /** Shared per-tab token for payment_link_id (used for all track_payment_link_event calls). */
+  function getOrCreatePaymentLinkTrackingToken() {
+    if (!publicId) return null;
+    const tokenKey = `ba_payment_link_open_tracking_token_${publicId}`;
+    let trackingToken = sessionStorage.getItem(tokenKey);
+    if (!trackingToken) {
+      if (crypto && typeof crypto.randomUUID === "function") {
+        trackingToken = crypto.randomUUID();
+      } else if (crypto && typeof crypto.getRandomValues === "function") {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        trackingToken = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      } else {
+        trackingToken = "tok_" + Math.random().toString(16).slice(2);
+      }
+      sessionStorage.setItem(tokenKey, trackingToken);
+    }
+    return trackingToken;
+  }
+
+  /** Fire-and-forget CRM tracking; marks doneKey in sessionStorage only after HTTP ok. */
+  function trackPaymentLinkEventOncePerSession(eventType, doneKey) {
     try {
       if (!publicId) return;
-
-      const tokenKey = `ba_payment_link_open_tracking_token_${publicId}`;
-      const calledKey = `ba_payment_link_open_tracking_called_${publicId}`;
-
-      if (sessionStorage.getItem(calledKey) === "1") return;
-
-      let trackingToken = sessionStorage.getItem(tokenKey);
-      if (!trackingToken) {
-        if (crypto && typeof crypto.randomUUID === "function") {
-          trackingToken = crypto.randomUUID();
-        } else if (crypto && typeof crypto.getRandomValues === "function") {
-          const bytes = new Uint8Array(16);
-          crypto.getRandomValues(bytes);
-          trackingToken = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-        } else {
-          trackingToken = "tok_" + Math.random().toString(16).slice(2);
-        }
-        sessionStorage.setItem(tokenKey, trackingToken);
-      }
-
-      // Fire-and-forget: we don't want to block payment UI load.
+      if (sessionStorage.getItem(doneKey) === "1") return;
+      const trackingToken = getOrCreatePaymentLinkTrackingToken();
+      if (!trackingToken) return;
       fetch(TRACK_PAYMENT_LINK_EVENT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tracking_token: trackingToken,
-          event_type: "opened",
+          event_type: eventType,
           payment_link_id: publicId,
           metadata: {},
         }),
       })
         .then((r) => {
-          if (r && r.ok) sessionStorage.setItem(calledKey, "1");
+          if (r && r.ok) sessionStorage.setItem(doneKey, "1");
         })
-        .catch(() => {
-          // best-effort; allow retry on next load if we never marked calledKey
-        });
-    } catch {
-      // ignore
-    }
-  })();
+        .catch(() => {});
+    } catch (_) {}
+  }
+
+  // Track "opened" once per browser session (per payment link public_id).
+  trackPaymentLinkEventOncePerSession("opened", `ba_payment_link_open_tracking_called_${publicId}`);
 
   // Set favicon
   (function setFavicon() {
@@ -6132,6 +6133,10 @@
             // Success - initialize Stripe Elements
             console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
             await mountStripePaymentElement(payload.client_secret, false);
+            trackPaymentLinkEventOncePerSession(
+              "checkout_started",
+              `ba_payment_link_checkout_tracking_called_${publicId}`
+            );
             await waitForStripeReady(8000);
             // Extra delay so Stripe elements are fully mounted before reveal - user won't see loading state
             await new Promise(resolve => setTimeout(resolve, 3000));
