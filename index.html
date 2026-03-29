@@ -45,6 +45,8 @@
     return new URLSearchParams(window.location.search).get(name);
   }
   const publicId = qs("public_id");
+  /** Append ?debug_book=1 to log validateBillingUI spam (Stripe address "change" fires often). */
+  const DEBUG_BOOK_FLOW = qs("debug_book") === "1";
 
   const root = document.getElementById("baPayRoot");
   if (!root) return;
@@ -790,21 +792,22 @@
     const acceptanceOk = acceptanceCompleted;
     
     const result = payerEmailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
-    
-    // Debug logging - always log to help diagnose issues
-    console.log("[BOOK_FLOW] validateBillingUI result:", {
-      result,
-      payerEmailOk,
-      addrOk,
-      termsOk,
-      tipsOk,
-      acceptanceOk,
-      acceptanceCompleted,
-      payerEmail: payerEmail ? (payerEmail.substring(0, 3) + "***") : null,
-      billingAddressComplete,
-      timestamp: new Date().toISOString()
-    });
-    
+
+    if (DEBUG_BOOK_FLOW) {
+      console.log("[BOOK_FLOW] validateBillingUI result:", {
+        result,
+        payerEmailOk,
+        addrOk,
+        termsOk,
+        tipsOk,
+        acceptanceOk,
+        acceptanceCompleted,
+        payerEmail: payerEmail ? (payerEmail.substring(0, 3) + "***") : null,
+        billingAddressComplete,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     return result;
   }
 
