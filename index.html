@@ -122,10 +122,13 @@
   // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
   (function initPaymentLinkChatWidget() {
     if (!publicId) return;
+    if (document.getElementById("baPayChatWidget")) return;
 
     const wrap = document.createElement("div");
     wrap.id = "baPayChatWidget";
-    wrap.style.cssText = "position:fixed;bottom:16px;right:16px;z-index:9998;font-family:Inter,system-ui,sans-serif;";
+    /* Above full-screen loaders inside #baPayRoot (99999), payment overlay (10000), and TCS modal (100000) */
+    wrap.style.cssText =
+      "position:fixed;bottom:max(16px,env(safe-area-inset-bottom,0px));right:max(16px,env(safe-area-inset-right,0px));left:auto;top:auto;z-index:100010;font-family:Inter,system-ui,sans-serif;pointer-events:auto;";
     document.body.appendChild(wrap);
 
     let open = false;
@@ -185,8 +188,10 @@
         const row = document.createElement("div");
         row.style.cssText = "display:flex;justify-content:" + (isAgent ? "flex-start" : "flex-end") + ";";
         const bubble = document.createElement("div");
+        const pending = Boolean(m._pending);
         bubble.style.cssText = "max-width:85%;border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;white-space:pre-wrap;word-break:break-word;" +
-          (isAgent ? "background:#fff;color:#111;border:1px solid #e5e5e5;" : "background:#0284c7;color:#fff;");
+          (isAgent ? "background:#fff;color:#111;border:1px solid #e5e5e5;" : "background:#0284c7;color:#fff;") +
+          (pending ? ";opacity:.88" : "");
         bubble.innerHTML = escapeHtml(m.body);
         row.appendChild(bubble);
         list.appendChild(row);
@@ -239,8 +244,20 @@
       var trackingToken = getOrCreatePaymentLinkTrackingToken();
       if (!text || !trackingToken) return;
       inp.value = "";
+
+      var pendingId = "pending-" + Date.now() + "-" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2));
+      byId[pendingId] = {
+        id: pendingId,
+        sender_role: "customer",
+        body: text,
+        created_at: new Date().toISOString(),
+        _pending: true,
+      };
+      renderList();
+
+      var r;
       try {
-        var r = await fetch(POST_PAYMENT_LINK_CHAT, {
+        r = await fetch(POST_PAYMENT_LINK_CHAT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -249,20 +266,38 @@
             body: text,
           }),
         });
-        if (r.ok) {
-          var data = await r.json();
-          if (data && data.id) {
-            byId[data.id] = {
-              id: data.id,
-              sender_role: "customer",
-              body: text,
-              created_at: data.created_at || new Date().toISOString(),
-            };
-            renderList();
-          }
-        }
+      } catch (_) {
+        delete byId[pendingId];
+        inp.value = text;
+        renderList();
+        return;
+      }
+      if (!r.ok) {
+        delete byId[pendingId];
+        inp.value = text;
+        renderList();
+        return;
+      }
+      var data = {};
+      try {
+        data = await r.json();
+      } catch (_) {
+        data = {};
+      }
+      delete byId[pendingId];
+      if (data && data.id) {
+        byId[data.id] = {
+          id: data.id,
+          sender_role: "customer",
+          body: text,
+          created_at: data.created_at || new Date().toISOString(),
+        };
+      }
+      renderList();
+      /* One delayed reconcile (avoids immediate GET right after POST; picks up server id if JSON shape differs) */
+      window.setTimeout(function () {
         void pull();
-      } catch (_) {}
+      }, 500);
     }
 
     btn.addEventListener("click", function () {
@@ -273,6 +308,7 @@
         void pull();
       }
       renderList();
+      resetPollInterval();
     });
     sendBtn.addEventListener("click", function () { void send(); });
     inp.addEventListener("keydown", function (e) {
@@ -282,7 +318,18 @@
       }
     });
 
-    pollTimer = setInterval(function () { void pull(); }, 4000);
+    var POLL_MS_OPEN = 4500;
+    var POLL_MS_CLOSED = 9000;
+
+    function resetPollInterval() {
+      if (pollTimer) clearInterval(pollTimer);
+      var ms = open ? POLL_MS_OPEN : POLL_MS_CLOSED;
+      pollTimer = window.setInterval(function () {
+        void pull();
+      }, ms);
+    }
+
+    resetPollInterval();
     void pull();
 
     window.addEventListener("beforeunload", function () {
