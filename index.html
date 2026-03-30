@@ -40,6 +40,8 @@
   const ADD_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/add_passenger";
   const REMOVE_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/remove_passenger";
   const TRACK_PAYMENT_LINK_EVENT = SUPABASE_FUNCTIONS_BASE + "/track_payment_link_event";
+  const GET_PAYMENT_LINK_CHAT = SUPABASE_FUNCTIONS_BASE + "/get_payment_link_chat";
+  const POST_PAYMENT_LINK_CHAT = SUPABASE_FUNCTIONS_BASE + "/post_payment_link_chat";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -116,6 +118,177 @@
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
     ));
   }
+
+  // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
+  (function initPaymentLinkChatWidget() {
+    if (!publicId) return;
+
+    const wrap = document.createElement("div");
+    wrap.id = "baPayChatWidget";
+    wrap.style.cssText = "position:fixed;bottom:16px;right:16px;z-index:9998;font-family:Inter,system-ui,sans-serif;";
+    document.body.appendChild(wrap);
+
+    let open = false;
+    let pollTimer = null;
+    let initialChatLoaded = false;
+    /** @type {Record<string, { id: string, sender_role: string, body: string, created_at: string }>} */
+    const byId = Object.create(null);
+    let unreadFromAgent = 0;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Messages";
+    btn.setAttribute("aria-label", "Open messages from your travel advisor");
+    btn.style.cssText = "position:relative;border:none;border-radius:9999px;padding:10px 18px;background:#111;color:#fff;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);";
+
+    const badge = document.createElement("span");
+    badge.setAttribute("style", "display:none;position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9999px;background:#d1ad54;color:#111;font-size:11px;font-weight:700;align-items:center;justify-content:center;line-height:18px;");
+    btn.appendChild(badge);
+
+    const panel = document.createElement("div");
+    panel.style.cssText = "display:none;position:absolute;bottom:52px;right:0;width:min(100vw - 32px, 340px);height:min(55vh, 420px);background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.15);flex-direction:column;overflow:hidden;border:1px solid #e5e5e5;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "padding:12px 14px;border-bottom:1px solid #eee;font-weight:700;font-size:15px;background:#fafafa;flex-shrink:0;";
+    header.textContent = "Chat with your advisor";
+
+    const list = document.createElement("div");
+    list.style.cssText = "flex:1;overflow-y:auto;padding:12px;background:#eceff1;display:flex;flex-direction:column;gap:10px;min-height:0;";
+
+    const foot = document.createElement("div");
+    foot.style.cssText = "display:flex;gap:8px;padding:10px;border-top:1px solid #eee;background:#fff;flex-shrink:0;";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.placeholder = "Type a message…";
+    inp.style.cssText = "flex:1;border:1px solid #ddd;border-radius:9999px;padding:8px 12px;font-size:14px;";
+    const sendBtn = document.createElement("button");
+    sendBtn.type = "button";
+    sendBtn.textContent = "Send";
+    sendBtn.style.cssText = "border:none;border-radius:9999px;padding:8px 14px;background:#0284c7;color:#fff;font-weight:600;font-size:14px;cursor:pointer;";
+    foot.appendChild(inp);
+    foot.appendChild(sendBtn);
+
+    panel.appendChild(header);
+    panel.appendChild(list);
+    panel.appendChild(foot);
+    wrap.appendChild(panel);
+    wrap.appendChild(btn);
+
+    function renderList() {
+      const ids = Object.keys(byId).sort(function (a, b) {
+        return new Date(byId[a].created_at) - new Date(byId[b].created_at);
+      });
+      list.innerHTML = "";
+      for (let i = 0; i < ids.length; i++) {
+        const m = byId[ids[i]];
+        const isAgent = m.sender_role === "agent";
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:" + (isAgent ? "flex-start" : "flex-end") + ";";
+        const bubble = document.createElement("div");
+        bubble.style.cssText = "max-width:85%;border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;white-space:pre-wrap;word-break:break-word;" +
+          (isAgent ? "background:#fff;color:#111;border:1px solid #e5e5e5;" : "background:#0284c7;color:#fff;");
+        bubble.innerHTML = escapeHtml(m.body);
+        row.appendChild(bubble);
+        list.appendChild(row);
+      }
+      list.scrollTop = list.scrollHeight;
+      if (!open && unreadFromAgent > 0) {
+        badge.textContent = unreadFromAgent > 9 ? "9+" : String(unreadFromAgent);
+        badge.style.display = "inline-flex";
+      } else {
+        badge.style.display = "none";
+      }
+    }
+
+    function mergeMessages(rows, markUnreadForAgent) {
+      for (let i = 0; i < rows.length; i++) {
+        const m = rows[i];
+        if (!m || !m.id) continue;
+        if (!byId[m.id]) {
+          byId[m.id] = {
+            id: m.id,
+            sender_role: m.sender_role,
+            body: m.body,
+            created_at: m.created_at,
+          };
+          if (markUnreadForAgent && m.sender_role === "agent" && !open) unreadFromAgent++;
+        }
+      }
+      renderList();
+    }
+
+    async function pull() {
+      try {
+        const url = new URL(GET_PAYMENT_LINK_CHAT);
+        url.searchParams.set("public_id", publicId);
+        const r = await fetch(url.toString(), { credentials: "omit" });
+        if (!r.ok) return;
+        const data = await r.json();
+        var msgs = Array.isArray(data.messages) ? data.messages : [];
+        if (!initialChatLoaded) {
+          mergeMessages(msgs, false);
+          initialChatLoaded = true;
+        } else {
+          mergeMessages(msgs, true);
+        }
+      } catch (_) {}
+    }
+
+    async function send() {
+      var text = (inp.value || "").trim();
+      var trackingToken = getOrCreatePaymentLinkTrackingToken();
+      if (!text || !trackingToken) return;
+      inp.value = "";
+      try {
+        var r = await fetch(POST_PAYMENT_LINK_CHAT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tracking_token: trackingToken,
+            payment_link_id: publicId,
+            body: text,
+          }),
+        });
+        if (r.ok) {
+          var data = await r.json();
+          if (data && data.id) {
+            byId[data.id] = {
+              id: data.id,
+              sender_role: "customer",
+              body: text,
+              created_at: data.created_at || new Date().toISOString(),
+            };
+            renderList();
+          }
+        }
+        void pull();
+      } catch (_) {}
+    }
+
+    btn.addEventListener("click", function () {
+      open = !open;
+      panel.style.display = open ? "flex" : "none";
+      if (open) {
+        unreadFromAgent = 0;
+        void pull();
+      }
+      renderList();
+    });
+    sendBtn.addEventListener("click", function () { void send(); });
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void send();
+      }
+    });
+
+    pollTimer = setInterval(function () { void pull(); }, 4000);
+    void pull();
+
+    window.addEventListener("beforeunload", function () {
+      if (pollTimer) clearInterval(pollTimer);
+    });
+  })();
 
   // ---------- payment overlay ----------
   let paymentPercentageInterval = null;
