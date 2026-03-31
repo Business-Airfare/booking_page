@@ -42,6 +42,7 @@
   const TRACK_PAYMENT_LINK_EVENT = SUPABASE_FUNCTIONS_BASE + "/track_payment_link_event";
   const GET_PAYMENT_LINK_CHAT = SUPABASE_FUNCTIONS_BASE + "/get_payment_link_chat";
   const POST_PAYMENT_LINK_CHAT = SUPABASE_FUNCTIONS_BASE + "/post_payment_link_chat";
+  const ENSURE_PAYMENT_LINK_CHAT_GREETING = SUPABASE_FUNCTIONS_BASE + "/ensure_payment_link_chat_greeting";
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
@@ -120,23 +121,59 @@
   }
 
   // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
-  /** Call once after main booking HTML is in #baPayRoot (desktop: mount under price disclaimer until BOOK, then moves above summary; mobile: fixed corner). */
-  /** After BOOK reveals checkout (desktop only), move #baPayChatMount above the charges summary and pin it while scrolling. */
+  /** Desktop: keep summary + #baPayChatRail in .baExtrasRight. Mobile (≤980px): move them into .baExtrasShell__left *before* #baExtras so they sit above Travel Care + Stripe. */
+  window.__baRestoreSummaryChatToExtrasRight = function __baRestoreSummaryChatToExtrasRight(rootEl) {
+    if (!rootEl || rootEl.nodeType !== 1) return;
+    var right = rootEl.querySelector(".baExtrasRight");
+    var rail = rootEl.querySelector("#baPayChatRail");
+    var summary = rootEl.querySelector(".baSummaryBox");
+    if (!right || !rail || !summary) return;
+    if (rail.parentElement === right && summary.parentElement === right) return;
+    right.insertBefore(rail, right.firstChild);
+    right.appendChild(summary);
+  };
+
+  window.__baMoveSummaryChatBeforeExtrasBlock = function __baMoveSummaryChatBeforeExtrasBlock(rootEl) {
+    if (!rootEl || rootEl.nodeType !== 1) return;
+    var leftWrap = rootEl.querySelector(".baExtrasShell__left");
+    var extras = rootEl.querySelector("#baExtras");
+    var rail = rootEl.querySelector("#baPayChatRail");
+    var summary = rootEl.querySelector(".baSummaryBox");
+    if (!leftWrap || !extras || !rail || !summary) return;
+    if (
+      summary.parentElement === leftWrap &&
+      rail.parentElement === leftWrap &&
+      summary.nextElementSibling === rail &&
+      rail.nextElementSibling === extras
+    ) {
+      return;
+    }
+    leftWrap.insertBefore(summary, extras);
+    leftWrap.insertBefore(rail, extras);
+  };
+
+  /** After BOOK + checkout, move #baPayChatMount into #baPayChatRail; on mobile, DOM-order summary + chat above #baExtras. */
   window.__baRelocatePaymentChatAboveSummary = function __baRelocatePaymentChatAboveSummary(rootEl) {
     if (!rootEl || rootEl.nodeType !== 1) return;
-    if (typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 981px)").matches) return;
     var rail = rootEl.querySelector("#baPayChatRail");
     var mount = document.getElementById("baPayChatMount");
     if (!rail || !mount) return;
     rail.appendChild(mount);
     rail.classList.add("baPayChatRail--checkout");
     rail.removeAttribute("aria-hidden");
+    var mq = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 980px)") : null;
+    if (mq && mq.matches) {
+      window.__baMoveSummaryChatBeforeExtrasBlock(rootEl);
+    }
   };
 
-  window.__baMountPaymentChat = function __baMountPaymentChat(rootEl) {
+  window.__baMountPaymentChat = function __baMountPaymentChat(rootEl, customerFirstNameOpt) {
     if (!publicId) return;
     /** @type {HTMLElement | null} */
     var chatRootForMount = rootEl && rootEl.nodeType === 1 ? rootEl : null;
+    var customerFirstNameForGreeting = (customerFirstNameOpt != null && String(customerFirstNameOpt).trim())
+      ? String(customerFirstNameOpt).trim()
+      : "";
 
     var existing = document.getElementById("baPayChatWidget");
     if (existing) existing.remove();
@@ -156,7 +193,7 @@
     btn.type = "button";
     btn.className = "baPayChatBtn";
     btn.textContent = "Messages";
-    btn.setAttribute("aria-label", "Open messages from your travel advisor");
+    btn.setAttribute("aria-label", "Open messages from your travel agent");
     btn.setAttribute("aria-expanded", "false");
 
     var badge = document.createElement("span");
@@ -249,6 +286,25 @@
       } catch (_) {}
     }
 
+    async function ensureChatGreetingOnce() {
+      var key = "ba_pay_chat_greeting_ok_" + publicId;
+      if (sessionStorage.getItem(key) === "1") return;
+      var trackingToken = getOrCreatePaymentLinkTrackingToken();
+      if (!trackingToken) return;
+      try {
+        var r = await fetch(ENSURE_PAYMENT_LINK_CHAT_GREETING, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tracking_token: trackingToken,
+            payment_link_id: publicId,
+            customer_first_name: customerFirstNameForGreeting,
+          }),
+        });
+        if (r && r.ok) sessionStorage.setItem(key, "1");
+      } catch (_) {}
+    }
+
     async function send() {
       var text = (inp.value || "").trim();
       var trackingToken = getOrCreatePaymentLinkTrackingToken();
@@ -317,7 +373,9 @@
       btn.setAttribute("aria-expanded", open ? "true" : "false");
       if (open) {
         unreadFromAgent = 0;
-        void pull();
+        void ensureChatGreetingOnce().finally(function () {
+          void pull();
+        });
         if (wrap.classList.contains("baPayChatWidget--dock")) {
           window.requestAnimationFrame(function () {
             window.requestAnimationFrame(function () {
@@ -351,21 +409,28 @@
     var mqDesktop = window.matchMedia("(min-width: 981px)");
 
     function applyPaymentChatPlacement() {
-      var mount =
-        mqDesktop.matches && chatRootForMount
-          ? chatRootForMount.querySelector("#baPayChatMount")
-          : null;
+      if (chatRootForMount) {
+        if (mqDesktop.matches) {
+          window.__baRestoreSummaryChatToExtrasRight(chatRootForMount);
+        } else {
+          var _r = chatRootForMount.querySelector("#baPayChatRail");
+          if (_r && _r.classList.contains("baPayChatRail--checkout")) {
+            window.__baMoveSummaryChatBeforeExtrasBlock(chatRootForMount);
+          }
+        }
+      }
+      var mount = document.getElementById("baPayChatMount");
       wrap.classList.remove("baPayChatWidget--dock", "baPayChatWidget--float");
-      if (mount) {
+      if (mount && (document.body.contains(mount) || (chatRootForMount && chatRootForMount.contains(mount)))) {
         mount.appendChild(wrap);
         wrap.classList.add("baPayChatWidget--dock");
-        btn.textContent = "Chat with your advisor";
-        btn.setAttribute("aria-label", "Open chat with your travel advisor");
+        btn.textContent = "Chat your travel agent";
+        btn.setAttribute("aria-label", "Open chat with your travel agent");
       } else {
         document.body.appendChild(wrap);
         wrap.classList.add("baPayChatWidget--float");
         btn.textContent = "Messages";
-        btn.setAttribute("aria-label", "Open messages from your travel advisor");
+        btn.setAttribute("aria-label", "Open messages from your travel agent");
       }
     }
 
@@ -4544,14 +4609,23 @@
   }
   @media (max-width: 980px){
     .baExtrasShell{ grid-template-columns: 1fr; display: flex; flex-direction: column; }
+    /*
+     * Mobile column: display:contents on __left hoists .baExtrasShell__left's children to .baExtrasShell.
+     * After BOOK, JS moves .baSummaryBox + #baPayChatRail before #baExtras inside __left so they appear above Travel Care (see __baMoveSummaryChatBeforeExtrasBlock).
+     */
     .baExtrasShell__left{ display: contents; }
     .baExtrasLeft{ display: contents; }
     .baExtrasRight{ display: contents; }
-    .baCareBox{ order: 1; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
-    .baTipSection{ order: 2; }
-    .baPayChatRail{ order: 3; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
-    .baSummaryBox{ order: 4; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
-    .baExtrasStripe{ order: 5; margin-top: 0 !important; }
+    .baExtrasShell__left > #baExtras,
+    .baExtrasShell__left > .baSummaryBox,
+    .baExtrasShell__left > .baPayChatRail{
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      align-self: stretch;
+      box-sizing: border-box;
+    }
+    .baExtrasStripe{ margin-top: 0 !important; }
   }
 
   /* Travel Care Service Box */
@@ -4782,9 +4856,13 @@
   }
   @media (max-width: 980px){
     .baPayChatRail{
-      display: none !important;
+      display: none;
+    }
+    .baPayChatRail.baPayChatRail--checkout{
+      display: block;
     }
   }
+
   /* Chat mount (passenger column under price disclaimer; desktop dock) */
   .baPayChatMount{
     position: relative;
@@ -5859,7 +5937,11 @@
   </div>
     `;
 
-    if (typeof window.__baMountPaymentChat === "function") window.__baMountPaymentChat(root);
+    if (typeof window.__baMountPaymentChat === "function") {
+      var _pax0 = getPassengerFromSession(data, 0);
+      var _paxFirst = (_pax0 && _pax0.first_name) ? String(_pax0.first_name).trim() : "";
+      window.__baMountPaymentChat(root, _paxFirst);
+    }
 
     wirePassengerAccordion(paxCount);
     if (typeof window.__baExpandPassengerIndex === "number" && window.__baExpandPassengerIndex >= 0 && window.__baExpandPassengerIndex < paxCount) {
