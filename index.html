@@ -1999,9 +1999,9 @@
     const dobIso = /^\d{4}-\d{2}-\d{2}$/.test(dobValue) ? dobValue : parseDobInput(dobValue);
     const dobOk   = isValidDobISO(dobIso);
     const emailOk = isValidEmail(email?.value || "");
-    // For phone, accept full international number with country code
+    // Accept local 10-digit input (auto +1) and international +country format
     const phoneRaw = phone?.value ? String(phone.value) : "";
-    const phoneOk = isValidPhone(phoneRaw);
+    const phoneOk = isValidPhone(normalizePhone(phoneRaw));
 
     setFieldInvalid(first, !firstOk);
     setFieldInvalid(last,  !lastOk);
@@ -2318,18 +2318,15 @@
       // Phone formatting
       if (field === "phone") {
         inp.addEventListener("input", () => {
-          // Only allow digits, limit to 10
-          const digits = inp.value.replace(/\D/g, "").slice(0, 10);
-          inp.value = digits;
+          // Allow optional leading + and up to 15 digits (E.164 max)
+          const raw = String(inp.value || "");
+          const hasPlus = raw.trim().startsWith("+");
+          const digits = raw.replace(/\D/g, "").slice(0, 15);
+          inp.value = hasPlus ? ("+" + digits) : digits;
         });
         inp.addEventListener("blur", () => {
-          const digits = inp.value.replace(/\D/g, "");
-          // Ensure +1 is always present in stored value
-          if (digits.length === 10) {
-            inp.value = digits; // Display only digits
-          } else if (digits.length === 0) {
-            inp.value = ""; // Allow empty for validation
-          }
+          const normalized = normalizePhone(inp.value);
+          inp.value = normalized || "";
         });
       }
 
@@ -2338,9 +2335,8 @@
 
         if (field === "email") v = String(v || "").trim().toLowerCase();
         if (field === "phone") {
-          const digits = String(v || "").replace(/\D/g, "");
-          // Normalize to +1XXXXXXXXXX format for storage
-          v = digits.length === 10 ? normalizePhone("+1" + digits) : null;
+          const normalizedPhone = normalizePhone(v);
+          v = isValidPhone(normalizedPhone) ? normalizedPhone : null;
         }
         if (field === "first_name" || field === "last_name" || field === "middle_name") {
           v = toTitleCase(String(v || "").trim());
@@ -3620,115 +3616,158 @@
   }
   .baPanelTitle{ font-weight: 900; margin-bottom: 10px; }
   .baTipSection{ margin-top: 18px; }
-  .baTipCard{
-    background: var(--ba-card);
+  /* Tips card shell — matches Travel Care Service (baCareBox) header + content */
+  .baTipBox{
+    background: #fff;
     border: 1px solid var(--ba-border);
-    border-radius: 14px;
-    padding: 18px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.04);
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 18px;
-    align-items: start;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 10px 24px rgba(0,0,0,.05);
   }
-  .baTipHeader{
-    min-width: 220px;
+  .baTipBox__header{
+    background: #2f2f2f;
+    padding: 16px 20px 16px 56px;
+    color: #fff;
+    text-align: left;
+  }
+  .baTipBox__titleWrap{
+    max-width: 560px;
+    margin: 0;
+  }
+  .baTipBox__title{
+    font-weight: 900;
+    font-size: 22px;
+    margin-bottom: 4px;
+    line-height: 1.2;
+  }
+  .baTipBox__subtitle{
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.4;
+  }
+  .baTipBox__content{
+    padding: 20px;
+  }
+  .baTipBox__content .baTipCard{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-  }
-  .baTipHeader .baTipAgreeWarning{
-    width: calc(100% + 18px);
-    margin-left: -9px;
-    margin-right: -9px;
-  }
-  .baTipTitle{
-    font-weight: 900;
-    font-size: 16px;
-    margin-bottom: 6px;
-  }
-  .baTipSubtitle{
-    font-size: 13px;
-    opacity: 0.7;
-    line-height: 1.5;
+    gap: 18px;
+    align-items: stretch;
   }
   .baTipControls{
-    min-width: 240px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    width: 100%;
+  }
+  .baTipManualRow{
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 5px;
+    width: 100%;
+    align-items: stretch;
   }
   .baTipFooter{
-    grid-column: 1 / -1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    column-gap: 18px;
-    row-gap: 0;
-  }
-  .baTipFooterLeft{
-    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0;
-    margin-top: -4px;
-  }
-  .baTipFooterRight{
-    flex: 1;
-    display: flex;
-    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
   }
   .baTipRow{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 5px;
+    width: 100%;
+    align-items: stretch;
   }
-  .baTipBtn{
-    padding: 7px 8px;
+  .baTipRow .baTipBtn{
+    grid-column: span 2;
+    min-height: 48px;
+    padding: 6px 8px;
     border-radius: 999px;
     border: 1px solid #ddd;
     background: #fff;
     font-weight: 800;
-    font-size: 12px;
-    line-height: 1.1;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s, color 0.2s;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    min-width: 0;
-    flex: 0 0 calc((100% - 12px) / 3);
-    order: 1;
+    gap: 3px;
     text-align: center;
+    box-sizing: border-box;
   }
-  .baTipBtn--perfect{
-    flex: 0 0 calc((100% - 6px) / 2);
-    order: 2;
+  .baTipRow .baTipBtn:nth-child(4){
+    grid-column: 2 / span 2;
   }
-  .baTipBtn--exceptional{
-    flex: 0 0 calc((100% - 6px) / 2);
-    order: 2;
+  .baTipRow .baTipBtn:nth-child(5){
+    grid-column: 4 / span 2;
   }
   .baTipBtn--compact{
-    padding: 6px 12px;
-    min-width: auto;
-    height: 30px;
-    gap: 2px;
+    padding: 6px 8px;
+    min-width: 0;
+    min-height: 48px;
+    gap: 3px;
+    border-radius: 999px;
+    box-sizing: border-box;
+    align-self: stretch;
   }
   .baTipBtnLabel{
     white-space: nowrap;
     font-weight: 800;
-    font-size: 12px;
+    font-size: 15px;
   }
   .baTipBtnAmount{
     font-weight: 700;
-    font-size: 11px;
+    font-size: 14px;
     opacity: 0.75;
+  }
+  .baTipRow .baTipBtn .baTipBtnLabel{
+    font-size: 12px;
+  }
+  .baTipRow .baTipBtn .baTipBtnAmount{
+    font-size: 11px;
+  }
+  .baTipManualRow .baTipBtn--compact{
+    grid-column: 4 / span 2;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #ddd;
+    background: #fff;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    font-weight: 800;
+    min-height: 48px;
+    padding: 6px 8px;
+    gap: 3px;
+    border-radius: 999px;
+    box-sizing: border-box;
+  }
+  .baTipManualRow .baTipBtn--compact .baTipBtnLabel{
+    font-size: 12px;
+    line-height: 1.15;
+  }
+  .baTipCustomCluster{
+    grid-column: 2 / span 2;
+    display: grid;
+    grid-template-columns: 48px 1fr 48px;
+    align-items: stretch;
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: #fff;
+    box-sizing: border-box;
+    overflow: hidden;
   }
   .baTipBtn:hover{
     border-color: #bbb;
@@ -3742,37 +3781,32 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
-  .baTipBottomRow{
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-    justify-content: center;
-    margin-top: auto;
-    width: 100%;
-  }
   .baTipCustomWrap{
     display: flex;
     align-items: center;
     gap: 0;
-    height: 30px;
-    padding: 0 4px;
-    border-radius: 999px;
-    border: 1px solid #ddd;
-    background: #fff;
-    width: 78px;
+    min-height: 48px;
+    height: auto;
+    padding: 0 8px;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
     justify-content: center;
-    margin: 0 3px;
+    align-self: stretch;
   }
   .baTipCustomField{
     position: relative;
     display: flex;
     align-items: center;
+    width: 100%;
   }
   .baTipCustomField::before{
     content: "$";
     position: absolute;
-    left: 6px;
+    left: 8px;
     font-weight: 900;
     font-size: 12px;
     opacity: 0.85;
@@ -3780,21 +3814,28 @@
     z-index: 1;
   }
   .baTipCustomBtn{
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 1px solid #ddd;
-    background: #f5f5f5;
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    border-radius: 0;
+    border: 0;
+    border-right: 1px solid #ddd;
+    background: #f7f7f7;
     font-weight: 900;
-    font-size: 14px;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    align-self: stretch;
+    padding: 0;
+    font-size: 18px;
   }
-  .baTipBottomRow .baTipBtn--compact{
-    margin-left: 10px;
+  .baTipCustomCluster .baTipCustomBtn:last-child{
+    border-right: 0;
+    border-left: 1px solid #ddd;
   }
   .baTipCustomBtn:disabled{
     opacity: 0.6;
@@ -3802,12 +3843,15 @@
   }
   .baTipCustom{
     width: 100%;
-    padding: 4px 4px 4px 16px;
+    height: 36px;
+    padding: 0 4px 0 22px;
     border-radius: 8px;
     border: 1px solid transparent;
     font-weight: 800;
+    font-size: 12px;
     text-align: center;
     background: transparent;
+    box-sizing: border-box;
   }
   .baTipCustom::-webkit-outer-spin-button,
   .baTipCustom::-webkit-inner-spin-button{
@@ -3816,10 +3860,6 @@
   }
   .baTipCustom{
     -moz-appearance: textfield;
-  }
-  .baTipBottomRow .baTipBtn--compact{
-    width: 120px;
-    justify-content: center;
   }
   .baTipAgreeRow{
     display: flex;
@@ -3918,9 +3958,26 @@
     opacity: 0.7;
   }
   @media (max-width: 720px){
-    .baTipCard{ flex-direction: column; }
     .baTipControls{ width: 100%; }
-    .baTipBottomRow{ flex-wrap: wrap; }
+    .baTipRow{
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .baTipRow .baTipBtn,
+    .baTipRow .baTipBtn:nth-child(4),
+    .baTipRow .baTipBtn:nth-child(5){
+      grid-column: auto;
+    }
+    .baTipManualRow{
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .baTipCustomCluster{
+      grid-column: 1 / -1;
+    }
+    .baTipManualRow .baTipBtn--compact{
+      grid-column: 1 / -1;
+      width: min(100%, 220px);
+      justify-self: center;
+    }
   }
 
   /* Sticky bottom bar (updated per request) */
@@ -5105,11 +5162,15 @@
         </div>
 
           <div class="baTipSection">
-            <div class="baTipCard">
-              <div class="baTipHeader">
-                <div class="baTipTitle">Did I meet your expectations?</div>
-                <div class="baTipSubtitle">If you feel that the service provided was exceptional, you can express your gratitude (optional).</div>
+            <div class="baTipBox">
+              <div class="baTipBox__header">
+                <div class="baTipBox__titleWrap">
+                  <div class="baTipBox__title">Did I meet your expectations?</div>
+                  <div class="baTipBox__subtitle">If you feel that the service provided was exceptional, you can express your gratitude (optional).</div>
+                </div>
               </div>
+              <div class="baTipBox__content">
+              <div class="baTipCard">
               <div class="baTipControls">
                 <div class="baTipRow">
                   ${tipPresets.map(p => `
@@ -5125,32 +5186,32 @@
                 </div>
                 <div id="baSelMsg" class="baTipHelper"></div>
               </div>
-              <div class="baTipFooter">
-                <div class="baTipFooterLeft">
-                  <div class="baTipAgreeRow">
-                    <input id="baTipAgree" class="baTipAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
-                    <label class="baTipAgreeText" for="baTipAgree">I agree, that this amount will be charged in addition to the cost of the airline ticket(s)</label>
-                  </div>
-                </div>
-                <div class="baTipFooterRight">
-                  <div class="baTipBottomRow">
-                    <button class="baTipCustomBtn" type="button" data-tip-step="-5" ${selectionLocked || isExpired ? "disabled" : ""}>−</button>
-                    <div class="baTipCustomWrap">
-                      <div class="baTipCustomField">
+              <div class="baTipManualRow">
+                <div class="baTipCustomCluster">
+                  <button class="baTipCustomBtn" type="button" data-tip-step="-5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Decrease tip amount">−</button>
+                  <div class="baTipCustomWrap">
+                    <div class="baTipCustomField">
                       <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="0.01"
                           value="${tipMode === "custom" ? (tipAmount/100) : ""}"
                         placeholder="0.00"
                           ${selectionLocked || isExpired ? "disabled" : ""}>
-                      </div>
                     </div>
-                    <button class="baTipCustomBtn" type="button" data-tip-step="5" ${selectionLocked || isExpired ? "disabled" : ""}>+</button>
-                    <button class="baTipBtn baTipBtn--compact" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>
-                      <div class="baTipBtnLabel">No tip</div>
-                    </button>
                   </div>
+                  <button class="baTipCustomBtn" type="button" data-tip-step="5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Increase tip amount">+</button>
+                </div>
+                <button class="baTipBtn baTipBtn--compact" type="button" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>
+                  <div class="baTipBtnLabel">No tip</div>
+                </button>
+              </div>
+              <div class="baTipFooter">
+                <div class="baTipAgreeRow">
+                  <input id="baTipAgree" class="baTipAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
+                  <label class="baTipAgreeText" for="baTipAgree">I agree, that this amount will be charged in addition to the cost of the airline ticket(s)</label>
                 </div>
                 <div id="baTipAgreeMsg" class="baTipAgreeWarning"></div>
                 <div id="baTipErrorMsg" style="display:none;color:#b00020;font-size:13px;margin-top:8px;"></div>
+              </div>
+            </div>
               </div>
             </div>
           </div>
@@ -5246,7 +5307,7 @@
                 <div class="baSummaryBox__itemLabel">One-Way Flight</div>
                 <div class="baSummaryBox__itemValue">${fmtMoney(baseTicketService())}</div>
                 <div class="baSummaryBox__itemSub">To be processed by BUSINESS AIRFARE LLC</div>
-                <div class="baSummaryBox__itemSubValue">${fmtMoney(payableTotalCents())}</div>
+                <div class="baSummaryBox__itemSubValue">${fmtMoney(baseTicketService())}</div>
               </div>
             </div>
 
@@ -5846,7 +5907,8 @@
             div.innerHTML = `
               <div class="baSummaryBox__itemLabel">Travel Care Service</div>
               <div class="baSummaryBox__itemValue">${fmtMoney(careCents)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by BUSINESS AIRFARE LLC</div>
+              <div class="baSummaryBox__itemSub">Non-refundable charge by BUSINESS AIRFARE LLC</div>
+              <div class="baSummaryBox__itemSubValue">${fmtMoney(careCents)}</div>
             `;
             items.appendChild(div);
             careItem = div;
@@ -5854,8 +5916,10 @@
         } else {
           const label = careItem.querySelector(".baSummaryBox__itemLabel");
           const value = careItem.querySelector(".baSummaryBox__itemValue");
+          const subValue = careItem.querySelector(".baSummaryBox__itemSubValue");
           if (label) label.textContent = "Travel Care Service";
           if (value) value.textContent = fmtMoney(careCents);
+          if (subValue) subValue.textContent = fmtMoney(careCents);
         }
       } else {
         if (careItem) careItem.remove();
@@ -5874,7 +5938,8 @@
             div.innerHTML = `
               <div class="baSummaryBox__itemLabel">Token of Appreciation</div>
               <div class="baSummaryBox__itemValue">${fmtMoney(effectiveTip)}</div>
-              <div class="baSummaryBox__itemSub" style="grid-column: 1 / -1;">Non-refundable charge by BUSINESS AIRFARE LLC</div>
+              <div class="baSummaryBox__itemSub">Non-refundable charge by BUSINESS AIRFARE LLC</div>
+              <div class="baSummaryBox__itemSubValue">${fmtMoney(effectiveTip)}</div>
             `;
             items.appendChild(div);
             tipItem = div;
@@ -5882,8 +5947,10 @@
         } else {
           const label = tipItem.querySelector(".baSummaryBox__itemLabel");
           const value = tipItem.querySelector(".baSummaryBox__itemValue");
+          const subValue = tipItem.querySelector(".baSummaryBox__itemSubValue");
           if (label) label.textContent = "Token of Appreciation";
           if (value) value.textContent = fmtMoney(effectiveTip);
+          if (subValue) subValue.textContent = fmtMoney(effectiveTip);
         }
       } else {
         if (tipItem) tipItem.remove();
