@@ -120,7 +120,19 @@
   }
 
   // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
-  /** Call once after main booking HTML is in #baPayRoot (desktop: in .baExtrasRight; mobile: fixed corner). */
+  /** Call once after main booking HTML is in #baPayRoot (desktop: mount under price disclaimer until BOOK, then moves above summary; mobile: fixed corner). */
+  /** After BOOK reveals checkout (desktop only), move #baPayChatMount above the charges summary and pin it while scrolling. */
+  window.__baRelocatePaymentChatAboveSummary = function __baRelocatePaymentChatAboveSummary(rootEl) {
+    if (!rootEl || rootEl.nodeType !== 1) return;
+    if (typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 981px)").matches) return;
+    var rail = rootEl.querySelector("#baPayChatRail");
+    var mount = document.getElementById("baPayChatMount");
+    if (!rail || !mount) return;
+    rail.appendChild(mount);
+    rail.classList.add("baPayChatRail--checkout");
+    rail.removeAttribute("aria-hidden");
+  };
+
   window.__baMountPaymentChat = function __baMountPaymentChat(rootEl) {
     if (!publicId) return;
     /** @type {HTMLElement | null} */
@@ -2024,6 +2036,192 @@
     return ok;
   }
 
+  /** 3-step DOB: year (scroll list, default ~1980) → month grid → day grid; B/W theme */
+  function openBaDobThreeStepPicker(opts){
+    const initialIso = String((opts && opts.initialIso) || "").trim();
+    const onCommit = opts && opts.onCommit;
+    const onCancel = opts && opts.onCancel;
+    const prev = document.getElementById("baDobPickerOverlay");
+    if (prev) prev.remove();
+
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    function parseParts(iso){
+      if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        const a = iso.split("-");
+        return { y: parseInt(a[0], 10), m: parseInt(a[1], 10), d: parseInt(a[2], 10) };
+      }
+      return { y: 1980, m: 1, d: 1 };
+    }
+    function daysInMonth(y, m){ return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+    function clampDay(y, m, d){ const mx = daysInMonth(y, m); return d > mx ? mx : d; }
+    function pad2(n){ return (n < 10 ? "0" : "") + n; }
+    function toIso(y, m, d){ return y + "-" + pad2(m) + "-" + pad2(d); }
+
+    const ini = parseParts(initialIso);
+    const state = { step: "year", y: ini.y, m: ini.m, d: ini.d };
+    const cy = new Date().getUTCFullYear();
+    const years = [];
+    for (let yy = cy; yy >= cy - 100; yy--) years.push(yy);
+
+    const overlay = document.createElement("div");
+    overlay.id = "baDobPickerOverlay";
+    overlay.className = "baDobPickerOverlay";
+    const dialog = document.createElement("div");
+    dialog.className = "baDobPickerModal";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    const head = document.createElement("div");
+    head.className = "baDobPickerHeader";
+    const titleEl = document.createElement("div");
+    titleEl.className = "baDobPickerHeaderTitle";
+    const subEl = document.createElement("div");
+    subEl.className = "baDobPickerHeaderSub";
+    head.appendChild(titleEl);
+    head.appendChild(subEl);
+    const body = document.createElement("div");
+    body.className = "baDobPickerBody";
+    const foot = document.createElement("div");
+    foot.className = "baDobPickerFooter";
+    const btnCancel = document.createElement("button");
+    btnCancel.type = "button";
+    btnCancel.className = "baDobPickerBtnCancel";
+    btnCancel.textContent = "Cancel";
+    const btnOk = document.createElement("button");
+    btnOk.type = "button";
+    btnOk.className = "baDobPickerBtnOk";
+    btnOk.textContent = "OK";
+    btnOk.style.display = "none";
+    foot.appendChild(btnCancel);
+    foot.appendChild(btnOk);
+    dialog.appendChild(head);
+    dialog.appendChild(body);
+    dialog.appendChild(foot);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    function dismiss(){
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      if (onCancel) onCancel();
+    }
+    function finish(iso){
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      if (onCommit) onCommit(iso);
+    }
+
+    function headerText(){
+      const m = MONTHS[state.m - 1] || "Jan";
+      const d = state.d < 10 ? "0" + state.d : String(state.d);
+      return d + " " + m + ", " + state.y;
+    }
+    function subtitle(){
+      if (state.step === "year") return "Please scroll and select the year";
+      if (state.step === "month") return "Please select the month";
+      return "Please select the date and press 'OK'";
+    }
+
+    function render(){
+      titleEl.textContent = headerText();
+      subEl.textContent = subtitle();
+      body.innerHTML = "";
+      btnOk.style.display = state.step === "day" ? "inline-flex" : "none";
+
+      if (state.step === "year") {
+        const list = document.createElement("div");
+        list.className = "baDobPickerYearList";
+        years.forEach(function(y){
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "baDobPickerYearRow" + (y === state.y ? " is-selected" : "");
+          row.textContent = String(y);
+          row.setAttribute("data-year", String(y));
+          row.addEventListener("click", function(e){
+            const yy = parseInt(e.currentTarget.getAttribute("data-year"), 10);
+            state.y = yy;
+            state.d = clampDay(state.y, state.m, state.d);
+            state.step = "month";
+            render();
+          });
+          list.appendChild(row);
+        });
+        body.appendChild(list);
+        window.requestAnimationFrame(function(){
+          const el = list.querySelector('[data-year="' + state.y + '"]');
+          if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
+        });
+      } else if (state.step === "month") {
+        const grid = document.createElement("div");
+        grid.className = "baDobPickerMonthGrid";
+        for (let mi = 0; mi < 12; mi++) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "baDobPickerMonthCell" + (state.m === mi + 1 ? " is-selected" : "");
+          btn.textContent = MONTHS[mi];
+          const mm = mi + 1;
+          btn.addEventListener("click", function(){
+            state.m = mm;
+            state.d = clampDay(state.y, state.m, state.d);
+            state.step = "day";
+            render();
+          });
+          grid.appendChild(btn);
+        }
+        body.appendChild(grid);
+      } else {
+        const dim = daysInMonth(state.y, state.m);
+        const firstDow = new Date(Date.UTC(state.y, state.m - 1, 1)).getUTCDay();
+        const calWrap = document.createElement("div");
+        calWrap.className = "baDobPickerDayWrap";
+        const nav = document.createElement("div");
+        nav.className = "baDobPickerDayNav";
+        nav.textContent = MONTHS[state.m - 1] + " " + state.y;
+        calWrap.appendChild(nav);
+        const hdr = document.createElement("div");
+        hdr.className = "baDobPickerDowRow";
+        for (let di = 0; di < 7; di++) {
+          const c = document.createElement("div");
+          c.className = "baDobPickerDowCell";
+          c.textContent = DOW[di];
+          hdr.appendChild(c);
+        }
+        calWrap.appendChild(hdr);
+        const cells = document.createElement("div");
+        cells.className = "baDobPickerDayGrid";
+        for (let e = 0; e < firstDow; e++) {
+          const ph = document.createElement("div");
+          ph.className = "baDobPickerDayCell baDobPickerDayCell--empty";
+          cells.appendChild(ph);
+        }
+        for (let dd = 1; dd <= dim; dd++) {
+          const dbtn = document.createElement("button");
+          dbtn.type = "button";
+          dbtn.className = "baDobPickerDayCell" + (state.d === dd ? " is-selected" : "");
+          dbtn.textContent = String(dd);
+          const dn = dd;
+          dbtn.addEventListener("click", function(){ state.d = dn; render(); });
+          cells.appendChild(dbtn);
+        }
+        calWrap.appendChild(cells);
+        body.appendChild(calWrap);
+      }
+    }
+
+    function onKey(e){
+      if (e.key === "Escape") dismiss();
+    }
+    btnCancel.addEventListener("click", function(){ dismiss(); });
+    btnOk.addEventListener("click", function(){
+      const iso = toIso(state.y, state.m, clampDay(state.y, state.m, state.d));
+      finish(iso);
+    });
+    overlay.addEventListener("click", function(e){ if (e.target === overlay) dismiss(); });
+    dialog.addEventListener("click", function(e){ e.stopPropagation(); });
+    document.addEventListener("keydown", onKey);
+    render();
+  }
+
   let expandedPassengerIndex = 0;
 
   function setExpandedPassenger(index){
@@ -2223,61 +2421,41 @@
       }, 450));
     }
 
-    // Date picker buttons: trigger calendar
-    root.querySelectorAll('.baDatePickerBtn').forEach(btn => {
-      const paxIndex = Number(btn.getAttribute("data-pax"));
-      const hiddenDateInput = root.querySelector(`.baDatePicker[data-pax="${paxIndex}"]`);
-      const visibleTextInput = root.querySelector(`.baBoxInput[data-pax="${paxIndex}"][data-field="date_of_birth"]`);
-      
-      if (!hiddenDateInput || !visibleTextInput) return;
-      
-      // Sync visible text to hidden date input value
-      function syncToHiddenDate() {
-        const textValue = visibleTextInput.value.trim();
-        if (textValue) {
-          const isoDate = parseDobInput(textValue);
-          if (isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
-            hiddenDateInput.value = isoDate;
-          }
-        } else if (visibleTextInput.value === "") {
-          hiddenDateInput.value = "";
-        }
+    // Date of birth: 3-step picker (year → month → day)
+    root.querySelectorAll(".baDatePickerBtn").forEach(btn => {
+      const paxKey = btn.getAttribute("data-pax");
+      if (paxKey == null) return;
+      const hiddenIso = root.querySelector(`.baDobIsoHidden[data-pax="${paxKey}"]`);
+      const visibleTextInput = root.querySelector(`.baBoxInput[data-pax="${paxKey}"][data-field="date_of_birth"]`);
+      if (!hiddenIso || !visibleTextInput) return;
+
+      function openDobPicker(){
+        openBaDobThreeStepPicker({
+          initialIso: hiddenIso.value || "",
+          onCommit(iso){
+            hiddenIso.value = iso;
+            visibleTextInput.value = formatDobDisplay(iso);
+            if (paxKey === "modal") {
+              validatePassengerBlock("modal");
+            } else {
+              const n = Number(paxKey);
+              validatePassengerBlock(n);
+              queuePaxSave(n, { date_of_birth: iso || null });
+              updatePaxSummary(n);
+            }
+          },
+        });
       }
-      
-      // Sync hidden date input change to visible text (formatted)
-      hiddenDateInput.addEventListener("change", () => {
-        if (hiddenDateInput.value) {
-          const formatted = formatDobDisplay(hiddenDateInput.value);
-          if (formatted) {
-            visibleTextInput.value = formatted;
-            // Trigger validation and save
-            validatePassengerBlock(paxIndex);
-            const isoDate = parseDobInput(formatted);
-            queuePaxSave(paxIndex, { date_of_birth: isoDate || null });
-            updatePaxSummary(paxIndex);
-          }
-        }
-      });
-      
-      // Click on calendar button or text input opens calendar
-      function openCalendar() {
-        syncToHiddenDate();
-        hiddenDateInput.showPicker ? hiddenDateInput.showPicker() : hiddenDateInput.click();
-      }
-      
+
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openCalendar();
+        openDobPicker();
       });
-      
-      // Also make the text input clickable to open calendar
-      visibleTextInput.addEventListener("click", () => {
-        openCalendar();
+      visibleTextInput.addEventListener("click", (e) => {
+        e.preventDefault();
+        openDobPicker();
       });
-      
-      // Sync on initial load
-      syncToHiddenDate();
     });
 
     // Title case formatter for names
@@ -2596,8 +2774,8 @@
               <label class="baLbl">Date of Birth</label>
               <div class="baDateInputWrapper">
                 <input class="baBoxInput" type="text" value="${escapeHtml(pax.dobISO ? formatDobDisplay(pax.dobISO) : "")}" data-pax="${idx}" data-field="date_of_birth" readonly>
-                <input type="date" class="baDatePicker" data-pax="${idx}" data-field="date_of_birth_hidden" value="${escapeHtml(pax.dobISO || "")}">
-                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date picker">
+                <input type="hidden" class="baDobIsoHidden" data-pax="${idx}" value="${escapeHtml(pax.dobISO || "")}">
+                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date of birth selector">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M6 2V4M14 2V4M3 8H17M4 4H16C17.1046 4 18 4.89543 18 6V16C18 17.1046 17.1046 18 16 18H4C2.89543 18 2 17.1046 2 16V6C2 4.89543 2.89543 4 4 4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     <path d="M6 12H6.01M9 12H9.01M12 12H12.01M6 15H6.01M9 15H9.01M12 15H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -2688,8 +2866,8 @@
               <label class="baLbl">Date of Birth</label>
               <div class="baDateInputWrapper">
                 <input class="baBoxInput" type="text" value="${escapeHtml(pax.dobISO ? formatDobDisplay(pax.dobISO) : "")}" data-pax="${idx}" data-field="date_of_birth" readonly>
-                <input type="date" class="baDatePicker" data-pax="${idx}" data-field="date_of_birth_hidden" value="${escapeHtml(pax.dobISO || "")}">
-                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date picker">
+                <input type="hidden" class="baDobIsoHidden" data-pax="${idx}" value="${escapeHtml(pax.dobISO || "")}">
+                <button type="button" class="baDatePickerBtn" data-pax="${idx}" aria-label="Open date of birth selector">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M6 2V4M14 2V4M3 8H17M4 4H16C17.1046 4 18 4.89543 18 6V16C18 17.1046 17.1046 18 16 18H4C2.89543 18 2 17.1046 2 16V6C2 4.89543 2.89543 4 4 4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     <path d="M6 12H6.01M9 12H9.01M12 12H12.01M6 15H6.01M9 15H9.01M12 15H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -3476,22 +3654,208 @@
   .baDateInputWrapper .baBoxInput{
     padding-right: 42px;
   }
-  /* Let the native date input receive taps so mobile opens the date picker (programmatic showPicker() is unreliable on iOS) */
-  .baDateInputWrapper .baDatePicker{
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    pointer-events: auto;
-    z-index: 1;
-    overflow: hidden;
+  .baDobIsoHidden{
+    display: none !important;
   }
   .baDateInputWrapper .baBoxInput[data-field="date_of_birth"]{
+    pointer-events: auto;
+    cursor: pointer;
+  }
+
+  /* 3-step DOB modal (B/W, matches page chrome) */
+  .baDobPickerOverlay{
+    position: fixed;
+    inset: 0;
+    z-index: 100050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0,0,0,0.45);
+    box-sizing: border-box;
+  }
+  .baDobPickerModal{
+    width: 100%;
+    max-width: 340px;
+    max-height: min(90vh, 560px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid #2f2f2f;
+    background: #fff;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.22);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .baDobPickerHeader{
+    flex-shrink: 0;
+    background: #2f2f2f;
+    color: #fff;
+    padding: 14px 16px;
+  }
+  .baDobPickerHeaderTitle{
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+  }
+  .baDobPickerHeaderSub{
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.88;
+    line-height: 1.35;
+  }
+  .baDobPickerBody{
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: #fff;
+    border-bottom: 1px solid #e9e9e9;
+  }
+  .baDobPickerYearList{
+    max-height: min(52vh, 320px);
+    overflow-y: auto;
+  }
+  .baDobPickerYearRow{
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 12px 16px;
+    border: 0;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    color: #111;
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
+  }
+  .baDobPickerYearRow:hover{
+    background: #f5f5f5;
+  }
+  .baDobPickerYearRow.is-selected{
+    background: #111;
+    color: #fff;
+  }
+  .baDobPickerMonthGrid{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding: 10px;
+  }
+  .baDobPickerMonthCell{
+    margin: 0;
+    padding: 12px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    color: #111;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .baDobPickerMonthCell:hover{
+    background: #f5f5f5;
+  }
+  .baDobPickerMonthCell.is-selected{
+    background: #111;
+    color: #fff;
+  }
+  .baDobPickerDayWrap{
+    padding: 10px 10px 12px;
+  }
+  .baDobPickerDayNav{
+    text-align: center;
+    font-size: 14px;
+    font-weight: 900;
+    color: #111;
+    margin-bottom: 8px;
+  }
+  .baDobPickerDowRow{
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    margin-bottom: 6px;
+  }
+  .baDobPickerDowCell{
+    padding: 4px 0;
+  }
+  .baDobPickerDayGrid{
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .baDobPickerDayCell{
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 36px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 700;
+    color: #111;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .baDobPickerDayCell:hover{
+    background: #f5f5f5;
+  }
+  .baDobPickerDayCell.is-selected{
+    background: #111;
+    color: #fff;
+  }
+  .baDobPickerDayCell--empty{
     pointer-events: none;
+    visibility: hidden;
+    height: 36px;
+  }
+  .baDobPickerFooter{
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+  .baDobPickerBtnCancel{
+    margin: 0;
+    padding: 8px 12px;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    color: #111;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .baDobPickerBtnCancel:hover{
+    text-decoration: underline;
+  }
+  .baDobPickerBtnOk{
+    margin: 0;
+    padding: 8px 18px;
+    border: 0;
+    border-radius: 8px;
+    background: #111;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .baDobPickerBtnOk:hover{
+    opacity: 0.92;
   }
   .baDatePickerBtn{
     position: absolute;
@@ -4185,8 +4549,9 @@
     .baExtrasRight{ display: contents; }
     .baCareBox{ order: 1; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
     .baTipSection{ order: 2; }
-    .baSummaryBox{ order: 3; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
-    .baExtrasStripe{ order: 4; margin-top: 0 !important; }
+    .baPayChatRail{ order: 3; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
+    .baSummaryBox{ order: 4; width: 100%; min-width: 0; max-width: 100%; align-self: stretch; box-sizing: border-box; }
+    .baExtrasStripe{ order: 5; margin-top: 0 !important; }
   }
 
   /* Travel Care Service Box */
@@ -4402,20 +4767,35 @@
   @media (max-width: 980px){
     .baExtrasRight{ position: static; }
   }
-  /* Desktop-only stack above summary; hidden on mobile until we ship a mobile layout */
-  .baExtrasRightDesktop{
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  /* Checkout: chat stacks above charges summary inside sticky .baExtrasRight (desktop) */
+  .baPayChatRail{
+    display: none;
+    width: 100%;
+    box-sizing: border-box;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+  @media (min-width: 981px){
+    .baPayChatRail.baPayChatRail--checkout{
+      display: block;
+    }
   }
   @media (max-width: 980px){
-    .baExtrasRightDesktop{ display: none !important; }
+    .baPayChatRail{
+      display: none !important;
+    }
   }
-  /* Desktop chat mount (right rail above summary) — no outer card */
+  /* Chat mount (passenger column under price disclaimer; desktop dock) */
   .baPayChatMount{
     position: relative;
     width: 100%;
     box-sizing: border-box;
+  }
+  .baPaxWrap .baPayChatMount{
+    margin-top: 10px;
+  }
+  .baPayChatRail .baPayChatMount{
+    margin-top: 0;
   }
   .baPayChatWidget{
     font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -5075,6 +5455,7 @@
             <span class="baInfoIcon">i</span>
             <div>The quoted prices are not guaranteed until the tickets are issued</div>
           </div>
+          <div id="baPayChatMount" class="baPayChatMount"></div>
         </div>
       </aside>
     </div>
@@ -5267,9 +5648,7 @@
       </div>
 
         <div class="baExtrasRight">
-          <div class="baExtrasRightDesktop">
-            <div id="baPayChatMount" class="baPayChatMount"></div>
-          </div>
+          <div id="baPayChatRail" class="baPayChatRail" aria-hidden="true"></div>
           <div class="baSummaryBox" style="display:none" aria-hidden="true">
             <div class="baSummaryBox__flight">
               <div class="baSummaryBox__flightInfo">
@@ -5534,29 +5913,21 @@
       const modalEl = document.getElementById("baAddPaxModal");
       if (!modalEl) return;
       const btn = modalEl.querySelector(".baDatePickerBtn[data-pax=\"modal\"]");
-      const hiddenDateInput = modalEl.querySelector(".baDatePicker[data-pax=\"modal\"]");
+      const hiddenIso = modalEl.querySelector(".baDobIsoHidden[data-pax=\"modal\"]");
       const visibleTextInput = modalEl.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
-      if (!btn || !hiddenDateInput || !visibleTextInput) return;
-      function syncToHidden() {
-        const textValue = visibleTextInput.value.trim();
-        if (textValue) {
-          const isoDate = parseDobInput(textValue);
-          if (isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) hiddenDateInput.value = isoDate;
-        } else hiddenDateInput.value = "";
+      if (!btn || !hiddenIso || !visibleTextInput) return;
+      function openDobPicker(){
+        openBaDobThreeStepPicker({
+          initialIso: hiddenIso.value || "",
+          onCommit(iso){
+            hiddenIso.value = iso;
+            visibleTextInput.value = formatDobDisplay(iso);
+            validatePassengerBlock("modal");
+          },
+        });
       }
-      hiddenDateInput.addEventListener("change", () => {
-        if (hiddenDateInput.value) {
-          const formatted = formatDobDisplay(hiddenDateInput.value);
-          if (formatted) visibleTextInput.value = formatted;
-        }
-      });
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        syncToHidden();
-        if (hiddenDateInput.showPicker) hiddenDateInput.showPicker(); else hiddenDateInput.click();
-      });
-      visibleTextInput.addEventListener("click", () => { syncToHidden(); if (hiddenDateInput.showPicker) hiddenDateInput.showPicker(); else hiddenDateInput.click(); });
-      syncToHidden();
+      btn.addEventListener("click", (e) => { e.preventDefault(); openDobPicker(); });
+      visibleTextInput.addEventListener("click", (e) => { e.preventDefault(); openDobPicker(); });
     }
 
     function openAddPaxModal(){
@@ -6653,6 +7024,9 @@
             if (summaryBoxEl) {
               summaryBoxEl.style.display = "";
               summaryBoxEl.removeAttribute("aria-hidden");
+            }
+            if (typeof window.__baRelocatePaymentChatAboveSummary === "function") {
+              window.__baRelocatePaymentChatAboveSummary(root);
             }
             if (wrap) {
               wrap.style.display = "block";
