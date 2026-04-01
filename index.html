@@ -264,6 +264,7 @@
     }
 
     function mergeMessages(rows, markUnreadForAgent) {
+      var shouldAutoOpenForAgent = false;
       for (let i = 0; i < rows.length; i++) {
         const m = rows[i];
         if (!m || !m.id) continue;
@@ -274,8 +275,19 @@
             body: m.body,
             created_at: m.created_at,
           };
-          if (markUnreadForAgent && m.sender_role === "agent" && !open) unreadFromAgent++;
+          if (markUnreadForAgent && m.sender_role === "agent" && !open) {
+            unreadFromAgent++;
+            shouldAutoOpenForAgent = true;
+          }
         }
+      }
+      if (shouldAutoOpenForAgent && !open) {
+        open = true;
+        panel.style.display = "flex";
+        wrap.classList.add("baPayChatWidget--open");
+        btn.setAttribute("aria-expanded", "true");
+        unreadFromAgent = 0;
+        resetPollInterval();
       }
       renderList();
     }
