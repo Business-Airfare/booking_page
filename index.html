@@ -236,6 +236,17 @@
     }
 
     function renderList() {
+      function formatMsgTime(iso) {
+        var d = new Date(iso || "");
+        if (isNaN(d.getTime())) return "";
+        return d.toLocaleString("en-US", {
+          month: "2-digit",
+          day: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
       const ids = Object.keys(byId).sort(function (a, b) {
         return new Date(byId[a].created_at) - new Date(byId[b].created_at);
       });
@@ -245,13 +256,34 @@
         const isAgent = m.sender_role === "agent";
         const row = document.createElement("div");
         row.style.cssText = "display:flex;justify-content:" + (isAgent ? "flex-start" : "flex-end") + ";";
+        const avatar = document.createElement("div");
+        avatar.style.cssText =
+          "width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;flex:0 0 24px;font-size:12px;font-weight:700;margin-top:2px;" +
+          (isAgent
+            ? "background:#dbeafe;color:#1e3a8a;margin-right:6px;"
+            : "background:#d1fae5;color:#065f46;margin-left:6px;");
+        avatar.textContent = isAgent ? "TA" : "C";
+
         const bubble = document.createElement("div");
         const pending = Boolean(m._pending);
         bubble.style.cssText = "max-width:85%;border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;white-space:pre-wrap;word-break:break-word;" +
           (isAgent ? "background:#fff;color:#111;border:1px solid #e5e5e5;" : "background:#0284c7;color:#fff;") +
           (pending ? ";opacity:.88" : "");
-        bubble.innerHTML = escapeHtml(m.body);
-        row.appendChild(bubble);
+        var text = document.createElement("div");
+        text.textContent = String(m.body || "");
+        var meta = document.createElement("div");
+        meta.style.cssText = "margin-top:4px;font-size:10px;line-height:1.2;" + (isAgent ? "color:#6b7280;" : "color:#dbeafe;");
+        var ts = formatMsgTime(m.created_at);
+        meta.textContent = pending ? (ts ? ts + " · Sending..." : "Sending...") : ts;
+        bubble.appendChild(text);
+        bubble.appendChild(meta);
+        if (isAgent) {
+          row.appendChild(avatar);
+          row.appendChild(bubble);
+        } else {
+          row.appendChild(bubble);
+          row.appendChild(avatar);
+        }
         list.appendChild(row);
       }
       list.scrollTop = list.scrollHeight;
