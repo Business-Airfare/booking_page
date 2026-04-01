@@ -216,13 +216,24 @@
     sendBtn.type = "button";
     sendBtn.className = "baPayChatSend";
     sendBtn.textContent = "Send";
+    var err = document.createElement("div");
+    err.className = "baPayChatError";
+    err.setAttribute("aria-live", "polite");
+    err.style.display = "none";
     foot.appendChild(inp);
     foot.appendChild(sendBtn);
 
     panel.appendChild(list);
     panel.appendChild(foot);
+    panel.appendChild(err);
     wrap.appendChild(btn);
     wrap.appendChild(panel);
+
+    function setChatError(message) {
+      var t = (message || "").trim();
+      err.textContent = t;
+      err.style.display = t ? "block" : "none";
+    }
 
     function renderList() {
       const ids = Object.keys(byId).sort(function (a, b) {
@@ -309,6 +320,7 @@
       var text = (inp.value || "").trim();
       var trackingToken = getOrCreatePaymentLinkTrackingToken();
       if (!text || !trackingToken) return;
+      setChatError("");
       inp.value = "";
 
       var pendingId = "pending-" + Date.now() + "-" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2));
@@ -336,12 +348,14 @@
         delete byId[pendingId];
         inp.value = text;
         renderList();
+        setChatError("Message not sent. Check your connection and try again.");
         return;
       }
       if (!r.ok) {
         delete byId[pendingId];
         inp.value = text;
         renderList();
+        setChatError("Message not sent. This payment link may no longer be active.");
         return;
       }
       var data = {};
@@ -359,6 +373,7 @@
           created_at: data.created_at || new Date().toISOString(),
         };
       }
+      setChatError("");
       renderList();
       /* One delayed reconcile (avoids immediate GET right after POST; picks up server id if JSON shape differs) */
       window.setTimeout(function () {
@@ -5021,6 +5036,14 @@
     gap: 8px;
     padding: 10px;
     border-top: 1px solid #eee;
+    background: #fff;
+    flex-shrink: 0;
+  }
+  .baPayChatError{
+    padding: 0 12px 10px;
+    color: #b00020;
+    font-size: 12px;
+    line-height: 1.25;
     background: #fff;
     flex-shrink: 0;
   }
