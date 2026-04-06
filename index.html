@@ -4262,18 +4262,12 @@
   .baTipBtnLabel{
     white-space: nowrap;
     font-weight: 600;
-    font-size: 15px;
+    font-size: 12px;
   }
   .baTipBtnAmount{
     font-weight: 500;
-    font-size: 14px;
-    opacity: 0.75;
-  }
-  .baTipRow .baTipBtn .baTipBtnLabel{
-    font-size: 12px;
-  }
-  .baTipRow .baTipBtn .baTipBtnAmount{
     font-size: 11px;
+    opacity: 0.75;
   }
   .baTipManualRow .baTipBtn--compact{
     grid-column: 4 / span 2;
@@ -4294,7 +4288,6 @@
     box-sizing: border-box;
   }
   .baTipManualRow .baTipBtn--compact .baTipBtnLabel{
-    font-size: 12px;
     line-height: 1.15;
   }
   .baTipCustomCluster{
@@ -4635,12 +4628,31 @@
   .baAddPaxModalTitle{ font-weight:600; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; letter-spacing:-0.02em; }
   .baAddPaxModalSavedWrap{ padding:0 20px 14px; border-bottom:1px solid #eee; margin-bottom:4px; }
   .baAddPaxModalSavedWrap .baLbl{ margin-bottom:8px; }
-  .baAddPaxChips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .baAddPaxChips{
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /*
+   * Saved-traveler chips: use explicit font + appearance reset. Mobile Safari otherwise
+   * auto-shrinks text inside <button> when the label is long (name + DOB), so chips look mismatched.
+   */
   .baAddPaxChip{
-    display:inline-flex; align-items:center; padding:8px 14px; border-radius:999px;
-    border:2px solid #ddd; background:#fff; color:#111; font:inherit; font-weight:600; font-size:14px;
+    display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; border-radius:999px;
+    border:2px solid #ddd; background:#fff; color:#111;
+    font-family: var(--ba-font);
+    font-size: 14px;
+    font-weight: 600;
+    font-style: normal;
+    line-height: 1.25;
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     cursor:pointer; transition:background .15s,border-color .15s,box-shadow .15s,color .15s;
-    max-width:100%; text-align:left; line-height:1.25;
+    max-width:100%; text-align:left;
+    white-space: normal;
+    box-sizing: border-box;
   }
   .baAddPaxChip:hover{ border-color:#bbb; background:#fafafa; }
   .baAddPaxChip.is-selected{ border-color:#111; background:#111; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); }
