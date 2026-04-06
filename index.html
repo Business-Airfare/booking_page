@@ -1931,6 +1931,33 @@
     return null;
   }
 
+  /** Match CRM send_quote_email / Pay suggested_passengers de-dupe (first|middle|last|dob). */
+  function passengerSuggestionKeyFromDetail(p){
+    const fn = String(p?.first_name ?? "").trim().toLowerCase();
+    const mn = String(p?.middle_name ?? "").trim().toLowerCase();
+    const ln = String(p?.last_name ?? "").trim().toLowerCase();
+    const dob = String(p?.date_of_birth ?? "").trim().slice(0, 10);
+    return fn + "|" + mn + "|" + ln + "|" + dob;
+  }
+
+  function getFilteredSuggestedPassengersForAddModal(sessionData){
+    const raw = Array.isArray(sessionData.suggested_passengers) ? sessionData.suggested_passengers : [];
+    const pdArr = getPassengerDetailsArray(sessionData);
+    const taken = new Set();
+    if (pdArr && pdArr.length){
+      for (let i = 0; i < pdArr.length; i++){
+        taken.add(passengerSuggestionKeyFromDetail(pdArr[i]));
+      }
+    }
+    return raw.filter(function(s){
+      if (!s || typeof s !== "object") return false;
+      const fn = String(s.first_name ?? "").trim();
+      const ln = String(s.last_name ?? "").trim();
+      if (!fn || !ln) return false;
+      return !taken.has(passengerSuggestionKeyFromDetail(s));
+    });
+  }
+
   function splitFullName(full){
     const s = String(full || "").trim().replace(/\s+/g, " ");
     if (!s) return { first:"", last:"" };
@@ -4577,6 +4604,10 @@
   .baAddPaxModalOverlay{ position:fixed; inset:0; z-index:10002; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; background:rgba(0,0,0,.35); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
   .baAddPaxModalPanel{ background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
   .baAddPaxModalTitle{ font-weight:800; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; }
+  .baAddPaxModalSavedWrap{ padding:0 20px 14px; border-bottom:1px solid #eee; margin-bottom:4px; }
+  .baAddPaxModalSavedWrap .baLbl{ margin-bottom:6px; }
+  select.baAddPaxSavedSelect{ width:100%; max-width:100%; box-sizing:border-box; cursor:pointer; appearance:auto; min-height:44px; }
+  .baAddPaxSavedHint{ margin:8px 0 0; font-size:13px; opacity:.75; line-height:1.35; }
   .baAddPaxModalCardWrap{ padding:0 20px; }
   .baAddPaxModalCardWrap .baPaxCard__head .baPaxHeadRight{ display:none; }
   .baAddPaxModalFooter{ padding:20px; display:flex; gap:12px; justify-content:flex-end; border-top:1px solid #e9e9e9; }
@@ -6087,14 +6118,21 @@
 
     function openAddPaxModal(){
       const pax1 = getPassengerFromSession(data, 0);
-      const modalPax = { first_name: "", last_name: "", dobISO: "", gender: null, email: pax1.email || "", phone: pax1.phone || "", middle_name: "" };
-      const cardHtml = passengerCardHtmlForModal(modalPax);
+      const emptyModalPax = { first_name: "", last_name: "", dobISO: "", gender: null, email: pax1.email || "", phone: pax1.phone || "", middle_name: "" };
+      const cardHtml = passengerCardHtmlForModal(emptyModalPax);
       const overlay = document.createElement("div");
       overlay.id = "baAddPaxModal";
       overlay.className = "baAddPaxModalOverlay";
       overlay.innerHTML = `
         <div class="baAddPaxModalPanel">
           <div class="baAddPaxModalTitle">Add passenger</div>
+          <div class="baAddPaxModalSavedWrap" id="baAddPaxModalSavedWrap" style="display:none">
+            <label class="baLbl" for="baAddPaxSavedSelect">Saved travelers</label>
+            <select id="baAddPaxSavedSelect" class="baBoxInput baAddPaxSavedSelect" aria-describedby="baAddPaxSavedHint">
+              <option value="">Enter details manually…</option>
+            </select>
+            <p class="baAddPaxSavedHint" id="baAddPaxSavedHint">Select someone already on your booking profile, or fill the form below.</p>
+          </div>
           <div class="baAddPaxModalCardWrap">${cardHtml}</div>
           <div class="baAddPaxModalLoading" id="baAddPaxModalLoading" aria-live="polite">
             <div class="baAddPaxModalSpinner"></div>
@@ -6107,6 +6145,72 @@
         </div>
       `;
       root.appendChild(overlay);
+
+      function applyModalPassengerFromObject(pax){
+        const box = overlay.querySelector(".baPaxCard[data-pax-card=\"modal\"]");
+        if (!box) return;
+        function setVal(field, val){
+          const el = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"" + field + "\"]");
+          if (el) el.value = val ? String(val) : "";
+        }
+        setVal("first_name", pax.first_name);
+        setVal("middle_name", pax.middle_name);
+        setVal("last_name", pax.last_name);
+        setVal("email", pax.email);
+        setVal("phone", pax.phone);
+        const hiddenIso = box.querySelector(".baDobIsoHidden[data-pax=\"modal\"]");
+        const dobVis = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
+        const iso = pax.dobISO || "";
+        if (hiddenIso) hiddenIso.value = iso;
+        if (dobVis) dobVis.value = (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) ? formatDobDisplay(iso) : "";
+        const male = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"male\"]");
+        const female = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"female\"]");
+        if (male) male.checked = pax.gender === "male";
+        if (female) female.checked = pax.gender === "female";
+        if (male && female && pax.gender !== "male" && pax.gender !== "female") {
+          male.checked = false;
+          female.checked = false;
+        }
+      }
+
+      const savedSuggestions = getFilteredSuggestedPassengersForAddModal(data);
+      const savedWrap = overlay.querySelector("#baAddPaxModalSavedWrap");
+      const savedSel = overlay.querySelector("#baAddPaxSavedSelect");
+      if (savedWrap && savedSel && savedSuggestions.length > 0) {
+        savedWrap.style.display = "block";
+        for (let i = 0; i < savedSuggestions.length; i++){
+          const s = savedSuggestions[i];
+          const opt = document.createElement("option");
+          opt.value = String(i);
+          const labelParts = [s.first_name, s.middle_name, s.last_name].filter(function(x){ return x && String(x).trim(); });
+          let optLabel = labelParts.join(" ");
+          const dobIso = isoDob(s.date_of_birth);
+          if (dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso)) optLabel += " · DOB " + formatDobDisplay(dobIso);
+          opt.textContent = optLabel;
+          savedSel.appendChild(opt);
+        }
+        savedSel.addEventListener("change", function(){
+          const v = savedSel.value;
+          if (!v) {
+            applyModalPassengerFromObject(emptyModalPax);
+            validatePassengerBlock("modal");
+            return;
+          }
+          const s = savedSuggestions[Number(v)];
+          if (!s) return;
+          const dobRaw = isoDob(s.date_of_birth);
+          applyModalPassengerFromObject({
+            first_name: s.first_name || "",
+            middle_name: s.middle_name || "",
+            last_name: s.last_name || "",
+            dobISO: (dobRaw && /^\d{4}-\d{2}-\d{2}$/.test(dobRaw)) ? dobRaw : "",
+            gender: normalizeGender(s.gender),
+            email: pax1.email || "",
+            phone: pax1.phone || "",
+          });
+          validatePassengerBlock("modal");
+        });
+      }
 
       const panel = overlay.querySelector(".baAddPaxModalPanel");
       overlay.addEventListener("click", (e) => { if (e.target === overlay) closeAddPaxModal(); });
