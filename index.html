@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>body{font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}</style>
+<style>body{font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-optical-sizing:auto;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}</style>
 </head>
 <body>
 <!-- =========================
@@ -1807,12 +1807,12 @@
 
     root.innerHTML = `
       <style>
-        .baPaidConf .baCard{ background:#fff; border:1px solid #e7e7e7; border-radius:10px; overflow:hidden; margin-bottom:16px; box-shadow:0 10px 24px rgba(0,0,0,.05); }
+        .baPaidConf .baCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
         .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:18px 20px 14px; border-bottom:1px solid #efefef; }
-        .baPaidConf .baCard__route{ font-family:Georgia,'Times New Roman',serif; font-weight:800; font-size:26px; letter-spacing:-0.02em; line-height:1.1; }
+        .baPaidConf .baCard__route{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:22px; letter-spacing:-0.03em; line-height:1.15; color:#111; }
         .baPaidConf .baArr{ margin:0 10px; }
-        .baPaidConf .baCard__date{ margin-top:8px; font-size:15px; opacity:.75; font-weight:650; }
-        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:700; white-space:nowrap; padding-top:8px; margin-right:20px; }
+        .baPaidConf .baCard__date{ margin-top:8px; font-size:15px; opacity:.75; font-weight:500; }
+        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:500; white-space:nowrap; padding-top:8px; margin-right:20px; }
         .baPaidConf .baFlights{ padding:8px 0; }
         .baPaidConf .baFlightBlock{ padding:0 20px; }
         .baPaidConf .baFlight{ display:grid; grid-template-columns:1fr 250px; gap:16px; padding:16px 0; border-top:1px solid #f1f1f1; }
@@ -1824,31 +1824,31 @@
         .baPaidConf .baTL__chev{ width:8px; height:6px; border-left:2px solid #d7d7d7; border-bottom:2px solid #d7d7d7; transform:rotate(-45deg); margin-left:1px; }
         .baPaidConf .baRow{ display:grid; grid-template-columns:150px 1fr; gap:10px; align-items:baseline; min-width:0; }
         .baPaidConf .baTimeLine{ display:flex; align-items:baseline; gap:10px; min-width:0; }
-        .baPaidConf .baTime{ font-size:16px; font-weight:800; line-height:1.1; white-space:nowrap; }
-        .baPaidConf .baMD{ font-size:13px; font-weight:700; opacity:.65; white-space:nowrap; }
+        .baPaidConf .baTime{ font-size:16px; font-weight:600; letter-spacing:-0.02em; line-height:1.1; white-space:nowrap; }
+        .baPaidConf .baMD{ font-size:13px; font-weight:500; opacity:.65; white-space:nowrap; }
         .baPaidConf .baMD--nextDay{ color:#c56a00; opacity:.85; }
-        .baPaidConf .baLocLine{ font-size:15px; font-weight:800; line-height:1.2; min-width:0; }
+        .baPaidConf .baLocLine{ font-size:15px; font-weight:600; line-height:1.2; min-width:0; }
         .baPaidConf .baCity,.baPaidConf .baIata{ display:inline; }
-        .baPaidConf .baIata{ font-weight:800; margin-left:5px; opacity:.85; }
+        .baPaidConf .baIata{ font-weight:600; margin-left:5px; opacity:.85; }
         .baPaidConf .baRow--meta{ margin-top:14px; grid-template-columns:1fr; gap:6px; }
         .baPaidConf .baRow--meta + .baRow{ margin-top:16px; }
-        .baPaidConf .baMetaRow{ font-size:12px; font-weight:700; opacity:.68; line-height:1.35; }
+        .baPaidConf .baMetaRow{ font-size:12px; font-weight:500; opacity:.68; line-height:1.35; }
         .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-width:0; padding-top:6px; }
         .baPaidConf .baAir__logo{ width:90px; height:28px; object-fit:contain; }
-        .baPaidConf .baAir__meta{ font-size:14px; opacity:.75; font-weight:700; white-space:nowrap; }
-        .baPaidConf .baAir__fn{ font-weight:800; opacity:.9; }
+        .baPaidConf .baAir__meta{ font-size:14px; opacity:.75; font-weight:500; white-space:nowrap; }
+        .baPaidConf .baAir__fn{ font-weight:600; opacity:.9; }
         .baPaidConf .baAir__sep{ margin:0 8px; opacity:.5; }
-        .baPaidConf .baAir__op{ font-size:13px; opacity:.6; font-weight:650; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .baPaidConf .baAir__op{ font-size:13px; opacity:.6; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:14px 0; margin:0; }
-        .baPaidConf .baLayRow__text{ font-size:14px; font-weight:700; color:#6b6b6b; }
-        .baPaidConf .baLayRow__dur{ font-weight:800; color:#6b6b6b; }
-        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:10px; overflow:hidden; margin-bottom:14px; box-shadow:0 10px 24px rgba(0,0,0,.05); font-size:1em; }
-        .baPaidConf .baPaidPaxCard__head{ font-family:Georgia,'Times New Roman',serif; font-weight:800; font-size:1.625em; padding:18px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
-        .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:700; color:#4b4b4b; flex-wrap:wrap; }
-        .baPaidConf .baPaidPaxSummaryName{ flex:1 1 auto; max-width:65%; font-size:1.067em; font-weight:800; padding:10px 12px; border:1px solid #e7e7e7; border-radius:6px; background:#fff; display:flex; align-items:center; justify-content:center; gap:10px; line-height:1.25; min-width:0; }
+        .baPaidConf .baLayRow__text{ font-size:14px; font-weight:600; color:#6b6b6b; }
+        .baPaidConf .baLayRow__dur{ font-weight:600; color:#6b6b6b; }
+        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:14px; box-shadow:none; font-size:1em; }
+        .baPaidConf .baPaidPaxCard__head{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:1.25em; letter-spacing:-0.025em; padding:16px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
+        .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:500; color:#4b4b4b; flex-wrap:wrap; }
+        .baPaidConf .baPaidPaxSummaryName{ flex:1 1 auto; max-width:70%; font-size:1.067em; font-weight:600; padding:0; border:none; border-radius:0; background:transparent; display:flex; align-items:center; justify-content:flex-start; gap:10px; line-height:1.3; min-width:0; color:#111; text-align:left; }
         .baPaidConf .baPaidPaxSummaryFirst,.baPaidConf .baPaidPaxSummaryLast{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .baPaidConf .baPaidPaxSummaryDivider{ width:1px; height:60%; background:#dcdcdc; display:inline-block; flex-shrink:0; }
-        .baPaidConf .baPaidPaxSummaryMeta{ display:flex; align-items:center; gap:6px; flex:0 1 auto; min-width:0; color:#6a6a6a; font-weight:600; }
+        .baPaidConf .baPaidPaxSummaryDivider{ width:1px; height:1em; align-self:center; background:#dcdcdc; display:inline-block; flex-shrink:0; }
+        .baPaidConf .baPaidPaxSummaryMeta{ display:flex; align-items:center; gap:6px; flex:0 1 auto; min-width:0; color:#6a6a6a; font-weight:500; }
         .baPaidConf .baPaidPaxSummaryGender{ display:inline-block; min-width:52px; text-align:center; }
         .baPaidConf .baPaidPaxSummaryDot{ opacity:.6; }
         .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
@@ -1878,33 +1878,33 @@
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
         <div class="baPaidConfTop">
-          <div class="baPaidConfGreen" style="padding:14px 16px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:60px">
-            <div class="baPaidConfTitle" style="font-weight:900;font-size:2.5rem;margin-bottom:4px;line-height:1.2">Thank You For Booking With Us.</div>
-            <div class="baPaidConfSub" style="opacity:.9;font-size:1em">Your tickets will be sent to your email as soon as they are booked.</div>
+          <div class="baPaidConfGreen" style="padding:16px 18px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:60px">
+            <div class="baPaidConfTitle" style="font-weight:600;font-size:2.25rem;letter-spacing:-0.035em;margin-bottom:6px;line-height:1.15">Thank You For Booking With Us.</div>
+            <div class="baPaidConfSub" style="font-size:1em;font-weight:500;opacity:.92">Your tickets will be sent to your email as soon as they are booked.</div>
           </div>
 
           <div class="baPaidConfRow" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:60px">
             <div>
-              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Paid</div>
-              <div class="baPaidConfRowVal" style="font-weight:900;font-size:1.125em">
+              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75;font-weight:500">Paid</div>
+              <div class="baPaidConfRowVal" style="font-weight:600;font-size:1.125em;letter-spacing:-0.02em;color:#111">
                 ${fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount)} ${escapeHtml(data.currency || "USD")}
               </div>
             </div>
             <div>
-              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75">Paid at</div>
-              <div class="baPaidConfRowVal" style="font-weight:800;font-size:1em">${escapeHtml(paidAtStr)}</div>
+              <div class="baPaidConfRowLabel" style="font-size:0.875em;opacity:.75;font-weight:500">Paid at</div>
+              <div class="baPaidConfRowVal" style="font-weight:500;font-size:1em;color:#111">${escapeHtml(paidAtStr)}</div>
             </div>
           </div>
 
           <div class="baPaidConfPaxSection" style="margin-bottom:60px">
-            <div class="baPaidConfRowLabel baPaidConfPaxLabel" style="font-size:0.875em;opacity:.75;margin-bottom:6px">Passenger details</div>
+            <div class="baPaidConfRowLabel baPaidConfPaxLabel" style="font-size:0.875em;opacity:.75;font-weight:500;margin-bottom:6px">Passenger details</div>
             ${passengersHtml}
           </div>
         </div>
 
         <div style="margin-top:60px">
-          <h2 style="margin:0 0 12px;font-size:34px;letter-spacing:-0.02em">Flight Itinerary</h2>
-          <div style="opacity:.85;margin-bottom:16px">You can keep this page for your records.</div>
+          <h2 style="margin:0 0 12px;font-size:28px;font-weight:600;letter-spacing:-0.035em;color:#111">Flight Itinerary</h2>
+          <div style="opacity:.85;font-weight:500;margin-bottom:16px;color:#111">You can keep this page for your records.</div>
           ${itineraryHtml}
         </div>
       </div>
@@ -2474,7 +2474,7 @@
         position:fixed; right:14px; bottom:92px; z-index:99999;
         max-width:340px; padding:10px 12px; border-radius:10px;
         background:${ok ? "#0b6b2f" : "#b00020"}; color:#fff;
-        font-weight:800; font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; box-shadow:0 10px 24px rgba(0,0,0,.18);
+        font-weight:600; font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; box-shadow:0 4px 20px rgba(0,0,0,.1);
         opacity:0; transform:translateY(8px); transition:.18s ease;
       `;
       document.body.appendChild(el);
@@ -3062,13 +3062,22 @@
     to { transform: rotate(360deg); }
   }
   :root{
+    --ba-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     --ba-bg: #f5f5f5;
     --ba-card: #ffffff;
     --ba-border: #e9e9e9;
     --ba-text: #111;
+    --ba-muted: #666;
+    --ba-muted-2: #707070;
+    --ba-chrome: #2f2f2f;
     --ba-accent: #d1ad54;
     --ba-danger: #d92d20;
     --ba-danger-bg: rgba(217,45,32,.06);
+    --ba-radius-sm: 8px;
+    --ba-radius-md: 12px;
+    --ba-radius-pill: 999px;
+    --ba-shadow-sticky: 0 -8px 22px rgba(0,0,0,.18);
+    --ba-ring: 0 0 0 2px rgba(0,0,0,0.04);
   }
   #baPayRoot{
     width: 100%;
@@ -3157,12 +3166,12 @@
     flex: 1;
   }
   .baHeaderNav a{
-    color: #111;
+    color: var(--ba-text);
     text-decoration: none;
-    font-weight: 700;
+    font-weight: 500;
     font-size: 14px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    text-transform: none;
   }
   .baHeaderNav a:hover{
     opacity: 0.7;
@@ -3173,15 +3182,15 @@
     gap: 24px;
   }
   .baHeaderPhone{
-    font-weight: 700;
+    font-weight: 600;
     font-size: 14px;
-    color: #111;
+    color: var(--ba-text);
     display: flex;
     align-items: center;
     gap: 6px;
   }
   .baHeaderPhone a{
-    color: #111;
+    color: var(--ba-text);
     text-decoration: none;
     display: flex;
     align-items: center;
@@ -3212,18 +3221,18 @@
   }
   .baHeaderAgentLabel{
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: none;
+    letter-spacing: 0.02em;
     margin-bottom: 0px;
     line-height: 1;
     padding-top: 2px;
   }
   .baHeaderAgentName{
-    font-weight: 700;
+    font-weight: 600;
     font-size: 16px;
-    color: #111;
+    color: var(--ba-text);
     margin-top: 8px;
     margin-bottom: 0;
     line-height: 1;
@@ -3263,14 +3272,14 @@
   }
   .baHeaderMobileNavDropdown.is-open{ display: block; }
   .baHeaderMobileNavDropdown a{
-    display: block; padding: 12px 16px; color: #111; text-decoration: none; font-weight: 700; font-size: 14px;
-    letter-spacing: 0.02em; text-transform: uppercase;
+    display: block; padding: 12px 16px; color: var(--ba-text); text-decoration: none; font-weight: 500; font-size: 14px;
+    letter-spacing: -0.01em; text-transform: none;
   }
   .baHeaderMobileNavDropdown a:hover{ background: rgba(0,0,0,.06); }
   .baHeaderMobileNavWrap{ position: relative; }
   .baHeaderPhoneMobile{ display: none; }
   .baHeaderProgress{
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     padding: 22px 18px;
   }
   .baHeaderProgressInner{
@@ -3285,14 +3294,18 @@
     min-width: 0;
   }
   .baHeaderProgressTitle{
-    font-weight: 900;
+    font-weight: 600;
     font-size: 20px;
     color: #fff;
     margin-bottom: 4px;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
   }
   .baHeaderProgressSubtitle{
     font-size: 14px;
     color: #ccc;
+    font-weight: 500;
+    line-height: 1.45;
     opacity: 0.9;
   }
   .baHeaderProgressSteps{
@@ -3314,13 +3327,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 900;
-    font-size: 14px;
+    font-weight: 700;
+    font-size: 13px;
     flex-shrink: 0;
   }
   .baProgressStepLabel{
     font-size: 11px;
     color: #fff;
+    font-weight: 500;
     text-align: center;
     line-height: 1.2;
     white-space: nowrap;
@@ -3330,7 +3344,7 @@
     color: #111;
   }
   .baProgressStepCircle.active{
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     border: 2px solid #fff;
     color: #fff;
     box-sizing: border-box;
@@ -3373,9 +3387,12 @@
   }
 
   .baWrap{
-    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--ba-font);
     background: var(--ba-bg);
     color: var(--ba-text);
+    font-size: 15px;
+    line-height: 1.5;
+    font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     width: 100%;
@@ -3398,34 +3415,35 @@
   }
 
   .baSectionTitle{
-    font-family: Georgia, "Times New Roman", serif;
-    font-weight: 800;
-    font-size: 34px;
+    font-family: var(--ba-font);
+    font-weight: 600;
+    font-size: 28px;
     margin: 0 0 14px;
-    letter-spacing: -0.02em;
-    line-height: 1.05;
+    letter-spacing: -0.035em;
+    line-height: 1.12;
+    color: var(--ba-text);
   }
   @media (max-width: 980px){
-    .baSectionTitle{ font-size: 28px; }
+    .baSectionTitle{ font-size: 24px; }
   }
 
   .baBanner{
-    border-radius: 10px; padding: 12px 14px;
+    border-radius: var(--ba-radius-md); padding: 12px 14px;
     border: 1px solid var(--ba-border);
-    background: #fff; margin-bottom: 12px;
+    background: var(--ba-card); margin-bottom: 12px;
   }
   .baBanner--bad{ border-color:#ffd2d2; background:#fff3f3; color:#8a1f1f; }
   .baBanner--warn{ border-color:#ffe1a6; background:#fff7e6; color:#6a4b00; }
-  .baBanner__t{ font-weight: 900; margin-bottom: 2px; }
-  .baBanner__b{ opacity:.9; font-weight: 650; }
+  .baBanner__t{ font-weight: 600; margin-bottom: 2px; letter-spacing: -0.02em; }
+  .baBanner__b{ opacity: 0.9; font-weight: 500; }
 
   .baCard{
     background: var(--ba-card);
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     overflow:hidden;
     margin-bottom: 16px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+    box-shadow: none;
   }
   .baCard__head{
     display:flex;
@@ -3436,23 +3454,23 @@
     border-bottom: 1px solid #efefef;
   }
   .baCard__route{
-    font-family: Georgia, "Times New Roman", serif;
-    font-weight: 800;
-    font-size: 26px;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
+    font-family: var(--ba-font);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
   }
   .baArr{ margin: 0 10px; }
   .baCard__date{
     margin-top: 8px;
     font-size: 15px;
-    opacity: .75;
-    font-weight: 650;
+    opacity: 0.75;
+    font-weight: 500;
   }
   .baCard__tt{
     font-size: 13px;
-    opacity:.75;
-    font-weight: 700;
+    opacity: 0.75;
+    font-weight: 500;
     white-space:nowrap;
     padding-top: 8px;
     margin-right: 20px;
@@ -3521,14 +3539,15 @@
   }
   .baTime{
     font-size: 16px;
-    font-weight: 800;
+    font-weight: 600;
     line-height: 1.1;
     white-space:nowrap;
+    letter-spacing: -0.02em;
   }
   .baMD{
     font-size: 13px;
-    font-weight: 700;
-    opacity:.65;
+    font-weight: 500;
+    opacity: 0.65;
     white-space:nowrap;
   }
   .baMD--nextDay{
@@ -3538,7 +3557,7 @@
 
   .baLocLine{
     font-size: 15px;
-    font-weight: 800;
+    font-weight: 600;
     line-height: 1.2;
     min-width:0;
     white-space:normal;
@@ -3548,7 +3567,7 @@
     display: inline;
   }
   .baIata{
-    font-weight: 800;
+    font-weight: 600;
     text-decoration: none;
     margin-left: 5px;
     opacity: .85;
@@ -3566,8 +3585,8 @@
   }
   .baMetaRow{
     font-size: 12px;
-    font-weight: 700;
-    opacity:.68;
+    font-weight: 500;
+    opacity: 0.68;
     line-height: 1.35;
   }
 
@@ -3593,12 +3612,12 @@
     font-weight: 700;
     white-space:nowrap;
   }
-  .baAir__fn{ font-weight: 800; opacity:.9; }
+  .baAir__fn{ font-weight: 600; }
   .baAir__sep{ margin: 0 8px; opacity:.5; }
   .baAir__op{
     font-size: 13px;
     opacity:.6;
-    font-weight: 650;
+    font-weight: 500;
     max-width: 100%;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -3613,10 +3632,10 @@
   }
   .baLayRow__text{
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     color: #6b6b6b;
   }
-  .baLayRow__dur{ font-weight: 800; color:#6b6b6b; }
+  .baLayRow__dur{ font-weight: 600; color: #6b6b6b; }
 
   /* Passenger panel */
   .baPaxWrap{ position: sticky; top: 14px; }
@@ -3625,17 +3644,18 @@
   .baPaxCard{
     background: var(--ba-card);
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     overflow:hidden;
     margin-bottom: 14px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+    box-shadow: none;
   }
   .baPaxCard.is-collapsed{ cursor:pointer; }
   .baPaxCard__head{
-    padding: 18px 18px;
-    font-family: Georgia, "Times New Roman", serif;
-    font-weight: 800;
-    font-size: 26px;
+    padding: 16px 18px;
+    font-family: var(--ba-font);
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: -0.025em;
     border-bottom: 1px solid #efefef;
     display:flex;
     align-items:center;
@@ -3643,7 +3663,7 @@
     gap: 10px;
   }
   .baPaxCard__title{ min-width: 0; }
-  .baPaxHeadNum{ margin-left: 6px; font-weight: 900; }
+  .baPaxHeadNum{ margin-left: 6px; font-weight: 700; opacity: 0.85; }
   .baPaxHeadRight{
     display:flex;
     align-items:center;
@@ -3672,13 +3692,13 @@
   .baPaxCard__remove:hover:not([disabled]){ background: #b00020; color: #fff; }
   .baPaxCard__remove[disabled]{ opacity: .55; cursor: not-allowed; }
   .baPaxCard__summary{
-    padding: 6px 18px 14px;
+    padding: 8px 18px 14px;
     display:flex;
     align-items:center;
     justify-content:space-between;
     gap: 14px;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 500;
     color: #4b4b4b;
     border-bottom: 1px solid #efefef;
     white-space: nowrap;
@@ -3689,26 +3709,27 @@
   }
   .baPaxSummaryName{
     flex: 1 1 auto;
-    max-width: 65%;
+    max-width: 70%;
     font-size: 16px;
-    font-weight: 800;
-    padding: 10px 12px;
-    border: 1px solid #e7e7e7;
-    border-radius: 6px;
-    background: #fff;
+    font-weight: 600;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
     display:flex;
     align-items:center;
-    justify-content:center;
-    text-align:center;
-    line-height: 1.1;
+    justify-content:flex-start;
+    text-align:left;
+    line-height: 1.25;
     gap: 10px;
+    color: var(--ba-text);
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
   }
   .baPaxCard.is-collapsed .baPaxSummaryName{
-    line-height: 1.25;
-    padding-bottom: 11px;
+    line-height: 1.3;
+    padding-bottom: 2px;
   }
   .baPaxSummaryFirst,
   .baPaxSummaryLast{
@@ -3718,7 +3739,8 @@
   }
   .baPaxSummaryNameDivider{
     width: 1px;
-    height: 60%;
+    height: 1em;
+    align-self: center;
     background: #dcdcdc;
     display: inline-block;
   }
@@ -3754,7 +3776,7 @@
   .baPaxCard.is-expanded .baPaxCard__summary{ display:none; }
   .baPaxCard.is-collapsed .baPaxCard__head{
     padding: 12px 18px;
-    font-size: 20px;
+    font-size: 17px;
     border-bottom: 1px solid #efefef;
   }
   @media (max-width: 620px){
@@ -3772,18 +3794,18 @@
 
   .baLbl{
     display:block;
-    font-size: 13px;
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 600;
     color: #707070;
     margin-bottom: 6px;
-    letter-spacing: .02em;
+    letter-spacing: 0.01em;
   }
   .baRadioRow{
     display:flex;
     align-items:center;
     gap: 20px;
     font-size: 14px;
-    font-weight: 800;
+    font-weight: 500;
   }
   .baRadio{
     display:inline-flex;
@@ -3834,28 +3856,28 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-radius: 12px;
-    border: 1px solid #2f2f2f;
+    border-radius: var(--ba-radius-md);
+    border: 1px solid var(--ba-chrome);
     background: #fff;
     box-shadow: 0 18px 48px rgba(0,0,0,0.22);
-    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--ba-font);
   }
   .baDobPickerHeader{
     flex-shrink: 0;
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     color: #fff;
     padding: 14px 16px;
   }
   .baDobPickerHeaderTitle{
     font-size: 18px;
-    font-weight: 900;
+    font-weight: 600;
     line-height: 1.25;
-    letter-spacing: 0.01em;
+    letter-spacing: -0.02em;
   }
   .baDobPickerHeaderSub{
     margin-top: 6px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     opacity: 0.88;
     line-height: 1.35;
   }
@@ -3879,7 +3901,7 @@
     border-bottom: 1px solid #f0f0f0;
     background: #fff;
     font-size: 16px;
-    font-weight: 700;
+    font-weight: 500;
     color: #111;
     cursor: pointer;
     text-align: center;
@@ -3902,10 +3924,10 @@
     margin: 0;
     padding: 12px 8px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-sm);
     background: #fff;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 500;
     color: #111;
     cursor: pointer;
     font-family: inherit;
@@ -3923,7 +3945,7 @@
   .baDobPickerDayNav{
     text-align: center;
     font-size: 14px;
-    font-weight: 900;
+    font-weight: 600;
     color: #111;
     margin-bottom: 8px;
   }
@@ -3953,7 +3975,7 @@
     border-radius: 999px;
     background: transparent;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 500;
     color: #111;
     cursor: pointer;
     font-family: inherit;
@@ -3985,7 +4007,7 @@
     border: 0;
     background: transparent;
     font-size: 12px;
-    font-weight: 900;
+    font-weight: 600;
     letter-spacing: 0.04em;
     color: #111;
     cursor: pointer;
@@ -3998,11 +4020,11 @@
     margin: 0;
     padding: 8px 18px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-sm);
     background: #111;
     color: #fff;
     font-size: 12px;
-    font-weight: 900;
+    font-weight: 600;
     letter-spacing: 0.04em;
     cursor: pointer;
     font-family: inherit;
@@ -4038,24 +4060,24 @@
     width: 100%;
     padding: 10px 12px;
     border: 1px solid #e7e7e7;
-    border-radius: 6px;
+    border-radius: var(--ba-radius-sm);
     background: #fff;
     font-size: 15px;
-    font-weight: 700;
+    font-weight: 500;
     outline: none;
     box-sizing: border-box;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   .baBoxInput:focus{
     border-color: #bdbdbd;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.04);
+    box-shadow: var(--ba-ring);
   }
   .baBoxInput[readonly]{
     cursor: pointer;
   }
   .baBoxInput::placeholder{
     color: #b1b1b1;
-    font-weight: 650;
+    font-weight: 400;
   }
 
   /* INVALID HIGHLIGHT (red) */
@@ -4077,7 +4099,7 @@
     display:none;
     margin-top: 6px;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 600;
     color: var(--ba-danger);
   }
   .baField:has(.baBoxInput.is-invalid) .baErr{ display:block; }
@@ -4087,17 +4109,17 @@
   .baInfoBanner{
     margin: 12px 0 0;
     padding: 12px 14px;
-    border: 1px solid #e8e8e8;
-    border-radius: 10px;
-    background: #fff;
-    color: #111;
+    border: 1px solid var(--ba-border);
+    border-radius: var(--ba-radius-md);
+    background: var(--ba-card);
+    color: var(--ba-text);
     display:flex;
     gap: 8px;
     align-items: center;
-    font-weight: 700;
+    font-weight: 500;
     font-size: 13px;
-    line-height: 1.3;
-    box-shadow: 0 10px 24px rgba(0,0,0,.04);
+    line-height: 1.35;
+    box-shadow: none;
   }
   .baInfoBanner > div{
     flex: 1;
@@ -4115,7 +4137,7 @@
     align-items:center;
     justify-content:center;
     font-size: 10px;
-    font-weight: 900;
+    font-weight: 700;
     flex: 0 0 auto;
   }
   @media (max-width: 980px){
@@ -4127,22 +4149,22 @@
   .baPanel{
     background: var(--ba-card);
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     padding: 16px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.04);
+    box-shadow: none;
   }
-  .baPanelTitle{ font-weight: 900; margin-bottom: 10px; }
+  .baPanelTitle{ font-weight: 600; margin-bottom: 10px; letter-spacing: -0.02em; }
   .baTipSection{ margin-top: 18px; }
   /* Tips card shell — matches Travel Care Service (baCareBox) header + content */
   .baTipBox{
     background: #fff;
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     overflow: hidden;
-    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+    box-shadow: none;
   }
   .baTipBox__header{
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     padding: 16px 20px 16px 56px;
     color: #fff;
     text-align: left;
@@ -4152,14 +4174,16 @@
     margin: 0;
   }
   .baTipBox__title{
-    font-weight: 900;
+    font-weight: 600;
     font-size: 22px;
     margin-bottom: 4px;
     line-height: 1.2;
+    letter-spacing: -0.03em;
   }
   .baTipBox__subtitle{
     font-size: 13px;
     opacity: 0.85;
+    font-weight: 500;
     line-height: 1.4;
   }
   .baTipBox__content{
@@ -4206,10 +4230,10 @@
     grid-column: span 2;
     min-height: 48px;
     padding: 6px 8px;
-    border-radius: 999px;
+    border-radius: var(--ba-radius-pill);
     border: 1px solid #ddd;
     background: #fff;
-    font-weight: 800;
+    font-weight: 600;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s, color 0.2s;
     display: flex;
@@ -4231,17 +4255,17 @@
     min-width: 0;
     min-height: 48px;
     gap: 3px;
-    border-radius: 999px;
+    border-radius: var(--ba-radius-pill);
     box-sizing: border-box;
     align-self: stretch;
   }
   .baTipBtnLabel{
     white-space: nowrap;
-    font-weight: 800;
+    font-weight: 600;
     font-size: 15px;
   }
   .baTipBtnAmount{
-    font-weight: 700;
+    font-weight: 500;
     font-size: 14px;
     opacity: 0.75;
   }
@@ -4262,7 +4286,7 @@
     background: #fff;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s, color 0.2s;
-    font-weight: 800;
+    font-weight: 600;
     min-height: 48px;
     padding: 6px 8px;
     gap: 3px;
@@ -4281,7 +4305,7 @@
     width: 100%;
     min-height: 48px;
     border: 1px solid #ddd;
-    border-radius: 999px;
+    border-radius: var(--ba-radius-pill);
     background: #fff;
     box-sizing: border-box;
     overflow: hidden;
@@ -4324,7 +4348,7 @@
     content: "$";
     position: absolute;
     left: 8px;
-    font-weight: 900;
+    font-weight: 600;
     font-size: 12px;
     opacity: 0.85;
     pointer-events: none;
@@ -4338,7 +4362,7 @@
     border: 0;
     border-right: 1px solid #ddd;
     background: #f7f7f7;
-    font-weight: 900;
+    font-weight: 600;
     line-height: 1;
     display: inline-flex;
     align-items: center;
@@ -4362,9 +4386,9 @@
     width: 100%;
     height: 36px;
     padding: 0 4px 0 22px;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-sm);
     border: 1px solid transparent;
-    font-weight: 800;
+    font-weight: 600;
     font-size: 12px;
     text-align: center;
     background: transparent;
@@ -4453,6 +4477,10 @@
     color: #0000FF;
     text-decoration: underline;
     cursor: pointer;
+    font-weight: 500;
+  }
+  .baTermsLink:hover{
+    color: #0000cc;
   }
   .baTermsAgreeWarning{
     margin-top: 12px;
@@ -4500,9 +4528,10 @@
   /* Sticky bottom bar (updated per request) */
   .baSticky{
     position:fixed; left:0; right:0; bottom:0; z-index:9999;
-    background:#2f2f2f; color:#fff;
+    background: var(--ba-chrome);
+    color: #fff;
     padding: 20px 14px;
-    box-shadow: 0 -8px 22px rgba(0,0,0,.18);
+    box-shadow: var(--ba-shadow-sticky);
   }
   .baStickyIn{
     max-width: 1220px;
@@ -4516,7 +4545,7 @@
     display:flex; gap: 12px; align-items:center; min-width:0; margin-left: 40px;
   }
   .baStickyMessage{
-    font-weight: 700;
+    font-weight: 500;
     font-size: 14px;
     color: #fff;
     opacity: 0.9;
@@ -4543,7 +4572,7 @@
     .baSticky .baCTARight{ font-size: 18px; }
   }
   .baStickyLogo{
-    width: 96px; height: 44px; border-radius: 8px; background:#fff;
+    width: 96px; height: 44px; border-radius: var(--ba-radius-sm); background: #fff;
     display:flex; align-items:center; justify-content:center; overflow:hidden;
     flex-shrink: 0;
     padding: 0 20px;
@@ -4555,21 +4584,21 @@
 
   .baStickyPrice{ text-align:right; line-height: 1.05; }
   .baStickyPriceTop{ display:flex; justify-content:flex-end; gap: 10px; align-items:baseline; }
-  .baStickyAmt{ font-weight: 1000; font-size: 24px; }
-  .baStickyCur{ opacity:.85; font-weight: 900; font-size: 12px; }
+  .baStickyAmt{ font-weight: 700; font-size: 24px; letter-spacing: -0.03em; color: #fff; }
+  .baStickyCur{ opacity: 0.85; font-weight: 600; font-size: 12px; color: #fff; }
 
   /* updated label */
-  .baStickySub{ opacity:.82; font-weight: 800; font-size: 12px; margin-top: 2px; }
+  .baStickySub{ opacity: 0.82; font-weight: 500; font-size: 12px; margin-top: 2px; color: #fff; }
   .baStickySmall{ display:none !important; }
 
   /* CTA: single label "BOOK" + timer on right */
   .baCTA{
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-sm);
     background: var(--ba-accent);
     color: #111;
-    font-weight: 1000;
-    letter-spacing: .01em;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     padding: 10px 18px;
     display:flex;
     align-items:center;
@@ -4589,12 +4618,12 @@
   .baAddPassengerBtn{
     padding: 10px 18px;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     font-family: inherit;
     border: 2px solid #111;
     background: #fff;
     color: #111;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-sm);
     cursor: pointer;
     transition: background .15s, color .15s, opacity .15s;
   }
@@ -4603,7 +4632,7 @@
 
   .baAddPaxModalOverlay{ position:fixed; inset:0; z-index:10002; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; background:rgba(0,0,0,.35); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
   .baAddPaxModalPanel{ background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
-  .baAddPaxModalTitle{ font-weight:800; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; }
+  .baAddPaxModalTitle{ font-weight:600; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; letter-spacing:-0.02em; }
   .baAddPaxModalSavedWrap{ padding:0 20px 14px; border-bottom:1px solid #eee; margin-bottom:4px; }
   .baAddPaxModalSavedWrap .baLbl{ margin-bottom:8px; }
   .baAddPaxChips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
@@ -4620,7 +4649,7 @@
   .baAddPaxModalCardWrap{ padding:0 20px; }
   .baAddPaxModalCardWrap .baPaxCard__head .baPaxHeadRight{ display:none; }
   .baAddPaxModalFooter{ padding:20px; display:flex; gap:12px; justify-content:flex-end; border-top:1px solid #e9e9e9; }
-  .baAddPaxModalSave{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:0; border-radius:8px; background:var(--ba-accent); color:#111; cursor:pointer; }
+  .baAddPaxModalSave{ padding:12px 24px; font-weight:600; font-size:1rem; font-family:inherit; border:0; border-radius:var(--ba-radius-sm); background:var(--ba-accent); color:#111; cursor:pointer; }
   .baAddPaxModalSave:hover:not([disabled]){ opacity:.9; }
   .baAddPaxModalSave[disabled]{ opacity:.6; cursor:not-allowed; }
   .baAddPaxModalCancel{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:2px solid #ccc; border-radius:8px; background:#fff; color:#333; cursor:pointer; }
@@ -4630,12 +4659,12 @@
   .baAddPaxModalSpinner{ width:40px; height:40px; border:3px solid #eee; border-top-color:var(--ba-accent); border-radius:50%; animation:spin .8s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
 
-  .baCTATitle{ font-weight:1000; font-size: 16px; text-align: center; padding: 0 8px; }
+  .baCTATitle{ font-weight:700; font-size: 15px; text-align: center; padding: 0 8px; letter-spacing: -0.02em; }
   .baCTARight{
-    font-weight: 1000;
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
     padding-left: 10px;
-    border-left: 1px solid rgba(0,0,0,.25);
+    border-left: 1px solid rgba(0,0,0,.18);
     flex-shrink: 0;
   }
 
@@ -4733,12 +4762,12 @@
   .baCareBox{
     background: #fff;
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     overflow: hidden;
-    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+    box-shadow: none;
   }
   .baCareBox__header{
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     padding: 16px 20px;
     color: #fff;
   }
@@ -4758,13 +4787,16 @@
     flex: 1;
   }
   .baCareBox__title{
-    font-weight: 900;
-    font-size: 22px;
+    font-weight: 600;
+    font-size: 18px;
     margin-bottom: 4px;
+    letter-spacing: -0.03em;
+    line-height: 1.25;
   }
   .baCareBox__subtitle{
     font-size: 13px;
     opacity: 0.85;
+    font-weight: 500;
     line-height: 1.4;
   }
   .baCareBox__content{
@@ -4784,7 +4816,7 @@
   }
   .baCareBox__check{
     color: #0b6b2f;
-    font-weight: 900;
+    font-weight: 700;
     flex-shrink: 0;
     margin-top: 2px;
   }
@@ -4793,9 +4825,10 @@
     min-width: 0;
   }
   .baCareBox__benefitTitle{
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1.4;
-    font-weight: 700;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
   .baCareBox__benefitSub{
     font-size: 12px;
@@ -4804,11 +4837,12 @@
     margin-top: 4px;
   }
   .baCareBox__recommended{
-    background: #2f2f2f;
+    background: var(--ba-chrome);
     color: #fff;
     padding: 8px 20px;
-    font-weight: 900;
+    font-weight: 600;
     font-size: 13px;
+    letter-spacing: 0.02em;
     text-align: center;
     border-radius: 0 0 8px 8px;
   }
@@ -4885,7 +4919,7 @@
   .ba-tcs-option input[type="radio"]:checked ~ .ba-tcs-indicator::after{
     content: "✓";
     font-size: 12px;
-    font-weight: 900;
+    font-weight: 700;
     color: #fff;
     line-height: 1;
   }
@@ -4896,7 +4930,7 @@
     color: #333;
   }
   .ba-tcs-label strong{
-    font-weight: 900;
+    font-weight: 600;
   }
   .ba-tcs-terms{
     display: block;
@@ -4907,6 +4941,7 @@
   .ba-tcs-option .baCareRadio__link{
     color: #0066cc;
     text-decoration: underline;
+    font-weight: 500;
     cursor: pointer;
   }
   .ba-tcs-option .baCareRadio__link:hover{
@@ -5021,12 +5056,13 @@
   .baPayChatBtn{
     position: relative;
     border: none;
-    border-radius: 9999px;
+    border-radius: var(--ba-radius-pill);
     padding: 10px 18px;
     background: #111;
     color: #fff;
     font-weight: 600;
     font-size: 14px;
+    letter-spacing: -0.01em;
     cursor: pointer;
     box-shadow: 0 4px 14px rgba(0,0,0,.2);
   }
@@ -5140,7 +5176,7 @@
   }
   .baPayChatSend{
     border: none;
-    border-radius: 9999px;
+    border-radius: var(--ba-radius-pill);
     padding: 8px 14px;
     background: #0284c7;
     color: #fff;
@@ -5151,9 +5187,9 @@
   .baSummaryBox{
     background: #fff;
     border: 1px solid var(--ba-border);
-    border-radius: 10px;
+    border-radius: var(--ba-radius-md);
     padding: 18px;
-    box-shadow: 0 10px 24px rgba(0,0,0,.05);
+    box-shadow: none;
   }
   .baSummaryBox__flight{
     display: flex;
@@ -5165,7 +5201,7 @@
     flex: 1;
   }
   .baSummaryBox__flightLabel{
-    font-weight: 700;
+    font-weight: 600;
     font-size: 14px;
     margin-bottom: 4px;
     display: flex;
@@ -5177,8 +5213,9 @@
     color: currentColor;
   }
   .baSummaryBox__flightRoute{
-    font-weight: 800;
+    font-weight: 600;
     font-size: 14px;
+    letter-spacing: -0.02em;
     line-height: 1.4;
     margin-bottom: 2px;
   }
@@ -5196,7 +5233,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    font-weight: 700;
+    font-weight: 600;
     opacity: 0.65;
     margin-bottom: 2px;
   }
@@ -5217,12 +5254,12 @@
     align-items: start;
   }
   .baSummaryBox__itemLabel{
-    font-weight: 700;
+    font-weight: 500;
     font-size: 14px;
     grid-column: 1;
   }
   .baSummaryBox__itemValue{
-    font-weight: 900;
+    font-weight: 600;
     font-size: 16px;
     text-align: right;
     grid-column: 2;
@@ -5245,13 +5282,14 @@
     margin-top: 8px;
   }
   .baSummaryBox__totalLabel{
-    font-weight: 900;
+    font-weight: 600;
     font-size: 16px;
     margin-bottom: 8px;
   }
   .baSummaryBox__totalValue{
-    font-weight: 1000;
+    font-weight: 700;
     font-size: 28px;
+    letter-spacing: -0.03em;
     text-align: right;
     line-height: 1.1;
   }
@@ -5296,8 +5334,9 @@
     margin-bottom: 16px;
   }
   .baPopup__title{
-    font-weight: 900;
+    font-weight: 600;
     font-size: 20px;
+    letter-spacing: -0.03em;
   }
   .baPopup__close{
     background: none;
@@ -5403,9 +5442,10 @@
   .baTcsModal__headerText{ flex: 1; min-width: 0; }
   .baTcsModal__title{
     margin: 0 0 4px 0;
-    font-weight: 900;
+    font-weight: 600;
     font-size: 20px;
     line-height: 1.3;
+    letter-spacing: -0.03em;
   }
   .baTcsModal__subheader{
     margin: 0;
@@ -5462,9 +5502,10 @@
     padding: 16px 20px;
     text-align: left;
     font-size: 16px;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.4;
-    color: #111;
+    color: var(--ba-text);
+    letter-spacing: -0.02em;
     background: #fff;
     border: none;
     cursor: pointer;
@@ -5790,7 +5831,7 @@
             <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
               <div class="baPayerEmailWrap" style="margin-bottom:12px">
                 <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:16.8px">Email</label>
-                <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" class="baBoxInput" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:6px;font-size:15px;box-sizing:border-box">
+                <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" class="baBoxInput" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:8px;font-size:15px;box-sizing:border-box">
                 <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
               </div>
 
@@ -5799,11 +5840,11 @@
                   <div id="baAddressMount"></div>
                 </div>
                 <div id="baStripeElementsWrap" style="min-height:160px">
-                  <div style="font-weight:900;margin:16px 0 10px">Payment details</div>
+                  <div style="font-weight:600;letter-spacing:-0.02em;margin:16px 0 10px;color:#111">Payment details</div>
                   <div id="baStripeMount"></div>
                 </div>
                 <button id="baStripeConfirm"
-                  style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;font-weight:900;cursor:not-allowed;opacity:.6"
+                  style="margin-top:14px;width:100%;padding:12px 16px;border-radius:8px;border:1px solid #111;background:#111;color:#fff;font-weight:600;cursor:not-allowed;opacity:.6"
                   disabled>
                   Pay now
                 </button>
