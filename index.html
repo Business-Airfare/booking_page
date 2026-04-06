@@ -4605,9 +4605,18 @@
   .baAddPaxModalPanel{ background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
   .baAddPaxModalTitle{ font-weight:800; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; }
   .baAddPaxModalSavedWrap{ padding:0 20px 14px; border-bottom:1px solid #eee; margin-bottom:4px; }
-  .baAddPaxModalSavedWrap .baLbl{ margin-bottom:6px; }
-  select.baAddPaxSavedSelect{ width:100%; max-width:100%; box-sizing:border-box; cursor:pointer; appearance:auto; min-height:44px; }
-  .baAddPaxSavedHint{ margin:8px 0 0; font-size:13px; opacity:.75; line-height:1.35; }
+  .baAddPaxModalSavedWrap .baLbl{ margin-bottom:8px; }
+  .baAddPaxChips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .baAddPaxChip{
+    display:inline-flex; align-items:center; padding:8px 14px; border-radius:999px;
+    border:2px solid #ddd; background:#fff; color:#111; font:inherit; font-weight:600; font-size:14px;
+    cursor:pointer; transition:background .15s,border-color .15s,box-shadow .15s,color .15s;
+    max-width:100%; text-align:left; line-height:1.25;
+  }
+  .baAddPaxChip:hover{ border-color:#bbb; background:#fafafa; }
+  .baAddPaxChip.is-selected{ border-color:#111; background:#111; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .baAddPaxChip:focus-visible{ outline:2px solid var(--ba-accent,#d1ad54); outline-offset:2px; }
+  .baAddPaxSavedHint{ margin:10px 0 0; font-size:13px; opacity:.75; line-height:1.35; }
   .baAddPaxModalCardWrap{ padding:0 20px; }
   .baAddPaxModalCardWrap .baPaxCard__head .baPaxHeadRight{ display:none; }
   .baAddPaxModalFooter{ padding:20px; display:flex; gap:12px; justify-content:flex-end; border-top:1px solid #e9e9e9; }
@@ -6067,6 +6076,43 @@
     wirePassengerAutosave(data.public_id, paxCount);
 
     // ---------- Add passenger: modal flow (user fills in modal, then Save calls backend) ----------
+    function buildAddPassengerPayloadFromSuggestion(s, primaryPax){
+      const pEmail = String(primaryPax?.email || "").trim();
+      const pPhone = String(primaryPax?.phone || "").trim();
+      const dobRaw = isoDob(s.date_of_birth);
+      const g = normalizeGender(s.gender);
+      const phoneFull = normalizePhone(pPhone);
+      return {
+        first_name: String(s.first_name || "").trim() || null,
+        middle_name: (s.middle_name && String(s.middle_name).trim()) ? String(s.middle_name).trim() : null,
+        last_name: String(s.last_name || "").trim() || null,
+        date_of_birth: (dobRaw && /^\d{4}-\d{2}-\d{2}$/.test(dobRaw)) ? dobRaw : null,
+        gender: g === "male" ? "male" : g === "female" ? "female" : null,
+        email: pEmail || null,
+        phone: phoneFull || null,
+      };
+    }
+
+    function validateSuggestionForAdd(s, primaryPax){
+      const p = buildAddPassengerPayloadFromSuggestion(s, primaryPax);
+      if (!p.first_name || !p.last_name) {
+        return { ok: false, message: "Each saved traveler needs a first and last name." };
+      }
+      if (!p.date_of_birth || !isValidDobISO(p.date_of_birth)) {
+        return { ok: false, message: "Each saved traveler needs a valid date of birth." };
+      }
+      if (p.gender !== "male" && p.gender !== "female") {
+        return { ok: false, message: "Each saved traveler needs gender (male or female), or add them using the form below." };
+      }
+      if (!isValidEmail(p.email || "")) {
+        return { ok: false, message: "A valid email on the primary passenger is required." };
+      }
+      if (!isValidPhone(normalizePhone(p.phone || ""))) {
+        return { ok: false, message: "A valid phone on the primary passenger is required." };
+      }
+      return { ok: true, payload: p };
+    }
+
     function getModalPassengerPayload(){
       const box = root.querySelector(".baPaxCard[data-pax-card=\"modal\"]");
       if (!box) return null;
@@ -6127,16 +6173,14 @@
         <div class="baAddPaxModalPanel">
           <div class="baAddPaxModalTitle">Add passenger</div>
           <div class="baAddPaxModalSavedWrap" id="baAddPaxModalSavedWrap" style="display:none">
-            <label class="baLbl" for="baAddPaxSavedSelect">Saved travelers</label>
-            <select id="baAddPaxSavedSelect" class="baBoxInput baAddPaxSavedSelect" aria-describedby="baAddPaxSavedHint">
-              <option value="">Enter details manually…</option>
-            </select>
-            <p class="baAddPaxSavedHint" id="baAddPaxSavedHint">Select someone already on your booking profile, or fill the form below.</p>
+            <div class="baLbl" id="baAddPaxSavedLabel">Saved travelers</div>
+            <div class="baAddPaxChips" id="baAddPaxChips" role="group" aria-labelledby="baAddPaxSavedLabel"></div>
+            <p class="baAddPaxSavedHint" id="baAddPaxSavedHint">Tap one or more to select, then Save. Or leave none selected and fill the form below for someone new.</p>
           </div>
           <div class="baAddPaxModalCardWrap">${cardHtml}</div>
           <div class="baAddPaxModalLoading" id="baAddPaxModalLoading" aria-live="polite">
             <div class="baAddPaxModalSpinner"></div>
-            <span>Adding passenger</span>
+            <span id="baAddPaxModalLoadingText">Adding passenger</span>
           </div>
           <div class="baAddPaxModalFooter">
             <button type="button" class="baAddPaxModalCancel">Cancel</button>
@@ -6146,70 +6190,29 @@
       `;
       root.appendChild(overlay);
 
-      function applyModalPassengerFromObject(pax){
-        const box = overlay.querySelector(".baPaxCard[data-pax-card=\"modal\"]");
-        if (!box) return;
-        function setVal(field, val){
-          const el = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"" + field + "\"]");
-          if (el) el.value = val ? String(val) : "";
-        }
-        setVal("first_name", pax.first_name);
-        setVal("middle_name", pax.middle_name);
-        setVal("last_name", pax.last_name);
-        setVal("email", pax.email);
-        setVal("phone", pax.phone);
-        const hiddenIso = box.querySelector(".baDobIsoHidden[data-pax=\"modal\"]");
-        const dobVis = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
-        const iso = pax.dobISO || "";
-        if (hiddenIso) hiddenIso.value = iso;
-        if (dobVis) dobVis.value = (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) ? formatDobDisplay(iso) : "";
-        const male = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"male\"]");
-        const female = box.querySelector("input[type=\"radio\"][data-pax=\"modal\"][data-field=\"gender\"][value=\"female\"]");
-        if (male) male.checked = pax.gender === "male";
-        if (female) female.checked = pax.gender === "female";
-        if (male && female && pax.gender !== "male" && pax.gender !== "female") {
-          male.checked = false;
-          female.checked = false;
-        }
-      }
-
       const savedSuggestions = getFilteredSuggestedPassengersForAddModal(data);
       const savedWrap = overlay.querySelector("#baAddPaxModalSavedWrap");
-      const savedSel = overlay.querySelector("#baAddPaxSavedSelect");
-      if (savedWrap && savedSel && savedSuggestions.length > 0) {
+      const chipsHost = overlay.querySelector("#baAddPaxChips");
+      if (savedWrap && chipsHost && savedSuggestions.length > 0) {
         savedWrap.style.display = "block";
         for (let i = 0; i < savedSuggestions.length; i++){
           const s = savedSuggestions[i];
-          const opt = document.createElement("option");
-          opt.value = String(i);
           const labelParts = [s.first_name, s.middle_name, s.last_name].filter(function(x){ return x && String(x).trim(); });
-          let optLabel = labelParts.join(" ");
+          let chipLabel = labelParts.join(" ");
           const dobIso = isoDob(s.date_of_birth);
-          if (dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso)) optLabel += " · DOB " + formatDobDisplay(dobIso);
-          opt.textContent = optLabel;
-          savedSel.appendChild(opt);
-        }
-        savedSel.addEventListener("change", function(){
-          const v = savedSel.value;
-          if (!v) {
-            applyModalPassengerFromObject(emptyModalPax);
-            validatePassengerBlock("modal");
-            return;
-          }
-          const s = savedSuggestions[Number(v)];
-          if (!s) return;
-          const dobRaw = isoDob(s.date_of_birth);
-          applyModalPassengerFromObject({
-            first_name: s.first_name || "",
-            middle_name: s.middle_name || "",
-            last_name: s.last_name || "",
-            dobISO: (dobRaw && /^\d{4}-\d{2}-\d{2}$/.test(dobRaw)) ? dobRaw : "",
-            gender: normalizeGender(s.gender),
-            email: pax1.email || "",
-            phone: pax1.phone || "",
+          if (dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso)) chipLabel += " · " + formatDobDisplay(dobIso);
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "baAddPaxChip";
+          btn.setAttribute("data-saved-index", String(i));
+          btn.setAttribute("aria-pressed", "false");
+          btn.textContent = chipLabel;
+          btn.addEventListener("click", function(){
+            const on = btn.classList.toggle("is-selected");
+            btn.setAttribute("aria-pressed", on ? "true" : "false");
           });
-          validatePassengerBlock("modal");
-        });
+          chipsHost.appendChild(btn);
+        }
       }
 
       const panel = overlay.querySelector(".baAddPaxModalPanel");
@@ -6221,14 +6224,47 @@
       wireModalDatePicker();
 
       overlay.querySelector(".baAddPaxModalSave").addEventListener("click", async () => {
-        const ok = validatePassengerBlock("modal");
-        if (!ok) {
-          showPaxToast("Please fix highlighted passenger fields first.", false);
-          const firstBad = overlay.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
-          if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ behavior: "smooth", block: "center" });
-          return;
+        const selectedChips = overlay.querySelectorAll(".baAddPaxChip.is-selected");
+        const useSavedTravelers = selectedChips.length > 0;
+
+        let payloads = [];
+        if (useSavedTravelers) {
+          const idxs = Array.from(selectedChips).map(function(el){
+            return Number(el.getAttribute("data-saved-index"));
+          }).filter(function(n){ return Number.isInteger(n) && n >= 0; });
+          idxs.sort(function(a, b){ return a - b; });
+          for (let j = 0; j < idxs.length; j++){
+            const s = savedSuggestions[idxs[j]];
+            if (!s) continue;
+            const v = validateSuggestionForAdd(s, pax1);
+            if (!v.ok) {
+              showPaxToast(v.message, false);
+              const badChip = overlay.querySelector('.baAddPaxChip[data-saved-index="' + idxs[j] + '"]');
+              if (badChip && badChip.scrollIntoView) badChip.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+            payloads.push(v.payload);
+          }
+          if (!payloads.length) {
+            showPaxToast("Choose at least one saved traveler, or use the form below.", false);
+            return;
+          }
+        } else {
+          const ok = validatePassengerBlock("modal");
+          if (!ok) {
+            showPaxToast("Please fix highlighted passenger fields first.", false);
+            const firstBad = overlay.querySelector(".baBoxInput.is-invalid, .baPaxGender.is-invalid");
+            if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+          const one = getModalPassengerPayload();
+          if (!one) {
+            showPaxToast("Could not read passenger details.", false);
+            return;
+          }
+          payloads = [one];
         }
-        const payload = getModalPassengerPayload();
+
         const payBtn = document.getElementById("baPayBtn");
         const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
         const saveBtn = overlay.querySelector(".baAddPaxModalSave");
@@ -6239,33 +6275,41 @@
         if (saveBtn) saveBtn.disabled = true;
         if (addPassengerBtn) addPassengerBtn.disabled = true;
         const loadingEl = overlay.querySelector("#baAddPaxModalLoading");
+        const loadingTextEl = overlay.querySelector("#baAddPaxModalLoadingText");
+        if (loadingTextEl) loadingTextEl.textContent = payloads.length > 1 ? "Adding passengers" : "Adding passenger";
         if (loadingEl) loadingEl.style.display = "flex";
 
         try {
-          const res = await fetch(ADD_PASSENGER, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_id: publicId, ...payload }),
-          });
-          const result = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            const msg = result?.error || "Could not add passenger. Please try again.";
-            showPaxToast(msg, false);
-            if (loadingEl) loadingEl.style.display = "none";
-            payBtn.disabled = false;
-            if (btnTitle) btnTitle.textContent = "BOOK";
-            if (saveBtn) saveBtn.disabled = false;
-            if (addPassengerBtn) addPassengerBtn.disabled = false;
-            return;
+          let lastResult = null;
+          for (let k = 0; k < payloads.length; k++){
+            const res = await fetch(ADD_PASSENGER, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ public_id: publicId, ...payloads[k] }),
+            });
+            lastResult = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              const msg = lastResult?.error || "Could not add passenger. Please try again.";
+              showPaxToast(msg, false);
+              if (loadingEl) loadingEl.style.display = "none";
+              payBtn.disabled = false;
+              if (btnTitle) btnTitle.textContent = "BOOK";
+              if (saveBtn) saveBtn.disabled = false;
+              if (addPassengerBtn) addPassengerBtn.disabled = false;
+              return;
+            }
           }
           if (loadingEl) loadingEl.style.display = "none";
           closeAddPaxModal();
+          const result = lastResult;
           const perPaxEl = document.getElementById("baStickyPerPax");
-          if (perPaxEl && result.passenger_count && result.quote) {
+          if (perPaxEl && result && result.passenger_count && result.quote) {
             const newPerPax = Math.round((Number(result.quote.ticket) + Number(result.quote.service)) / result.passenger_count);
             perPaxEl.textContent = fmtMoney(newPerPax);
           }
-          window.__baExpandPassengerIndex = result.passenger_count - 1;
+          if (result && typeof result.passenger_count === "number") {
+            window.__baExpandPassengerIndex = result.passenger_count - 1;
+          }
           const sessionRes = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
           const fresh = await sessionRes.json().catch(() => ({}));
           if (sessionRes.ok && fresh) renderSession(fresh);
@@ -6276,8 +6320,8 @@
           }
         } catch (e) {
           showPaxToast("Could not add passenger. Please try again.", false);
-          const loadingEl = overlay.querySelector("#baAddPaxModalLoading");
-          if (loadingEl) loadingEl.style.display = "none";
+          const loadingEl2 = overlay.querySelector("#baAddPaxModalLoading");
+          if (loadingEl2) loadingEl2.style.display = "none";
           payBtn.disabled = false;
           if (btnTitle) btnTitle.textContent = "BOOK";
           if (saveBtn) saveBtn.disabled = false;
