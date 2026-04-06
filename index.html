@@ -6040,6 +6040,7 @@
       const box = root.querySelector(".baPaxCard[data-pax-card=\"modal\"]");
       if (!box) return null;
       const first = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"first_name\"]");
+      const middle = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"middle_name\"]");
       const last = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"last_name\"]");
       const dob = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"date_of_birth\"]");
       const email = box.querySelector(".baBoxInput[data-pax=\"modal\"][data-field=\"email\"]");
@@ -6052,6 +6053,9 @@
       const phoneFull = normalizePhone(phoneVal);
       return {
         first_name: (first && first.value) ? String(first.value).trim() : null,
+        middle_name: (middle && middle.value && String(middle.value).trim())
+          ? String(middle.value).trim()
+          : null,
         last_name: (last && last.value) ? String(last.value).trim() : null,
         date_of_birth: dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso) ? dobIso : null,
         gender: (female && female.checked) ? "female" : (male && male.checked) ? "male" : null,
