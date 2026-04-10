@@ -1006,7 +1006,7 @@
                     <div class="baAir__meta">
                       <span class="baAir__line">
                         <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
-                        <span class="baAir__sep">|</span>
+                        <span class="baAir__sep" aria-hidden="true">·</span>
                       </span>
                       <span class="baCabinBadge">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
                     </div>
@@ -1152,28 +1152,40 @@
     return String(s || "").trim();
   }
 
-  function setConfirmEnabled(enabled){
-    const confirmBtn = document.getElementById("baStripeConfirm");
-    const msg = document.getElementById("baStripeMsg");
-    if (!confirmBtn) return;
-    confirmBtn.disabled = !enabled;
-    confirmBtn.style.opacity = enabled ? "1" : ".6";
-    confirmBtn.style.cursor = enabled ? "pointer" : "not-allowed";
-    // Use pointer-events to truly prevent clicks when disabled
-    confirmBtn.style.pointerEvents = enabled ? "auto" : "none";
-    if (!enabled && msg && !msg.textContent) {
-      msg.textContent = "Please enter billing details to continue.";
+  /** Cents the guest is choosing to tip (0 if none / no tip). Preset reads data-amount; custom reads the amount field when the custom chip is active. */
+  function getTipChargeCentsFromDOM(){
+    const presetActive = document.querySelector(".baTipBtn.is-active[data-mode=\"preset\"]");
+    if (presetActive) {
+      return Math.max(0, Math.round(Number(presetActive.getAttribute("data-amount") || 0)));
     }
+    const customActive = document.querySelector(".baTipBtn.is-active[data-mode=\"custom\"]");
+    if (customActive) {
+      const input = document.getElementById("baTipCustom");
+      if (input && String(input.value).trim() !== "") {
+        const dollars = Number(input.value);
+        if (Number.isFinite(dollars) && dollars > 0) return Math.round(dollars * 100);
+      }
+      return 0;
+    }
+    return 0;
   }
 
-  function validateBillingUI(){
-    // Validate payer email (required for receipt)
+  function tipAgreeToggleIsOn(el){
+    return !!(el && el.getAttribute("aria-checked") === "true");
+  }
+
+  function setTipAgreeToggleDom(el, on){
+    if (!el) return;
+    el.setAttribute("aria-checked", on ? "true" : "false");
+    el.setAttribute("data-state", on ? "checked" : "unchecked");
+  }
+
+  function computeBillingValidationState(){
     const payerEmailInput = document.getElementById("baPayerEmail");
     const payerEmailValue = payerEmailInput ? payerEmailInput.value.trim().toLowerCase() : "";
     payerEmail = payerEmailValue;
     const payerEmailOk = !!(payerEmail && /^\S+@\S+\.\S+$/.test(payerEmail));
-    
-    // Show/hide error for payer email
+
     const payerEmailErr = document.querySelector(".baPayerEmailErr");
     if (payerEmailInput && payerEmailErr) {
       if (payerEmailInput.value && !payerEmailOk) {
@@ -1181,41 +1193,91 @@
         payerEmailInput.style.borderColor = "#d92d20";
       } else {
         payerEmailErr.style.display = "none";
-        payerEmailInput.style.borderColor = payerEmailOk ? "#e7e7e7" : "#e7e7e7";
+        payerEmailInput.style.borderColor = "#e7e7e7";
       }
     }
-    
+
     const addrOk = !!billingAddressComplete;
-    
-    // Check terms and conditions checkbox - ALWAYS required
+
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     const termsOk = termsCheckbox ? termsCheckbox.checked : false;
-    
-    // Check tips agreement checkbox - required if a tip is selected
-    // Check if any tip button is active (has tip selected)
+
     const tipAgreeCheckbox = document.getElementById("baTipAgree");
-    const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
-    const hasTipSelected = tipBtns.length > 0;
-    const tipsOk = !hasTipSelected || (tipAgreeCheckbox ? tipAgreeCheckbox.checked : false);
-    
-    // Check if tip save failed - block payment if there's a tip save error
-    // Only block if tip is selected (hasTipSelected), not if tip is zero
-    const tipSaveOk = !hasTipSelected || !tipSaveError;
-    
-    // Acceptance must be completed before payment can proceed
-    // Note: acceptanceCompleted is set by updateTermsAgreementUI/updateTipAgreementUI
+    const tipCentsChosen = getTipChargeCentsFromDOM();
+    const tipMeaningful = tipCentsChosen > 0;
+    const tipsOk = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
+
+    const tipSaveOk = !tipMeaningful || !tipSaveError;
+
     const acceptanceOk = acceptanceCompleted;
-    
-    const result = payerEmailOk && addrOk && termsOk && tipsOk && tipSaveOk && acceptanceOk;
+
+    const coreOk = payerEmailOk && addrOk && termsOk && tipSaveOk;
+    const fullyOk = coreOk && tipsOk && acceptanceOk;
+    const tipAckBlocking = tipMeaningful && !tipsOk;
+
+    return {
+      payerEmailOk,
+      addrOk,
+      termsOk,
+      hasTipSelected: tipMeaningful,
+      tipsOk,
+      tipSaveOk,
+      acceptanceOk,
+      coreOk,
+      fullyOk,
+      tipAckBlocking
+    };
+  }
+
+  function showTipAgreementRequiredUI(){
+    const tipAgreeRow = document.querySelector(".baTipAgreeRow");
+    if (tipAgreeRow) {
+      tipAgreeRow.classList.add("is-warn");
+      try {
+        tipAgreeRow.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch (_) {
+        tipAgreeRow.scrollIntoView({ block: "center" });
+      }
+    }
+    const tipAgree = document.getElementById("baTipAgree");
+    if (tipAgree) {
+      try {
+        tipAgree.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          tipAgree.focus();
+        } catch (_) {}
+      }
+    }
+  }
+
+  function setConfirmEnabled(){
+    const s = computeBillingValidationState();
+    const interactable = s.coreOk && (s.fullyOk || s.tipAckBlocking);
+    const confirmBtn = document.getElementById("baStripeConfirm");
+    const msg = document.getElementById("baStripeMsg");
+    if (!confirmBtn) return;
+    confirmBtn.disabled = !interactable;
+    confirmBtn.style.opacity = interactable ? "1" : ".6";
+    confirmBtn.style.cursor = interactable ? "pointer" : "not-allowed";
+    confirmBtn.style.pointerEvents = interactable ? "auto" : "none";
+    if (!interactable && msg && !msg.textContent) {
+      msg.textContent = "Please enter billing details to continue.";
+    }
+  }
+
+  function validateBillingUI(){
+    const s = computeBillingValidationState();
+    const result = s.fullyOk;
 
     if (DEBUG_BOOK_FLOW) {
       console.log("[BOOK_FLOW] validateBillingUI result:", {
         result,
-        payerEmailOk,
-        addrOk,
-        termsOk,
-        tipsOk,
-        acceptanceOk,
+        payerEmailOk: s.payerEmailOk,
+        addrOk: s.addrOk,
+        termsOk: s.termsOk,
+        tipsOk: s.tipsOk,
+        acceptanceOk: s.acceptanceOk,
         acceptanceCompleted,
         payerEmail: payerEmail ? (payerEmail.substring(0, 3) + "***") : null,
         billingAddressComplete,
@@ -1369,10 +1431,13 @@
 
     addressElement.on("change", (event) => {
       billingAddressComplete = !!(event && event.complete);
-      const ok = validateBillingUI();
+      const s = computeBillingValidationState();
       const m = document.getElementById("baStripeMsg");
-      if (m) m.textContent = ok ? "" : "Please enter billing details to continue.";
-      setConfirmEnabled(ok);
+      if (m) {
+        if (s.fullyOk) m.textContent = "";
+        else if (!s.coreOk) m.textContent = "Please enter billing details to continue.";
+      }
+      setConfirmEnabled();
     });
     
     // Restore preserved address values after mounting
@@ -1574,7 +1639,7 @@
       });
     }
 
-    setConfirmEnabled(validateBillingUI());
+    setConfirmEnabled();
   }
 
   async function confirmStripePayment(){
@@ -1586,11 +1651,10 @@
       throw new Error("Please accept the Terms and Conditions to proceed with payment.");
     }
     
-    // Check tips agreement if tip is selected
+    // Check tips agreement if a positive tip is selected
     const tipAgreeCheckbox = document.getElementById("baTipAgree");
-    const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
-    const hasTipSelected = tipBtns.length > 0;
-    if (hasTipSelected && (!tipAgreeCheckbox || !tipAgreeCheckbox.checked)) {
+    const tipMeaningful = getTipChargeCentsFromDOM() > 0;
+    if (tipMeaningful && !tipAgreeToggleIsOn(tipAgreeCheckbox)) {
       throw new Error("Please accept the tip agreement to proceed with payment.");
     }
 
@@ -1828,44 +1892,43 @@
 
     root.innerHTML = `
       <style>
-        .baPaidConf .baCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
-        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:22.77px 22px 17.71px 25.3px; border-bottom:1px solid #efefef; }
+        .baPaidConf .baCard{ --ba-flight-cols:minmax(0,1fr) minmax(132px,200px); --ba-flight-xgap:18px; --ba-flight-ygap:14px; --ba-timeline-col:36px; --ba-flight-main-gap:0px; --ba-time-rail-offset:calc(var(--ba-timeline-col) + var(--ba-flight-main-gap)); --ba-segment-rule:1px solid rgba(0,0,0,.06); background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
+        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:20px 22px 16px 25.3px; border-bottom:1px solid rgba(0,0,0,.07); }
         .baPaidConf .baCard__route{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:22px; letter-spacing:-0.03em; line-height:1.15; color:#111; }
         .baPaidConf .baArr{ margin:0 10px; }
-        .baPaidConf .baCard__date{ margin-top:8px; font-size:15px; opacity:.75; font-weight:500; }
-        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:500; white-space:nowrap; padding-top:10.12px; margin-right:22px; }
-        .baPaidConf .baFlights{ padding:10.12px 0; }
+        .baPaidConf .baCard__date{ margin-top:6px; font-size:14px; opacity:.72; font-weight:500; letter-spacing:.01em; }
+        .baPaidConf .baCard__tt{ font-size:12px; opacity:.68; font-weight:500; white-space:nowrap; padding-top:8px; margin-right:22px; letter-spacing:.02em; }
+        .baPaidConf .baFlights{ padding:8px 0 6px; }
         .baPaidConf .baFlightBlock{ padding:0 22px 0 25.3px; }
-        .baPaidConf .baFlight{ display:grid; grid-template-columns:1fr 250px; gap:16px; padding:20.24px 0; border-top:1px solid #f1f1f1; }
+        .baPaidConf .baFlight{ display:grid; grid-template-columns:var(--ba-flight-cols); gap:var(--ba-flight-ygap) var(--ba-flight-xgap); align-items:start; padding:16px 0; border-top:var(--ba-segment-rule); }
         .baPaidConf .baFlightBlock:first-child .baFlight{ border-top:0; }
-        .baPaidConf .baFlight__main{ display:grid; grid-template-columns:36px 1fr; column-gap:14px; row-gap:0; align-items:start; min-width:0; }
-        .baPaidConf .baTLSeg{ width:36px; }
-        .baPaidConf .baTLSeg__ring{ border-color:#171717; }
-        .baPaidConf .baTLSeg__stem{ background:#171717; }
+        .baPaidConf .baFlight__main{ display:grid; grid-template-columns:var(--ba-timeline-col) minmax(0,1fr); column-gap:var(--ba-flight-main-gap); row-gap:0; align-items:start; min-width:0; }
+        .baPaidConf .baTLSeg{ width:var(--ba-timeline-col); }
+        .baPaidConf .baTLSeg__ring{ border-color:#c4c4c4; }
+        .baPaidConf .baTLSeg__stem{ background:rgba(0,0,0,.14); }
         .baPaidConf .baFlight__main > .baTLSeg--mid,
         .baPaidConf .baFlight__main > .baTLSeg--bot{ margin-top:0; }
-        .baPaidConf .baFlight__main > .baFlight__row--meta{ margin-top:0; padding-top:14px; box-sizing:border-box; }
-        .baPaidConf .baFlight__main > .baFlight__row--arr{ margin-top:0; padding-top:16px; box-sizing:border-box; }
+        .baPaidConf .baFlight__main > .baFlight__row--meta{ margin-top:0; padding-top:10px; box-sizing:border-box; }
+        .baPaidConf .baFlight__main > .baFlight__row--arr{ margin-top:0; padding-top:12px; box-sizing:border-box; }
         @media (min-width:1280px){
-          .baPaidConf .baFlight__main{ grid-template-columns:48px 1fr; }
-          .baPaidConf .baTLSeg{ width:48px; }
+          .baPaidConf .baCard{ --ba-timeline-col:48px; }
         }
-        .baPaidConf .baRow{ display:grid; grid-template-columns:150px 1fr; gap:10px; align-items:baseline; min-width:0; }
-        .baPaidConf .baTimeLine{ display:flex; align-items:baseline; gap:10px; min-width:0; }
-        .baPaidConf .baTime{ font-size:16px; font-weight:600; letter-spacing:-0.02em; line-height:1.1; white-space:nowrap; }
-        .baPaidConf .baMD{ font-size:13px; font-weight:500; opacity:.65; white-space:nowrap; }
-        .baPaidConf .baLocLine{ font-size:15px; font-weight:600; line-height:1.2; min-width:0; }
-        .baPaidConf .baRow--meta{ margin-top:0; grid-template-columns:1fr; gap:6px; }
-        .baPaidConf .baMetaRow{ font-size:12px; font-weight:500; opacity:.68; line-height:1.35; }
-        .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-width:0; padding-top:6px; }
-        .baPaidConf .baAir__logo{ width:90px; height:28px; object-fit:contain; }
-        .baPaidConf .baAir__meta{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:500; white-space:nowrap; }
-        .baPaidConf .baAir__line{ display:inline-flex; align-items:center; opacity:.75; }
-        .baPaidConf .baAir__fn{ font-weight:600; opacity:.9; }
-        .baPaidConf .baAir__sep{ margin:0 8px; opacity:.5; }
-        .baPaidConf .baAir__op{ font-size:13px; opacity:.6; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:10px 0; margin:0; }
-        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:14px; box-shadow:none; font-size:1em; }
+        .baPaidConf .baRow{ display:grid; grid-template-columns:minmax(6.5rem,7.75rem) minmax(0,1fr); gap:12px 7px; align-items:baseline; min-width:0; }
+        .baPaidConf .baTimeLine{ display:flex; align-items:baseline; gap:8px; min-width:0; flex-wrap:wrap; }
+        .baPaidConf .baTime{ font-size:16px; font-weight:500; letter-spacing:-0.025em; line-height:1.1; white-space:nowrap; font-variant-numeric:tabular-nums; color:#111; }
+        .baPaidConf .baMD{ font-size:12px; font-weight:500; opacity:.62; white-space:nowrap; letter-spacing:.02em; }
+        .baPaidConf .baLocLine{ font-size:16px; font-weight:500; line-height:1.25; min-width:0; letter-spacing:-0.02em; color:#1a1a1a; }
+        .baPaidConf .baRow--meta{ margin-top:0; grid-template-columns:1fr; gap:4px; }
+        .baPaidConf .baMetaRow{ font-size:11px; font-weight:500; opacity:.62; line-height:1.4; letter-spacing:.03em; }
+        .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:flex-end; justify-content:flex-start; gap:8px; min-width:0; padding-top:2px; padding-right:22px; align-self:start; text-align:right; }
+        .baPaidConf .baAir__logo{ width:87px; height:28px; object-fit:contain; opacity:.96; }
+        .baPaidConf .baAir__meta{ display:flex; flex-direction:row; flex-wrap:wrap; align-items:baseline; justify-content:flex-end; gap:0 5px; max-width:100%; font-size:13px; font-weight:500; line-height:1.3; }
+        .baPaidConf .baAir__line{ display:contents; }
+        .baPaidConf .baAir__fn{ font-weight:600; font-size:13px; letter-spacing:-0.02em; color:#3a3a3a; }
+        .baPaidConf .baAir__sep{ margin:0; padding:0 1px; font-weight:400; font-size:13px; color:#9a9a9a; opacity:1; user-select:none; }
+        .baPaidConf .baAir__op{ font-size:11px; opacity:.58; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; }
+        .baPaidConf .baLayRow{ display:grid; grid-template-columns:var(--ba-flight-cols); column-gap:var(--ba-flight-xgap); align-items:center; border-top:var(--ba-segment-rule); border-bottom:none; padding:7px 0; margin:0; }
+        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:14px; box-shadow:none; font-size:1em; }
         .baPaidConf .baPaidPaxCard__head{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:1.25em; letter-spacing:-0.025em; padding:16px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
         .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:500; color:#4b4b4b; flex-wrap:wrap; }
         .baPaidConf .baPaidPaxSummaryName{ flex:1 1 auto; max-width:70%; font-size:1.067em; font-weight:600; padding:0; border:none; border-radius:0; background:transparent; display:flex; align-items:center; justify-content:flex-start; gap:10px; line-height:1.3; min-width:0; color:#111; text-align:left; }
@@ -1876,7 +1939,7 @@
         .baPaidConf .baPaidPaxSummaryDot{ opacity:.6; }
         .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
         .baPaidConfGreen{ text-align:center; }
-        @media (max-width:640px){ .baPaidConf .baFlight{ grid-template-columns:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
+        @media (max-width:640px){ .baPaidConf .baCard{ --ba-flight-cols:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
         @media (max-width:1000px){
           .baPaidConfTop{ font-size:2rem; }
           .baPaidConfTop .baPaidConfTitle{ font-size:2.5em; }
@@ -1893,15 +1956,17 @@
           .baPaidConf .baLocLine{ font-size:22.5px; }
           .baPaidConf .baMetaRow{ font-size:18px; }
           .baPaidConf .baAir__meta{ font-size:21px; }
+          .baPaidConf .baAir__fn{ font-size:21px; }
+          .baPaidConf .baAir__sep{ font-size:21px; }
           .baPaidConf .baAir__op{ font-size:19.5px; }
-          .baPaidConf .baLayChip__label{ font-size:17.85px; }
           .baPaidConf .baLocLine{ margin-left:45px; }
-          .baPaidConf .baLayChip__label{ font-size:11.9px; }
+          .baPaidConf .baLayChip__label{ font-size:14px; }
+          .baPaidConf .baCabinBadge{ font-size:13px; padding:5px 10px; }
         }
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
         <div class="baPaidConfTop">
-          <div class="baPaidConfGreen" style="padding:16px 18px;border-radius:12px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:60px">
+          <div class="baPaidConfGreen" style="padding:16px 18px;border-radius:8px;background:#f0fff4;border:1px solid #b7f0c2;color:#14532d;margin-bottom:60px">
             <div class="baPaidConfTitle" style="font-weight:600;font-size:2.25rem;letter-spacing:-0.035em;margin-bottom:6px;line-height:1.15">Thank You For Booking With Us.</div>
             <div class="baPaidConfSub" style="font-size:1em;font-weight:500;opacity:.92">Your tickets will be sent to your email as soon as they are booked.</div>
           </div>
@@ -2729,6 +2794,18 @@
     }
 
     const tipPresets = Array.isArray(data.tip_presets) ? data.tip_presets : [];
+    const TIP_CHIP_AMOUNTS_CENTS = [5000, 7500, 10000, 12500];
+    const tipChipPresets = TIP_CHIP_AMOUNTS_CENTS.map(cents =>
+      tipPresets.find(p => Math.round(Number(p.amount) || 0) === cents)
+    ).filter(Boolean);
+
+    function fmtTipChipDollars(cents){
+      const n = Math.round(Number(cents) || 0) / 100;
+      if (!Number.isFinite(n)) return "$0";
+      if (Math.abs(n - Math.round(n)) < 1e-9) return "$" + String(Math.round(n));
+      return "$" + n.toFixed(2);
+    }
+
     const journeys = Array.isArray(data.journeys) ? data.journeys : [];
 
     const isExpired =
@@ -2738,6 +2815,35 @@
 
     const selectionLocked = !!(data.ui && data.ui.selection_locked);
     let bookButtonClicked = false; // true after user clicks Book (disables Add passenger)
+
+    const tipChipNoneHtml = `
+                    <button type="button" class="baTipBtn baTipBtn--chip baTipBtn--chipNone"
+                      data-mode="none"
+                      aria-label="No tip"
+                      ${selectionLocked || isExpired ? "disabled" : ""}>
+                      <span class="baTipBtn__chipText">No tip</span>
+                    </button>`;
+
+    const tipPresetChipsHtml = tipChipPresets.map(p => {
+      const cents = Math.round(Number(p.amount) || 0);
+      return `
+                    <button type="button" class="baTipBtn baTipBtn--chip"
+                      data-mode="preset"
+                      data-label="${escapeHtml(p.label)}"
+                      data-amount="${cents}"
+                      aria-label="Tip ${escapeHtml(fmtTipChipDollars(cents))}"
+                      ${selectionLocked || isExpired ? "disabled" : ""}>
+                      <span class="baTipBtn__chipText">${escapeHtml(fmtTipChipDollars(cents))}</span>
+                    </button>`;
+    }).join("");
+
+    const tipChipRowHtml = tipChipNoneHtml + tipPresetChipsHtml + `
+                    <button type="button" class="baTipBtn baTipBtn--chip baTipBtn--chipCustom"
+                      data-mode="custom"
+                      aria-label="Enter a custom tip amount"
+                      ${selectionLocked || isExpired ? "disabled" : ""}>
+                      <span class="baTipBtn__chipText">Custom</span>
+                    </button>`;
 
     // Store agent data (available for future UI display)
     const agentName = data.agent_name ? String(data.agent_name) : null;
@@ -2839,6 +2945,29 @@
     // Only show airline name if we have a full name (not just carrier code/initials)
     const stickyAirlineName = (airlineNameFromMap && airlineNameFromMap !== firstCarrier) ? airlineNameFromMap : "";
 
+    function syncTipCustomPanelVisibility(){
+      const panel = document.getElementById("baTipCustomPanel");
+      if (panel) panel.hidden = tipMode !== "custom";
+    }
+
+    function focusBaTipCustomInput(){
+      const tipCustomEl = document.getElementById("baTipCustom");
+      if (!tipCustomEl || tipCustomEl.disabled) return;
+      try {
+        tipCustomEl.focus({ preventScroll: true });
+        if (typeof tipCustomEl.select === "function") tipCustomEl.select();
+      } catch (_) {}
+    }
+
+    /** Immediate focus after panel un-hides; extra rAF passes for layout without waiting on network/Stripe. */
+    function focusBaTipCustomInputSoon(){
+      focusBaTipCustomInput();
+      requestAnimationFrame(() => {
+        focusBaTipCustomInput();
+        requestAnimationFrame(focusBaTipCustomInput);
+      });
+    }
+
     function applyTipHighlights(){
       const btns = Array.from(document.querySelectorAll(".baTipBtn"));
       btns.forEach(b => {
@@ -2849,8 +2978,10 @@
         let active = false;
         if (tipMode === "none" && mode === "none") active = true;
         if (tipMode === "preset" && mode === "preset" && label === tipPresetLabel && amount === tipAmount) active = true;
+        if (tipMode === "custom" && mode === "custom") active = true;
         b.classList.toggle("is-active", active);
       });
+      syncTipCustomPanelVisibility();
     }
 
     let bannerHtml = "";
@@ -3105,7 +3236,7 @@
     --ba-danger: #d92d20;
     --ba-danger-bg: rgba(217,45,32,.06);
     --ba-radius-sm: 8px;
-    --ba-radius-md: 12px;
+    --ba-radius-md: 8px;
     --ba-radius-pill: 999px;
     --ba-shadow-sticky: 0 -8px 22px rgba(0,0,0,.18);
     --ba-ring: 0 0 0 2px rgba(0,0,0,0.04);
@@ -3176,6 +3307,36 @@
     }
   }
 
+  /* Merchant notice: below Stripe card, outside #baStripeWrap; not affected by mobile Stripe zoom */
+  .baMerchantLegalFooter{
+    margin-top: 20px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 12px 4px;
+    max-width: 560px;
+    text-align: center;
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.65;
+  }
+  .baMerchantLegalFooter a{
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .baMerchantLegalFooter a:hover{
+    color: var(--ba-text);
+  }
+  .baMerchantLegalFooter__copy{
+    margin-top: 10px;
+  }
+  @media (max-width: 980px){
+    .baMerchantLegalFooter{
+      font-size: 13px;
+      padding-bottom: 8px;
+    }
+  }
+
   /* Header */
   .baHeader{
     background: #fff;
@@ -3184,28 +3345,29 @@
   .baHeaderTop{
     max-width: 1220px;
     margin: 0 auto;
-    padding: 9px 18px;
+    padding: 6px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
   }
   .baHeaderNav{
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 16px;
     flex: 1;
   }
   .baHeaderNav a{
-    color: var(--ba-text);
+    color: #6b7280;
     text-decoration: none;
-    font-weight: 500;
-    font-size: 14px;
-    letter-spacing: -0.01em;
+    font-weight: 400;
+    font-size: 12px;
+    letter-spacing: 0.01em;
     text-transform: none;
   }
   .baHeaderNav a:hover{
-    opacity: 0.7;
+    color: var(--ba-text);
+    opacity: 1;
   }
   .baHeaderRight{
     display: flex;
@@ -3317,8 +3479,8 @@
     max-width: 1220px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: 1.25fr 0.95fr;
-    gap: 18px;
+    grid-template-columns: 1.38fr 0.82fr;
+    gap: 24px;
     align-items: center;
   }
   .baHeaderProgressLeft{
@@ -3342,41 +3504,43 @@
   .baHeaderProgressSteps{
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     justify-content: flex-start;
+    opacity: 0.92;
   }
   .baProgressStep{
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
   }
   .baProgressStepCircle{
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    font-size: 13px;
+    font-weight: 600;
+    font-size: 12px;
     flex-shrink: 0;
   }
   .baProgressStepLabel{
-    font-size: 11px;
-    color: #fff;
-    font-weight: 500;
+    font-size: 10px;
+    color: rgba(255,255,255,.78);
+    font-weight: 400;
     text-align: center;
     line-height: 1.2;
     white-space: nowrap;
+    letter-spacing: 0.02em;
   }
   .baProgressStepCircle.completed{
-    background: #fff;
+    background: rgba(255,255,255,.94);
     color: #111;
   }
   .baProgressStepCircle.active{
     background: var(--ba-chrome);
-    border: 2px solid #fff;
+    border: 1px solid rgba(255,255,255,.85);
     color: #fff;
     box-sizing: border-box;
   }
@@ -3385,21 +3549,21 @@
     color: #fff;
   }
   .baProgressStepLine{
-    width: 60px;
+    width: 52px;
     height: 0;
     flex-shrink: 0;
     align-self: center;
     border: 0;
-    border-top: 2px solid rgba(255,255,255,.35);
+    border-top: 1px solid rgba(255,255,255,.22);
     background: transparent;
     margin-top: 0;
   }
   .baProgressStepLine.completed{
-    border-top-color: #fff;
+    border-top-color: rgba(255,255,255,.52);
     background: transparent;
   }
   @media (max-width: 980px){
-    .baHeaderTop{ padding: 9px 14px; justify-content: space-between; gap: 12px; }
+    .baHeaderTop{ padding: 6px 14px; justify-content: space-between; gap: 10px; }
     .baHeaderProgress{ padding: 16px 18px; }
     .baHeaderNav{ display: none; }
     .baHeaderMobileNav{ display: flex; align-items: center; flex-shrink: 0; order: -1; }
@@ -3432,7 +3596,7 @@
   .baPage{
     max-width: 1220px;
     margin: 0 auto;
-    padding: 26px 18px 110px;
+    padding: 26px 18px 60px;
   }
   .baGrid{
     display:grid;
@@ -3442,7 +3606,9 @@
   }
   @media (max-width: 980px){
     .baGrid{ grid-template-columns:1fr; }
-    .baPage{ padding-bottom: 140px; }
+  }
+  @media (max-width: 1000px){
+    .baPage{ padding-bottom: 80px; }
   }
 
   .baSectionTitle{
@@ -3469,6 +3635,14 @@
   .baBanner__b{ opacity: 0.9; font-weight: 500; }
 
   .baCard{
+    /* Flight leg + layover row share outer columns; time-rail offset matches .baFlight__main (timeline + gap) */
+    --ba-flight-cols: minmax(0, 1fr) minmax(132px, 200px);
+    --ba-flight-xgap: 18px;
+    --ba-flight-ygap: 14px;
+    --ba-timeline-col: 36px;
+    --ba-flight-main-gap: 0px;
+    --ba-time-rail-offset: calc(var(--ba-timeline-col) + var(--ba-flight-main-gap));
+    --ba-segment-rule: 1px solid rgba(0,0,0,.06);
     background: var(--ba-card);
     border: 1px solid var(--ba-border);
     border-radius: var(--ba-radius-md);
@@ -3482,8 +3656,13 @@
     gap: 12px;
     align-items:flex-start;
     /* top / right / bottom / left — left +15% vs right */
-    padding: 22.77px 22px 17.71px 25.3px;
-    border-bottom: 1px solid #efefef;
+    padding: 20px 22px 16px 25.3px;
+    border-bottom: 1px solid rgba(0,0,0,.07);
+  }
+  /* Align route/date with itinerary content (after timeline column), not the timeline rail */
+  .baCard__headL{
+    margin-left: var(--ba-time-rail-offset);
+    min-width: 0;
   }
   .baCard__route{
     font-family: var(--ba-font);
@@ -3491,61 +3670,62 @@
     font-size: 22px;
     letter-spacing: -0.03em;
     line-height: 1.15;
+    color: #111;
   }
   .baArr{ margin: 0 10px; }
   .baCard__date{
-    margin-top: 8px;
-    font-size: 15px;
-    opacity: 0.75;
+    margin-top: 6px;
+    font-size: 14px;
+    opacity: 0.72;
     font-weight: 500;
+    letter-spacing: 0.01em;
   }
   .baCard__tt{
-    font-size: 13px;
-    opacity: 0.75;
+    font-size: 12px;
+    opacity: 0.68;
     font-weight: 500;
     white-space:nowrap;
-    padding-top: 10.12px;
+    padding-top: 8px;
     margin-right: 22px;
+    letter-spacing: 0.02em;
   }
 
-  .baFlights{ padding: 10.12px 0; }
+  .baFlights{ padding: 8px 0 6px; }
   /* top/bottom 0; right 22px; left +15% */
   .baFlightBlock{ padding: 0 22px 0 25.3px; }
 
   .baFlight{
     display:grid;
-    grid-template-columns: 1fr 250px;
-    gap: 16px;
-    padding: 20.24px 0;
-    border-top: 1px solid #f1f1f1;
+    grid-template-columns: var(--ba-flight-cols);
+    gap: var(--ba-flight-ygap) var(--ba-flight-xgap);
+    align-items: start;
+    padding: 16px 0;
+    border-top: var(--ba-segment-rule);
   }
   .baFlightBlock:first-child .baFlight{ border-top: 0; }
 
   .baFlight__main{
     display:grid;
-    grid-template-columns: 36px 1fr;
-    column-gap: 14px;
+    grid-template-columns: var(--ba-timeline-col) minmax(0, 1fr);
+    column-gap: var(--ba-flight-main-gap);
     row-gap: 0;
     align-items: start;
     min-width:0;
   }
   @media (min-width: 1280px){
-    .baFlight__main{ grid-template-columns: 48px 1fr; }
+    .baCard{ --ba-timeline-col: 48px; }
   }
 
   /* Timeline column (Tailwind-aligned: w-9 xl:w-12, gray-1000 stems, white ring nodes) */
   .baTLSeg{
     position: relative;
     display: flex;
-    width: 36px;
+    width: var(--ba-timeline-col, 36px);
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
     align-self: stretch;
-  }
-  @media (min-width: 1280px){
-    .baTLSeg{ width: 48px; }
   }
   .baTLSeg--top{
     flex-direction: column;
@@ -3573,7 +3753,7 @@
     height: 10px;
     border-radius: 9999px;
     background: var(--ba-card, #fff);
-    border: 2px solid #171717;
+    border: 2px solid #c4c4c4;
     box-sizing: border-box;
   }
   .baTLSeg__stem{
@@ -3581,7 +3761,7 @@
     left: 50%;
     transform: translateX(-50%);
     width: 1px;
-    background: #171717;
+    background: rgba(0,0,0,.14);
     pointer-events: none;
   }
   /* Stem from bottom of ring (no extra __pad gap); pt + __pad + ring = 4+2+10 */
@@ -3609,12 +3789,12 @@
   }
   .baFlight__main > .baFlight__row--meta{
     margin-top: 0;
-    padding-top: 14px;
+    padding-top: 10px;
     box-sizing: border-box;
   }
   .baFlight__main > .baFlight__row--arr{
     margin-top: 0;
-    padding-top: 16px;
+    padding-top: 12px;
     box-sizing: border-box;
   }
   .baFlight__main .baRow--meta{
@@ -3622,159 +3802,196 @@
   }
   .baFlight__row{ min-width: 0; }
 
-  /* move cities closer to times */
+  /* Timeline / time column + airport column — clear vertical rhythm */
   .baRow{
     display:grid;
-    grid-template-columns: 150px 1fr;
-    gap: 10px;
-    align-items:baseline;
+    grid-template-columns: minmax(6.5rem, 7.75rem) minmax(0, 1fr);
+    gap: 12px 7px;
+    align-items: baseline;
     min-width:0;
   }
 
   .baTimeLine{
     display:flex;
-    align-items:baseline;
-    gap: 10px;
+    align-items: baseline;
+    gap: 8px;
     min-width:0;
+    flex-wrap: wrap;
   }
   .baTime{
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 500;
     line-height: 1.1;
     white-space:nowrap;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: #111;
   }
   .baMD{
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
-    opacity: 0.65;
+    opacity: 0.62;
     white-space:nowrap;
+    letter-spacing: 0.02em;
   }
   .baLocLine{
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.2;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.25;
     min-width:0;
     white-space:normal;
     word-wrap: break-word;
+    letter-spacing: -0.02em;
+    color: #1a1a1a;
   }
   /* flight time smaller */
   .baRow--meta{
-    margin-top: 14px;
+    margin-top: 10px;
     grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 4px;
   }
   .baMetaRow{
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
-    opacity: 0.68;
-    line-height: 1.35;
+    opacity: 0.62;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
   }
 
+  /* Airline column: logo + single composed metadata row (fn · cabin)
+     padding-right matches .baCard__tt margin-right so both use the same internal right rail */
   .baAir{
     display:flex;
     flex-direction:column;
-    align-items:center;
-    justify-content:center;
+    align-items: flex-end;
+    justify-content: flex-start;
     gap: 8px;
     min-width:0;
-    padding-top: 6px;
+    padding-top: 2px;
+    padding-right: 22px;
+    align-self: start;
+    text-align: right;
   }
 
-  /* airline logos smaller */
   .baAir__logo{
-    width: 90px;
+    width: 87px;
     height: 28px;
     object-fit: contain;
+    opacity: 0.96;
   }
   .baAir__meta{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 700;
-    white-space: nowrap;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 0 5px;
+    max-width: 100%;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
   }
   .baAir__line{
-    display: inline-flex;
-    align-items: center;
-    opacity: .75;
+    display: contents;
   }
-  .baAir__fn{ font-weight: 600; }
-  .baAir__sep{ margin: 0 8px; opacity:.5; }
-  /* Matches Tailwind: w-fit rounded-sm px-2 py-[5px] text-xs 2xl:py-1 2xl:text-sm bg-[#EEF4FB] text-[#3661EB] */
+  .baAir__fn{
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.02em;
+    color: #3a3a3a;
+  }
+  .baAir__sep{
+    margin: 0;
+    padding: 0 1px;
+    font-weight: 400;
+    font-size: 13px;
+    color: #9a9a9a;
+    opacity: 1;
+    user-select: none;
+  }
+  /* Premium cabin label — understated, ticket-like */
   .baCabinBadge{
     display: inline-block;
     width: fit-content;
     max-width: 100%;
     box-sizing: border-box;
-    border-radius: 0.125rem;
-    padding: 5px 8px;
-    font-size: 12px;
-    line-height: 1.25;
-    font-weight: 600;
-    background: #EEF4FB;
-    color: #3661EB;
-    vertical-align: middle;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    background: rgba(0,0,0,.045);
+    color: #454545;
+    border: 1px solid rgba(0,0,0,.08);
+    vertical-align: baseline;
   }
   @media (min-width: 1536px){
     .baCabinBadge{
-      padding-top: 4px;
-      padding-bottom: 4px;
-      font-size: 14px;
+      padding: 4px 9px;
+      font-size: 11px;
     }
   }
   .baAir__op{
-    font-size: 13px;
-    opacity:.6;
+    font-size: 11px;
+    opacity:.58;
     font-weight: 500;
     max-width: 100%;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
+    letter-spacing: 0.02em;
   }
 
   .baLayRow{
-    border-top: 1px solid #efefef;
-    border-bottom: 1px solid #efefef;
-    padding: 10px 0;
+    display: grid;
+    grid-template-columns: var(--ba-flight-cols);
+    column-gap: var(--ba-flight-xgap);
+    align-items: center;
+    border-top: var(--ba-segment-rule);
+    border-bottom: none;
+    padding: 7px 0;
     margin: 0;
   }
-  /* Tailwind-aligned: flex gap-1.5 rounded-sm bg-gray-50 px-2.5 py-1.5 text-gray-500 xl:px-3 xl:py-2 */
   .baLayChip{
+    grid-column: 1;
+    justify-self: start;
+    margin-left: var(--ba-time-rail-offset);
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     max-width: 100%;
     box-sizing: border-box;
-    border-radius: 0.125rem;
-    background: #f9fafb;
-    color: #6b7280;
-    padding: 6px 10px;
+    border-radius: 9999px;
+    background: rgba(0,0,0,.035);
+    color: #5c5c5c;
+    border: 1px solid rgba(0,0,0,.07);
+    padding: 5px 14px;
   }
   @media (min-width: 1280px){
-    .baLayChip{ padding: 8px 12px; }
+    .baLayChip{ padding: 6px 16px; }
   }
   .baLayChip__icon{
     flex-shrink: 0;
     width: 12px;
     height: 12px;
     color: inherit;
+    opacity: 0.85;
   }
   @media (min-width: 1536px){
-    .baLayChip__icon{ width: 14px; height: 14px; }
+    .baLayChip__icon{ width: 13px; height: 13px; }
   }
-  /* ~15% smaller than prior 11 / 12 / 14px */
   .baLayChip__label{
-    font-size: 9.35px;
+    font-size: 11px;
     font-weight: 500;
     line-height: 1.35;
+    letter-spacing: 0.02em;
   }
   @media (min-width: 640px){
-    .baLayChip__label{ font-size: 10.2px; }
+    .baLayChip__label{ font-size: 11px; }
   }
   @media (min-width: 1536px){
-    .baLayChip__label{ font-size: 11.9px; }
+    .baLayChip__label{ font-size: 12px; }
   }
 
   /* Passenger panel */
@@ -4295,39 +4512,73 @@
   }
   .baPanelTitle{ font-weight: 600; margin-bottom: 10px; letter-spacing: -0.02em; }
   .baTipSection{ margin-top: 18px; }
-  /* Tips card shell — visually aligned with Travel Care (baCareCard) */
+  /* Tips card shell — match Travel Care (baCareCard): border, radius, head/body dividers, type scale */
   .baTipBox{
     background: #fff;
-    border: 1px solid var(--ba-border);
+    color: #111;
+    border: 1px solid #e5e7eb;
     border-radius: var(--ba-radius-md);
     overflow: hidden;
     box-shadow: none;
+    font-family: var(--ba-font);
   }
   .baTipBox__header{
-    background: var(--ba-chrome);
-    padding: 16px 20px 16px 56px;
-    color: #fff;
+    padding: 18px 14px;
+    border-bottom: 1px solid #efefef;
+    box-sizing: border-box;
     text-align: left;
   }
+  @media (min-width: 1024px){
+    .baTipBox__header{ padding: 22px 18px; }
+  }
+  @media (min-width: 1536px){
+    .baTipBox__header{ padding: 26px 26px; }
+  }
   .baTipBox__titleWrap{
-    max-width: 560px;
+    max-width: none;
     margin: 0;
   }
   .baTipBox__title{
+    margin: 0;
+    font-family: var(--ba-font);
     font-weight: 600;
     font-size: 22px;
-    margin-bottom: 4px;
-    line-height: 1.2;
     letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: #111;
   }
-  .baTipBox__subtitle{
-    font-size: 13px;
-    opacity: 0.85;
-    font-weight: 500;
-    line-height: 1.4;
+  @media (max-width: 980px){
+    .baTipBox__title{
+      font-size: clamp(16px, 5.2vw, 24px);
+      line-height: 1.4;
+      padding-bottom: 2px;
+    }
+  }
+  .baTipBox__header .baTipBox__subtitle{
+    margin: 10px 0 0 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-weight: 400;
+    color: #6b7280;
+  }
+  @media (min-width: 1024px){
+    .baTipBox__header .baTipBox__subtitle{ margin-top: 12px; }
+  }
+  @media (min-width: 1280px){
+    .baTipBox__header .baTipBox__subtitle{
+      font-size: 1rem;
+      line-height: 1.75;
+    }
   }
   .baTipBox__content{
-    padding: 20px;
+    padding: 18px 14px 20px;
+    box-sizing: border-box;
+  }
+  @media (min-width: 1024px){
+    .baTipBox__content{ padding: 22px 18px 22px; }
+  }
+  @media (min-width: 1536px){
+    .baTipBox__content{ padding: 26px 26px 24px; }
   }
   .baTipBox__content .baTipCard{
     background: transparent;
@@ -4337,136 +4588,172 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 20px;
     align-items: stretch;
   }
   .baTipControls{
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
+    align-items: center;
   }
-  .baTipManualRow{
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 5px;
+  .baTipChipRow{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px 12px;
     width: 100%;
-    align-items: stretch;
+    max-width: 720px;
+    margin: 0 auto 4px;
+    box-sizing: border-box;
+  }
+  @media (min-width: 1024px){
+    .baTipChipRow{
+      flex-wrap: nowrap;
+      max-width: none;
+      gap: 8px 10px;
+      margin-bottom: 6px;
+    }
+    .baTipBtn--chip{
+      padding: 0 22px;
+    }
+  }
+  .baTipBtn--chip{
+    flex: 0 0 auto;
+    min-height: 58px;
+    height: 58px;
+    padding: 0 32px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #111;
+    font-family: var(--ba-font);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    cursor: pointer;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .baTipBtn__chipText{
+    display: block;
+    white-space: nowrap;
+  }
+  .baTipBtn--chip:hover:not(:disabled):not(.is-active){
+    background: #fafafa;
+    border-color: #d1d5db;
+  }
+  .baTipBtn--chip:focus-visible{
+    outline: 2px solid #111;
+    outline-offset: 2px;
+  }
+  .baTipBtn--chip.is-active{
+    background: #111;
+    border-color: #111;
+    color: #fff;
+  }
+  .baTipBtn--chip.is-active:hover:not(:disabled){
+    background: #1a1a1a;
+    border-color: #1a1a1a;
+    color: #fff;
+  }
+  .baTipCustomPanel{
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto 4px;
+    box-sizing: border-box;
+  }
+  .baTipCustomPanel:not([hidden]){
+    margin-top: -2px;
+    margin-bottom: 4px;
   }
   .baTipFooter{
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 100%;
-  }
-  .baTipRow{
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 5px;
-    width: 100%;
-    align-items: stretch;
-  }
-  .baTipRow .baTipBtn{
-    grid-column: span 2;
-    min-height: 48px;
-    padding: 6px 8px;
-    border-radius: var(--ba-radius-pill);
-    border: 1px solid #ddd;
-    background: #fff;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    text-align: center;
-    box-sizing: border-box;
-  }
-  .baTipRow .baTipBtn:nth-child(4){
-    grid-column: 2 / span 2;
-  }
-  .baTipRow .baTipBtn:nth-child(5){
-    grid-column: 4 / span 2;
-  }
-  .baTipBtn--compact{
-    padding: 6px 8px;
-    min-width: 0;
-    min-height: 48px;
-    gap: 3px;
-    border-radius: var(--ba-radius-pill);
-    box-sizing: border-box;
+    width: auto;
     align-self: stretch;
-  }
-  .baTipBtnLabel{
-    white-space: nowrap;
-    font-weight: 600;
-    font-size: 12px;
-  }
-  .baTipBtnAmount{
-    font-weight: 500;
-    font-size: 11px;
-    opacity: 0.75;
-  }
-  .baTipManualRow .baTipBtn--compact{
-    grid-column: 4 / span 2;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #ddd;
-    background: #fff;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
-    font-weight: 600;
-    min-height: 48px;
-    padding: 6px 8px;
-    gap: 3px;
-    border-radius: 999px;
+    border-top: 1px solid #efefef;
+    padding-top: 12px;
+    padding-bottom: 10px;
+    margin-top: 0;
+    margin-left: -14px;
+    margin-right: -14px;
+    padding-left: 14px;
+    padding-right: 14px;
     box-sizing: border-box;
+    cursor: pointer;
   }
-  .baTipManualRow .baTipBtn--compact .baTipBtnLabel{
-    line-height: 1.15;
+  @media (min-width: 1024px){
+    .baTipFooter{
+      padding-top: 14px;
+      margin-left: -18px;
+      margin-right: -18px;
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+  }
+  @media (min-width: 1536px){
+    .baTipFooter{
+      padding-top: 16px;
+      margin-left: -26px;
+      margin-right: -26px;
+      padding-left: 26px;
+      padding-right: 26px;
+    }
+  }
+  .baTipFooter #baTipErrorMsg{
+    cursor: default;
+  }
+  .baTipBox .baTipFooter:has(#baTipAgree:disabled){
+    cursor: not-allowed;
   }
   .baTipCustomCluster{
-    grid-column: 2 / span 2;
-    display: grid;
-    grid-template-columns: 48px 1fr 48px;
-    align-items: stretch;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     width: 100%;
-    min-height: 48px;
-    border: 1px solid #ddd;
-    border-radius: var(--ba-radius-pill);
-    background: #fff;
+    max-width: 260px;
+    margin: 0 auto;
+    min-height: 58px;
+    height: 58px;
+    padding: 0 18px;
+    border: 2px solid #111;
+    border-radius: 999px;
+    background: #fafafa;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
   }
-  .baTipBtn:hover{
-    border-color: #bbb;
-  }
-  .baTipBtn.is-active{
-    border-color: #111;
-    background: #111;
-    color: #fff;
+  .baTipBtn--chip.baTipBtn--chipNone{
+    flex: 0 0 auto;
+    padding: 0 28px;
   }
   .baTipBtn:disabled{
-    opacity: 0.6;
+    opacity: 0.45;
     cursor: not-allowed;
   }
   .baTipCustomWrap{
     display: flex;
     align-items: center;
     gap: 0;
-    min-height: 48px;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     height: auto;
-    padding: 0 8px;
+    padding: 0 4px;
     border-radius: 0;
     border: 0;
     background: transparent;
-    min-width: 0;
-    width: 100%;
     box-sizing: border-box;
     justify-content: center;
     align-self: stretch;
@@ -4480,49 +4767,37 @@
   .baTipCustomField::before{
     content: "$";
     position: absolute;
-    left: 8px;
+    left: 10px;
     font-weight: 600;
-    font-size: 12px;
+    font-size: 14px;
     opacity: 0.85;
     pointer-events: none;
     z-index: 1;
   }
   .baTipCustomBtn{
-    width: 100%;
-    min-height: 48px;
-    height: auto;
-    border-radius: 0;
-    border: 0;
-    border-right: 1px solid #ddd;
-    background: #f7f7f7;
-    font-weight: 600;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-    box-sizing: border-box;
-    align-self: stretch;
+    position: absolute;
+    width: 1px;
+    height: 1px;
     padding: 0;
-    font-size: 18px;
-  }
-  .baTipCustomCluster .baTipCustomBtn:last-child{
-    border-right: 0;
-    border-left: 1px solid #ddd;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
   }
   .baTipCustomBtn:disabled{
-    opacity: 0.6;
     cursor: not-allowed;
   }
   .baTipCustom{
     width: 100%;
-    height: 36px;
-    padding: 0 4px 0 22px;
+    height: 40px;
+    padding: 0 6px 0 26px;
     border-radius: var(--ba-radius-sm);
     border: 1px solid transparent;
     font-weight: 600;
-    font-size: 12px;
+    font-size: 15px;
     text-align: center;
     background: transparent;
     box-sizing: border-box;
@@ -4537,45 +4812,44 @@
   }
   .baTipAgreeRow{
     display: flex;
+    width: 100%;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid var(--ba-border);
-    background: #f7f7f9;
-    margin-bottom: 0;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    box-sizing: border-box;
   }
   .baTipAgreeRow.is-warn{
     background: #fde8e8;
-    border-color: #f5b5b5;
-  }
-  .baTipAgreeCheck{
-    width: 18px;
-    height: 18px;
-    accent-color: var(--ba-accent);
-    flex-shrink: 0;
+    border: 1px solid #f5b5b5;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 0;
   }
   .baTipAgreeText{
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.3;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-weight: 400;
+    color: #6b7280;
   }
-  .baTipAgreeWarning{
-    margin-top: 1px;
-    padding: 8px 10px 4px;
-    border-radius: 8px;
-    background: #fde8e8;
-    color: #b00020;
-    font-size: 11px;
-    line-height: 1.4;
-    display: none;
-    width: 100%;
+  @media (min-width: 1280px){
+    .baTipAgreeText{
+      font-size: 1rem;
+      line-height: 1.75;
+    }
   }
 
   .baTermsAgreeSection{
     margin-top: 20px;
     padding: 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid transparent;
     background: #fff;
     transition: all 0.2s ease;
@@ -4637,24 +4911,33 @@
   }
   @media (max-width: 720px){
     .baTipControls{ width: 100%; }
-    .baTipRow{
-      grid-template-columns: repeat(2, 1fr);
+    .baTipChipRow{
+      gap: 8px 10px;
+      margin-bottom: 2px;
+      padding: 0 4px;
     }
-    .baTipRow .baTipBtn,
-    .baTipRow .baTipBtn:nth-child(4),
-    .baTipRow .baTipBtn:nth-child(5){
-      grid-column: auto;
+    .baTipBtn--chip{
+      min-height: 56px;
+      height: 56px;
+      padding: 0 20px;
+      font-size: 14px;
     }
-    .baTipManualRow{
-      grid-template-columns: repeat(2, 1fr);
+    .baTipCustomPanel{
+      max-width: 100%;
+      padding: 0 4px;
+      margin-bottom: 4px;
+    }
+    .baTipCustomPanel:not([hidden]){
+      margin-top: -2px;
     }
     .baTipCustomCluster{
-      grid-column: 1 / -1;
+      max-width: min(280px, 100%);
     }
-    .baTipManualRow .baTipBtn--compact{
-      grid-column: 1 / -1;
-      width: min(100%, 220px);
-      justify-self: center;
+    .baTipFooter{
+      margin-left: -14px;
+      margin-right: -14px;
+      padding-left: 14px;
+      padding-right: 14px;
     }
   }
 
@@ -4663,19 +4946,19 @@
     position:fixed; left:0; right:0; bottom:0; z-index:9999;
     background: var(--ba-chrome);
     color: #fff;
-    padding: 20px 14px;
+    padding: 14px 14px;
     box-shadow: var(--ba-shadow-sticky);
   }
   .baStickyIn{
     max-width: 1220px;
     margin: 0 auto;
     display:flex;
-    gap: 14px;
+    gap: 12px;
     align-items:center;
     justify-content:space-between;
   }
   .baStickyLeft{
-    display:flex; gap: 12px; align-items:center; min-width:0; margin-left: 40px;
+    display:flex; gap: 10px; align-items:center; min-width:0; margin-left: 28px;
   }
   .baStickyMessage{
     font-weight: 500;
@@ -4694,13 +4977,13 @@
     .baSticky .baStickyLeft{ display: none; }
     .baSticky .baStickyMessage{ display: none; }
     .baSticky .baStickyIn{ display: flex; }
-    .baSticky .baStickyRight{ display: grid !important; grid-template-columns: 1fr auto; gap: 14px; align-items: center; flex: 1; min-width: 0; }
+    .baSticky .baStickyRight{ display: grid !important; grid-template-columns: 1fr auto; gap: 10px; align-items: center; flex: 1; min-width: 0; }
     .baSticky .baStickyPrice{ justify-self: center; text-align: center; min-width: 0; grid-column: 1; }
     .baSticky .baStickyPriceTop{ justify-content: center; }
     .baSticky .baStickyAmt{ font-size: 35px !important; }
     .baSticky .baStickyCur{ font-size: 18px !important; }
     .baSticky .baStickySub{ font-size: 18px !important; }
-    .baSticky .baCTA{ padding: 16px 24px; min-height: 52px; justify-self: end; grid-column: 2; grid-row: 1; }
+    .baSticky .baCTA{ padding: 14px 20px; min-height: 48px; justify-self: end; grid-column: 2; grid-row: 1; }
     .baSticky .baCTATitle{ font-size: 24px; }
     .baSticky .baCTARight{ font-size: 18px; }
   }
@@ -4713,7 +4996,7 @@
   }
   .baStickyLogo img{ width: 56px; height: 32px; object-fit:contain; }
 
-  .baStickyRight{ display:flex; gap: 14px; align-items:center; }
+  .baStickyRight{ display:flex; gap: 8px; align-items:center; }
 
   .baStickyPrice{ text-align:right; line-height: 1.05; }
   .baStickyPriceTop{ display:flex; justify-content:flex-end; gap: 10px; align-items:baseline; }
@@ -4732,10 +5015,10 @@
     color: #111;
     font-weight: 700;
     letter-spacing: -0.02em;
-    padding: 10px 18px;
+    padding: 10px 16px;
     display:flex;
     align-items:center;
-    gap: 10px;
+    gap: 6px;
     cursor:pointer;
     min-width: auto;
     justify-content: space-between;
@@ -4764,7 +5047,7 @@
   .baAddPassengerBtn[disabled]{ opacity: .55; cursor: not-allowed; }
 
   .baAddPaxModalOverlay{ position:fixed; inset:0; z-index:10002; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; background:rgba(0,0,0,.35); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
-  .baAddPaxModalPanel{ background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
+  .baAddPaxModalPanel{ background:#fff; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,.2); max-width:520px; width:100%; max-height:90vh; overflow:auto; }
   .baAddPaxModalTitle{ font-weight:600; font-size:1.25rem; padding:20px 20px 0; margin-bottom:8px; letter-spacing:-0.02em; }
   .baAddPaxModalSavedWrap{ padding:0 20px 14px; border-bottom:1px solid #eee; margin-bottom:4px; }
   .baAddPaxModalSavedWrap .baLbl{ margin-bottom:8px; }
@@ -4807,16 +5090,17 @@
   .baAddPaxModalCancel{ padding:12px 24px; font-weight:700; font-size:1rem; font-family:inherit; border:2px solid #ccc; border-radius:8px; background:#fff; color:#333; cursor:pointer; }
   .baAddPaxModalCancel:hover{ background:#f5f5f5; }
   .baAddPaxModalPanel{ position: relative; }
-  .baAddPaxModalLoading{ display:none; position:absolute; inset:0; background:rgba(255,255,255,.9); border-radius:12px; flex-direction:column; align-items:center; justify-content:center; gap:16px; font-weight:700; font-size:1rem; color:#333; z-index:2; }
+  .baAddPaxModalLoading{ display:none; position:absolute; inset:0; background:rgba(255,255,255,.9); border-radius:8px; flex-direction:column; align-items:center; justify-content:center; gap:16px; font-weight:700; font-size:1rem; color:#333; z-index:2; }
   .baAddPaxModalSpinner{ width:40px; height:40px; border:3px solid #eee; border-top-color:var(--ba-accent); border-radius:50%; animation:spin .8s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
 
-  .baCTATitle{ font-weight:700; font-size: 15px; text-align: center; padding: 0 8px; letter-spacing: -0.02em; }
+  .baCTATitle{ font-weight:700; font-size: 15px; text-align: center; padding: 0 6px; letter-spacing: -0.02em; }
   .baCTARight{
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    padding-left: 10px;
-    border-left: 1px solid rgba(0,0,0,.18);
+    padding-left: 8px;
+    margin-left: 2px;
+    border-left: 1px solid rgba(0,0,0,.1);
     flex-shrink: 0;
   }
 
@@ -4826,15 +5110,18 @@
    * timeline (baTLSeg align-self: stretch). Use compact airline column + ellipsis until full mobile rules.
    */
   @media (max-width: 1200px){
+    .baCard{
+      --ba-flight-cols: minmax(0, 1fr) auto;
+      --ba-flight-xgap: 14px;
+      --ba-flight-ygap: 12px;
+    }
     .baFlight{
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
       align-items: start;
     }
     .baFlight__main{ min-width: 0; }
     .baRow{
       grid-template-columns: auto minmax(0, 1fr);
-      gap: 10px;
+      gap: 10px 7px;
     }
     .baLocLine{
       white-space: nowrap;
@@ -4845,13 +5132,13 @@
     .baAir{
       flex-shrink: 0;
       align-items: flex-end;
-      justify-content: flex-end;
-      padding-top: 6px;
-      padding-left: 12px;
+      justify-content: flex-start;
+      padding-top: 2px;
+      padding-left: 10px;
     }
     .baAir__logo{
       width: 64px;
-      height: 22px;
+      height: 21px;
     }
     .baAir__meta{
       font-size: 12px;
@@ -4859,10 +5146,17 @@
       flex-wrap: wrap;
       justify-content: flex-end;
     }
+    .baAir__fn{ font-size: 12px; }
+    .baAir__sep{ font-size: 12px; }
   }
 
   /* Mobile: flight details — cities+airport in one line; airline block compact on the right */
   @media (max-width: 980px){
+    .baCard{
+      --ba-flight-cols: 1fr auto;
+      --ba-flight-xgap: 14px;
+      --ba-flight-ygap: 12px;
+    }
     /* Card header: route on one line, travel time aligned right with airline block below */
     .baCard__head{
       flex-wrap: nowrap;
@@ -4889,22 +5183,25 @@
     }
     .baFlight{
       grid-template-columns: 1fr auto;
-      gap: 12px;
+      gap: 12px 14px;
       align-items: start;
     }
     .baFlight__main{ min-width: 0; }
     .baAir{
       flex-shrink: 0;
       align-items: flex-end;
-      justify-content: flex-end;
-      padding-top: 6px;
-      padding-left: 12px;
+      justify-content: flex-start;
+      padding-top: 2px;
+      padding-left: 10px;
+      padding-right: 0;
     }
     .baAir__logo{
       width: 64px;
-      height: 22px;
+      height: 21px;
     }
     .baAir__meta{ font-size: 12px; white-space: nowrap; flex-wrap: wrap; justify-content: flex-end; }
+    .baAir__fn{ font-size: 12px; }
+    .baAir__sep{ font-size: 12px; }
     .baLocLine{
       white-space: nowrap;
       overflow: hidden;
@@ -4960,7 +5257,7 @@
     background: #fff;
     color: #111;
     border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border-radius: var(--ba-radius-md);
     overflow: hidden;
     box-shadow: none;
     font-family: var(--ba-font);
@@ -5226,7 +5523,7 @@
     gap: 0;
   }
   .baPayChatWidget--dock.baPayChatWidget--open{
-    border-radius: 14px;
+    border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0,0,0,.15);
     border: 1px solid rgba(0,0,0,.14);
@@ -5270,7 +5567,7 @@
   .baPayChatPanel{
     display: none;
     background: #fff;
-    border-radius: 16px;
+    border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0,0,0,.15);
     flex-direction: column;
     overflow: hidden;
@@ -5309,7 +5606,7 @@
   .baPayChatWidget--float.baPayChatWidget--open{
     width: min(100vw - 32px, 340px);
     max-width: min(100vw - 32px, 340px);
-    border-radius: 14px;
+    border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0,0,0,.15);
     border: 1px solid rgba(0,0,0,.14);
@@ -5440,8 +5737,8 @@
   }
   .baSummaryBox__divider{
     height: 1px;
-    background: #e9e9e9;
-    margin: 14px 0;
+    background: rgba(0,0,0,.07);
+    margin: 12px 0;
   }
   .baSummaryBox__items{
     display: flex;
@@ -5521,7 +5818,7 @@
   }
   .baPopup{
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 24px;
     max-width: 500px;
     max-height: 80vh;
@@ -5631,7 +5928,7 @@
   .baTcsModal__panel{
     position: relative;
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.25);
     max-width: 900px;
     width: 100%;
@@ -5846,7 +6143,7 @@
     <div class="baHeaderProgressInner">
       <div class="baHeaderProgressLeft">
         <div class="baHeaderProgressTitle">Carefully check your flight and passenger details</div>
-        <div class="baHeaderProgressSubtitle">${agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : 'Tickets at a good price are almost in your hands!'}</div>
+        <div class="baHeaderProgressSubtitle">${agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : 'Your itinerary is almost confirmed.'}</div>
       </div>
       <div class="baHeaderProgressSteps">
         <div class="baProgressStep">
@@ -5940,50 +6237,43 @@
             <div class="baTipBox">
               <div class="baTipBox__header">
                 <div class="baTipBox__titleWrap">
-                  <div class="baTipBox__title">Did I meet your expectations?</div>
-                  <div class="baTipBox__subtitle">If you feel that the service provided was exceptional, you can express your gratitude (optional).</div>
+                  <h3 class="baTipBox__title">It was a pleasure working with you.</h3>
+                  <p class="baTipBox__subtitle">If you enjoyed the experience, a gratuity is welcome but never expected.</p>
                 </div>
               </div>
               <div class="baTipBox__content">
               <div class="baTipCard">
               <div class="baTipControls">
-                <div class="baTipRow">
-                  ${tipPresets.map(p => `
-                    <button class="baTipBtn ${String(p.label).toLowerCase() === "perfect" ? "baTipBtn--perfect" : ""} ${String(p.label).toLowerCase() === "exceptional" ? "baTipBtn--exceptional" : ""}"
-                      data-mode="preset"
-                      data-label="${escapeHtml(p.label)}"
-                      data-amount="${Number(p.amount)||0}"
-                      ${selectionLocked || isExpired ? "disabled" : ""}>
-                      <div class="baTipBtnLabel">${escapeHtml(p.label)}</div>
-                      <div class="baTipBtnAmount">$${((Number(p.amount)||0)/100).toFixed(2)}</div>
-                    </button>
-                  `).join("")}
+                <div class="baTipChipRow" role="group" aria-label="Tip options">
+                  ${tipChipRowHtml}
+                </div>
+                <div id="baTipCustomPanel" class="baTipCustomPanel"${tipMode !== "custom" ? " hidden" : ""}>
+                  <div class="baTipCustomCluster">
+                    <button class="baTipCustomBtn" type="button" data-tip-step="-5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Decrease tip amount" tabindex="-1">−</button>
+                    <div class="baTipCustomWrap">
+                      <div class="baTipCustomField">
+                        <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="0.01"
+                            value="${tipMode === "custom" ? (tipAmount/100) : ""}"
+                          placeholder="0.00"
+                            ${selectionLocked || isExpired ? "disabled" : ""}>
+                      </div>
+                    </div>
+                    <button class="baTipCustomBtn" type="button" data-tip-step="5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Increase tip amount" tabindex="-1">+</button>
+                  </div>
                 </div>
                 <div id="baSelMsg" class="baTipHelper"></div>
               </div>
-              <div class="baTipManualRow">
-                <div class="baTipCustomCluster">
-                  <button class="baTipCustomBtn" type="button" data-tip-step="-5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Decrease tip amount">−</button>
-                  <div class="baTipCustomWrap">
-                    <div class="baTipCustomField">
-                      <input id="baTipCustom" class="baTipCustom" type="number" min="0" max="1000" step="0.01"
-                          value="${tipMode === "custom" ? (tipAmount/100) : ""}"
-                        placeholder="0.00"
-                          ${selectionLocked || isExpired ? "disabled" : ""}>
-                    </div>
-                  </div>
-                  <button class="baTipCustomBtn" type="button" data-tip-step="5" ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Increase tip amount">+</button>
-                </div>
-                <button class="baTipBtn baTipBtn--compact" type="button" data-mode="none" ${selectionLocked || isExpired ? "disabled" : ""}>
-                  <div class="baTipBtnLabel">No tip</div>
-                </button>
-              </div>
               <div class="baTipFooter">
                 <div class="baTipAgreeRow">
-                  <input id="baTipAgree" class="baTipAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
-                  <label class="baTipAgreeText" for="baTipAgree">I agree, that this amount will be charged in addition to the cost of the airline ticket(s)</label>
+                  <span class="baTipAgreeText" id="baTipAgreeLabel">I agree to add this gratuity to my total charge.</span>
+                  <button type="button" role="switch" class="baCareSwitch" id="baTipAgree"
+                    aria-checked="${tipAgreed ? "true" : "false"}"
+                    data-state="${tipAgreed ? "checked" : "unchecked"}"
+                    aria-labelledby="baTipAgreeLabel"
+                    ${selectionLocked || isExpired ? "disabled" : ""}>
+                    <span class="baCareSwitch__thumb" aria-hidden="true"></span>
+                  </button>
                 </div>
-                <div id="baTipAgreeMsg" class="baTipAgreeWarning"></div>
                 <div id="baTipErrorMsg" style="display:none;color:#b00020;font-size:13px;margin-top:8px;"></div>
               </div>
             </div>
@@ -5994,7 +6284,7 @@
           <div class="baExtrasStripe" style="margin-top:18px">
             <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
 
-            <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:12px;background:#fff">
+            <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:8px;background:#fff">
               <div class="baPayerEmailWrap" style="margin-bottom:12px">
                 <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:16.8px">Email</label>
                 <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" class="baBoxInput" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:8px;font-size:15px;box-sizing:border-box">
@@ -6027,14 +6317,14 @@
                 </label>
                 <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
               </div>
+            </div>
 
-              <div class="baPaymentFooter" style="margin-top:32px;text-align:center;font-size:12px;color:#6b7280;line-height:1.6;">
-                <div>Payments are processed by BUSINESS AIRFARE LLC</div>
-                <div>8 The Green, Ste B, Dover, DE 19901, United States</div>
-                <div>Customer support: support@business-airfare.com</div>
-                <div style="margin-top:8px;">© 2026 Business-Airfare.com</div>
-                <div>All rights reserved.</div>
-              </div>
+            <div class="baMerchantLegalFooter" role="contentinfo" aria-label="Payment processor and legal">
+              <div>Payments are processed by BUSINESS AIRFARE LLC</div>
+              <div>8 The Green, Ste B, Dover, DE 19901, United States</div>
+              <div>Customer support: <a href="mailto:support@business-airfare.com">support@business-airfare.com</a></div>
+              <div class="baMerchantLegalFooter__copy">© 2026 Business-Airfare.com</div>
+              <div>All rights reserved.</div>
             </div>
           </div>
         </div>
@@ -6668,7 +6958,7 @@
         tipErrorMsg.textContent = message || "";
         tipErrorMsg.style.display = message ? "block" : "none";
       }
-      setConfirmEnabled(validateBillingUI());
+      setConfirmEnabled();
     }
 
     function clearTipError() {
@@ -6683,16 +6973,9 @@
     async function updateTipAgreementUI(){
       const tipAgree = document.getElementById("baTipAgree");
       const tipAgreeRow = document.querySelector(".baTipAgreeRow");
-      const tipAgreeMsg = document.getElementById("baTipAgreeMsg");
       const shouldWarn = selectedTipAmount() > 0 && !tipAgreed;
-      if (tipAgree) tipAgree.checked = !!tipAgreed;
-      if (tipAgreeRow) tipAgreeRow.classList.toggle("is-warn", shouldWarn);
-      if (tipAgreeMsg) {
-        tipAgreeMsg.textContent = shouldWarn
-          ? "Please check this box if you agree that this amount will be charged in addition to the cost of the airline ticket(s), or choose the \"no tip\" box."
-          : "";
-        tipAgreeMsg.style.display = shouldWarn ? "block" : "none";
-      }
+      if (tipAgree) setTipAgreeToggleDom(tipAgree, !!tipAgreed);
+      if (tipAgreeRow && !shouldWarn) tipAgreeRow.classList.remove("is-warn");
       
       // If tip is unchecked or tip is selected but checkbox unchecked, reset acceptance
       if (shouldWarn) {
@@ -6715,7 +6998,7 @@
             console.log("[BOOK_FLOW] Acceptance recorded successfully");
             
             // Immediately update button state after successful acceptance
-            setConfirmEnabled(validateBillingUI());
+            setConfirmEnabled();
           } catch (e) {
             console.error("[BOOK_FLOW] Failed to record acceptance:", e);
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
@@ -6728,7 +7011,7 @@
               msg.style.color = "#b00020";
             }
             // Update button state even on error
-            setConfirmEnabled(validateBillingUI());
+            setConfirmEnabled();
           } finally {
             acceptanceInProgress = false;
           }
@@ -6736,12 +7019,12 @@
           // If terms checkbox is not checked, reset acceptance
           // (but don't uncheck the tip checkbox - user might check terms checkbox next)
           acceptanceCompleted = false;
-          setConfirmEnabled(validateBillingUI());
+          setConfirmEnabled();
         }
       }
       
       // Always update Pay Now button state when tip agreement changes
-      setConfirmEnabled(validateBillingUI());
+      setConfirmEnabled();
     }
 
     function buildTipPayload(){
@@ -6980,6 +7263,74 @@
             return;
           }
 
+          if (mode === "custom") {
+            const prev = { tipMode, tipPresetLabel, tipAmount, tipAgreed };
+            tipMode = "custom";
+            tipPresetLabel = "";
+            tipAgreed = false;
+
+            if (prev.tipMode === "preset" && prev.tipAmount > 0) {
+              tipAmount = prev.tipAmount;
+              const tipCustomEl = document.getElementById("baTipCustom");
+              if (tipCustomEl) tipCustomEl.value = (prev.tipAmount / 100).toFixed(2);
+            } else if (prev.tipMode === "none") {
+              tipAmount = 0;
+              const tipCustomEl = document.getElementById("baTipCustom");
+              if (tipCustomEl) tipCustomEl.value = "";
+            }
+
+            applyTipHighlights();
+            updateTotalsUI();
+            focusBaTipCustomInputSoon();
+
+            setPaymentButtonsDisabled(true);
+            setSaving(true);
+            setSelMsg("");
+
+            try {
+              const tip = buildTipPayload();
+              const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
+              console.log("[TIP_SELECTION] Saving custom chip selection:", tip);
+              clearTipError();
+              updateTotalsUI();
+              setSaving(false);
+              setPaymentButtonsDisabled(false);
+              setSelMsg("");
+              if (tipMode === "custom") focusBaTipCustomInputSoon();
+              if (result.client_secret && paymentElement) {
+                try {
+                  const needsForceRemount = shouldForceRemountForWalletPayment();
+                  if (needsForceRemount && selectedPaymentMethodType) {
+                    remountingForWalletType = selectedPaymentMethodType;
+                    lastWalletRemountAt = Date.now();
+                  }
+                  await mountStripePaymentElement(result.client_secret, true, needsForceRemount);
+                  if (tipMode === "custom") focusBaTipCustomInputSoon();
+                  if (needsForceRemount) {
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                    if (tipMode === "custom") focusBaTipCustomInputSoon();
+                  }
+                } catch (remountErr) {
+                  console.error("Failed to update Stripe Elements:", remountErr);
+                }
+              }
+            } catch (e) {
+              tipMode = prev.tipMode;
+              tipPresetLabel = prev.tipPresetLabel;
+              tipAmount = prev.tipAmount;
+              tipAgreed = prev.tipAgreed;
+              applyTipHighlights();
+              updateTotalsUI();
+              setSaving(false);
+              setPaymentButtonsDisabled(false);
+              const errorMsg = "Could not save tip selection. Please try again.";
+              setSelMsg(errorMsg);
+              showTipError(errorMsg);
+              console.error("[TIP_SELECTION] Failed to save custom chip selection:", e);
+            }
+            return;
+          }
+
           if (mode === "preset") {
             const label = btn.getAttribute("data-label");
             const preset = tipPresets.find(p => String(p.label) === String(label || ""));
@@ -7120,11 +7471,23 @@
     }
 
     const tipAgree = document.getElementById("baTipAgree");
+    const tipAgreeFooter = root.querySelector(".baTipBox .baTipFooter");
+    if (tipAgreeFooter && tipAgree) {
+      tipAgreeFooter.addEventListener("click", (e) => {
+        if (selectionLocked || isExpired) return;
+        if (tipAgree.disabled) return;
+        if (e.target.closest("#baTipErrorMsg")) return;
+        if (e.target.closest("#baTipAgree")) return;
+        tipAgree.click();
+      });
+    }
     if (tipAgree) {
-      tipAgree.addEventListener("change", async () => {
+      tipAgree.addEventListener("click", async () => {
         if (selectionLocked || isExpired) return;
         if (shouldForceRemountForWalletPayment()) showStripeLoadingOverlay();
-        tipAgreed = !!tipAgree.checked;
+        const next = !tipAgreeToggleIsOn(tipAgree);
+        tipAgreed = next;
+        setTipAgreeToggleDom(tipAgree, next);
         updateTotalsUI();
         updateTipAgreementUI(); // This now also updates Pay Now button state
         setPaymentButtonsDisabled(true);
@@ -7158,14 +7521,16 @@
             }
           }
         } catch (e) {
+          tipAgreed = !next;
+          setTipAgreeToggleDom(tipAgree, tipAgreed);
           updateTotalsUI();
-          updateTipAgreementUI(); // Update button state on error
+          updateTipAgreementUI();
           setSaving(false);
           setPaymentButtonsDisabled(false);
           const errorMsg = "Could not save tip selection. Please try again.";
           setSelMsg(errorMsg);
           showTipError(errorMsg);
-          console.error("[TIP_SELECTION] Failed to save tip checkbox:", e);
+          console.error("[TIP_SELECTION] Failed to save tip toggle:", e);
         }
       });
     }
@@ -7190,9 +7555,8 @@
         
         // Check if both checkboxes are checked, then call record_acceptance
         const tipAgreeCheckbox = document.getElementById("baTipAgree");
-        const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
-        const hasTipSelected = tipBtns.length > 0;
-        const tipChecked = !hasTipSelected || (tipAgreeCheckbox && tipAgreeCheckbox.checked);
+        const tipMeaningful = getTipChargeCentsFromDOM() > 0;
+        const tipChecked = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
         
         // Both checkboxes must be checked to record acceptance
         // tip_ack should always be true when recording (it means "I acknowledge tips/extra charges")
@@ -7202,7 +7566,7 @@
             console.log("[BOOK_FLOW] Recording acceptance from terms checkbox", {
               termsChecked: true,
               tipChecked,
-              hasTipSelected
+              hasTipSelected: tipMeaningful
             });
             // Always pass true for tip_ack - it means "I acknowledge tips/extra charges" regardless of whether tip is selected
             await recordAcceptance(publicId, true, true);
@@ -7210,7 +7574,7 @@
             console.log("[BOOK_FLOW] Acceptance recorded successfully");
             
             // Immediately update button state after successful acceptance
-            setConfirmEnabled(validateBillingUI());
+            setConfirmEnabled();
           } catch (e) {
             console.error("[BOOK_FLOW] Failed to record acceptance:", e);
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
@@ -7223,20 +7587,20 @@
               msg.style.color = "#b00020";
             }
             // Update button state even on error
-            setConfirmEnabled(validateBillingUI());
+            setConfirmEnabled();
           } finally {
             acceptanceInProgress = false;
           }
-        } else if (!tipChecked && hasTipSelected) {
+        } else if (!tipChecked && tipMeaningful) {
           // If tip checkbox is not checked but tip is selected, reset acceptance
           // (but don't uncheck the terms checkbox - user might check tip checkbox next)
           acceptanceCompleted = false;
-          setConfirmEnabled(validateBillingUI());
+          setConfirmEnabled();
         }
       }
       
       // Always update button state
-      setConfirmEnabled(validateBillingUI());
+      setConfirmEnabled();
     }
 
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
@@ -7251,7 +7615,7 @@
     if (payerEmailInput) {
       payerEmailInput.addEventListener("input", () => {
         payerEmail = payerEmailInput.value.trim().toLowerCase();
-        setConfirmEnabled(validateBillingUI());
+        setConfirmEnabled();
       });
       payerEmailInput.addEventListener("blur", () => {
         validateBillingUI();
@@ -7457,28 +7821,30 @@
         // Keep sections hidden initially - they will be shown after Stripe elements are loaded
         // extrasSection.style.display = "block"; // Moved to after Stripe is ready
         
-        // Preselect "Excellent" tip and uncheck "I agree" checkbox
-        const excellentPreset = tipPresets.find(p => String(p.label).toLowerCase() === "excellent");
-        if (excellentPreset) {
-          const excellentAmount = Math.round(Number(excellentPreset.amount) || 0);
+        // Preselect curated chip default ($100 → $75 → $125 → $50); skip $25 and other off-row presets
+        const preselectCentsOrder = [10000, 7500, 12500, 5000];
+        let defaultPreset = null;
+        for (const c of preselectCentsOrder) {
+          defaultPreset = tipPresets.find(p => Math.round(Number(p.amount) || 0) === c);
+          if (defaultPreset) break;
+        }
+        if (defaultPreset) {
+          const defaultAmount = Math.round(Number(defaultPreset.amount) || 0);
           tipMode = "preset";
-          tipPresetLabel = excellentPreset.label;
-          tipAmount = excellentAmount;
+          tipPresetLabel = defaultPreset.label;
+          tipAmount = defaultAmount;
           tipAgreed = false;
-          
-          // Update custom tip input to show the amount
+
           const tipCustom = document.getElementById("baTipCustom");
           if (tipCustom) {
-            tipCustom.value = excellentAmount > 0 ? (excellentAmount / 100).toFixed(2) : "";
+            tipCustom.value = defaultAmount > 0 ? (defaultAmount / 100).toFixed(2) : "";
           }
-          
-          // Uncheck "I agree" checkbox
+
           const tipAgree = document.getElementById("baTipAgree");
           if (tipAgree) {
-            tipAgree.checked = false;
+            setTipAgreeToggleDom(tipAgree, false);
           }
-          
-          // Update UI highlights and totals
+
           applyTipHighlights();
           updateTipAgreementUI();
           updateTotalsUI();
@@ -7603,12 +7969,12 @@
         // Record acceptance before calling start_payment
         const termsCheckbox = document.getElementById("baTermsAgreeCheck");
         const tipAgreeCheckbox = document.getElementById("baTipAgree");
-        const tipBtns = document.querySelectorAll(".baTipBtn.is-active[data-mode='preset'], .baTipBtn.is-active[data-mode='custom']");
-        const hasTipSelected = tipBtns.length > 0;
+        const tipMeaningful = getTipChargeCentsFromDOM() > 0;
         const termsChecked = termsCheckbox && termsCheckbox.checked;
-        const tipChecked = !hasTipSelected || (tipAgreeCheckbox && tipAgreeCheckbox.checked);
+        const tipChecked = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
 
         if (!termsChecked || !tipChecked) {
+          if (tipMeaningful && !tipChecked) showTipAgreementRequiredUI();
           throw new Error("Please check both the Terms & Conditions and Tip agreement boxes before proceeding.");
         }
 
@@ -7751,15 +8117,24 @@
 
     if (confirmBtn) {
       confirmBtn.addEventListener("click", async (e) => {
-        // HARD VALIDATION: Prevent payment if button is disabled or validation fails
-        if (confirmBtn.disabled || !validateBillingUI()) {
+        if (confirmBtn.disabled) {
           e.preventDefault();
           e.stopPropagation();
           return false;
         }
-        
+        const payState = computeBillingValidationState();
+        if (!payState.fullyOk) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (payState.tipAckBlocking) {
+            showTipAgreementRequiredUI();
+          } else if (msg) {
+            msg.textContent = "Please complete all required fields and accept the terms.";
+          }
+          return false;
+        }
+
         try {
-          // Double-check validation before proceeding
           if (!validateBillingUI()) {
             if (msg) msg.textContent = "Please complete all required fields and accept the terms.";
             return;
