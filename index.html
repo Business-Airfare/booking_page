@@ -816,33 +816,39 @@
     EY: "Etihad Airways",
   };
 
-  // Format cabin name from backend format to display format
+  // Format cabin name from backend format to display format (payment card badge labels)
   function formatCabinName(cabin) {
     if (!cabin) return "";
-    const c = String(cabin).toLowerCase().trim();
-    if (c === "first") return "First";
-    if (c === "business") return "Business";
-    if (c === "premium_economy" || c === "premium-economy" || c === "premium economy") return "Premium Economy";
-    if (c === "economy") return "Economy";
-    return cabin; // fallback to original if not recognized
+    const raw = String(cabin).trim();
+    const c = raw.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+    if (c === "first" || c === "first_class") return "First Class";
+    if (c === "business" || c === "business_class") return "Business Class";
+    if (c === "premium_economy" || c === "premium_economy_class") return "Premium Economy";
+    if (c === "economy" || c === "economy_class") return "Economy Class";
+    const lc = raw.toLowerCase();
+    if (lc.includes("first") && !lc.includes("premium")) return "First Class";
+    if (lc.includes("business")) return "Business Class";
+    if (lc.includes("premium")) return "Premium Economy";
+    if (lc.includes("economy")) return "Economy Class";
+    return raw;
   }
 
   function cabinFromClass(cls, carrier){
     const c = String(cls || "").toUpperCase();
     const a = String(carrier || "").toUpperCase();
     if (!c) return "";
-    if (a === "BA" && c === "R") return "Business"; // BA R = Business, not First
-    if (a === "MU" && c.charAt(0) === "Q") return "Business"; // China Eastern Q = Business, not Economy
-    if (a === "AF" && c === "R") return "Economy"; // AF R = Economy, not First
-    if (a === "LH" && c === "W") return "Economy"; // LH W = Economy, not Premium Economy
-    if (a === "LX" && c === "W") return "Economy"; // LX W = Economy, not Premium Economy
-    if (a === "TK" && c === "W") return "Economy"; // TK W = Economy, not Premium Economy
+    if (a === "BA" && c === "R") return "Business Class"; // BA R = Business, not First
+    if (a === "MU" && c.charAt(0) === "Q") return "Business Class"; // China Eastern Q = Business, not Economy
+    if (a === "AF" && c === "R") return "Economy Class"; // AF R = Economy, not First
+    if (a === "LH" && c === "W") return "Economy Class"; // LH W = Economy, not Premium Economy
+    if (a === "LX" && c === "W") return "Economy Class"; // LX W = Economy, not Premium Economy
+    if (a === "TK" && c === "W") return "Economy Class"; // TK W = Economy, not Premium Economy
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
     if (a === "AA" && c.charAt(0) === "P") return "Premium Economy"; // AA P = Premium Economy, not Business
-    if (c === "F" || c === "A") return "First";
-    if ("JCDIZP".includes(c)) return "Business";
+    if (c === "F" || c === "A") return "First Class";
+    if ("JCDIZP".includes(c)) return "Business Class";
     if (c === "W") return "Premium Economy";
-    return "Economy";
+    return "Economy Class";
   }
 
   function logoUrl(carrier){
@@ -860,6 +866,22 @@
       fromIata: first?.origin || "",
       toIata: last?.destination || ""
     };
+  }
+
+  function formatCityAirportLabel(city, iata){
+    const c = String(city ?? "").trim();
+    const code = String(iata ?? "").trim();
+    if (c && code) return `${c} (${code})`;
+    if (c) return c;
+    return code;
+  }
+
+  /** Card / summary route titles: city only; IATA only if city missing */
+  function routeHeadlineLabel(city, iata){
+    const c = String(city ?? "").trim();
+    if (c) return c;
+    const code = String(iata ?? "").trim();
+    return code || "—";
   }
 
   function clampInt(n, min, max){
@@ -898,22 +920,11 @@
     const headerDate = departDay ? dateHeaderLabel(departDay) : "—";
 
     const cp = cityPairFromJourney(j);
-    const routeTitle = (cp.fromCity && cp.toCity)
-      ? `${escapeHtml(cp.fromCity)} <span class="baArr">→</span> ${escapeHtml(cp.toCity)}`
-      : `${escapeHtml(cp.fromIata || "—")} <span class="baArr">→</span> ${escapeHtml(cp.toIata || "—")}`;
+    const fromRoute = routeHeadlineLabel(cp.fromCity, cp.fromIata);
+    const toRoute = routeHeadlineLabel(cp.toCity, cp.toIata);
+    const routeTitle = `${escapeHtml(fromRoute)} <span class="baArr">→</span> ${escapeHtml(toRoute)}`;
 
     const travelTime = minsToHM(j.total_travel_minutes);
-
-    let firstNextDayIdx = -1;
-    for (let i = 0; i < segs.length; i++) {
-      const s = segs[i];
-      const depDate = (s.depart_local || "").slice(0,10);
-      const arrDate = (s.arrive_local || "").slice(0,10);
-      if (depDate && arrDate && depDate !== arrDate) {
-        firstNextDayIdx = i;
-        break;
-      }
-    }
 
     return `
       <article class="baCard">
@@ -933,51 +944,57 @@
             const arrTime = fmt12(s.arrive_local);
             const depMD = monthDayLabel(s.depart_local);
             const arrMD = monthDayLabel(s.arrive_local);
-            const shouldHighlight = firstNextDayIdx >= 0 && idx >= firstNextDayIdx;
             const flightTime = segmentFlightTime(s);
             const meal = segmentMealText(s);
             const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
             const operator = String(s.operating_carrier_name || s.operating_carrier || s.operator || "").trim();
             const lo = (Array.isArray(j.layovers) && j.layovers[idx]) ? j.layovers[idx] : null;
+            const layPlace = lo ? String(lo.at_city || lo.at || "").trim() : "";
+            const layLabel = lo
+              ? (layPlace ? `${minsToHM(lo.minutes)} Layover in ${layPlace}` : `${minsToHM(lo.minutes)} Layover`)
+              : "";
 
             return `
               <div class="baFlightBlock">
                 <div class="baFlight">
                   <div class="baFlight__main">
-                    <div class="baTL" aria-hidden="true">
-                      <span class="baTL__dot"></span>
-                      <span class="baTL__chev"></span>
-                      <span class="baTL__chev"></span>
-                      <span class="baTL__chev"></span>
-                      <span class="baTL__dot baTL__dot--end"></span>
+                    <div class="baTLSeg baTLSeg--top" aria-hidden="true">
+                      <div class="baTLSeg__pad">
+                        <div class="baTLSeg__ring"></div>
+                      </div>
+                      <div class="baTLSeg__stem baTLSeg__stem--downQuarter"></div>
                     </div>
-
-                    <div class="baLeft">
+                    <div class="baFlight__row baFlight__row--dep">
                       <div class="baRow">
                         <div class="baTimeLine">
                           <span class="baTime">${escapeHtml(depTime)}</span>
                           <span class="baMD">${escapeHtml(depMD)}</span>
                         </div>
-                        <div class="baLocLine">
-                          <span class="baCity">${escapeHtml(s.origin_city || "")},</span>
-                          <span class="baIata">${escapeHtml(s.origin || "")}</span>
-                        </div>
+                        <div class="baLocLine">${escapeHtml(formatCityAirportLabel(s.origin_city, s.origin))}</div>
                       </div>
+                    </div>
 
-                      <div class="baRow baRow--meta">
-                        ${flightTime ? `<div class="baMetaRow">${escapeHtml(flightTime)}</div>` : ``}
-                        ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
+                    <div class="baTLSeg baTLSeg--mid" aria-hidden="true">
+                      <div class="baTLSeg__stem baTLSeg__stem--full"></div>
+                    </div>
+                    <div class="baFlight__row baFlight__row--meta baRow baRow--meta">
+                      ${flightTime ? `<div class="baMetaRow">${escapeHtml(flightTime)}</div>` : ``}
+                      ${meal ? `<div class="baMetaRow"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
+                    </div>
+
+                    <div class="baTLSeg baTLSeg--bot" aria-hidden="true">
+                      <div class="baTLSeg__pad">
+                        <div class="baTLSeg__ring"></div>
                       </div>
-
+                      <div class="baTLSeg__stem baTLSeg__stem--upQuarter"></div>
+                    </div>
+                    <div class="baFlight__row baFlight__row--arr">
                       <div class="baRow baRow--arrival">
                         <div class="baTimeLine">
                           <span class="baTime">${escapeHtml(arrTime)}</span>
-                          <span class="baMD ${shouldHighlight ? 'baMD--nextDay' : ''}">${escapeHtml(arrMD)}</span>
+                          <span class="baMD">${escapeHtml(arrMD)}</span>
                         </div>
-                        <div class="baLocLine">
-                          <span class="baCity">${escapeHtml(s.destination_city || "")},</span>
-                          <span class="baIata">${escapeHtml(s.destination || "")}</span>
-                        </div>
+                        <div class="baLocLine">${escapeHtml(formatCityAirportLabel(s.destination_city, s.destination))}</div>
                       </div>
                     </div>
                   </div>
@@ -987,9 +1004,11 @@
                       <img class="baAir__logo" src="${logoUrl(carrier)}" alt="${escapeHtml(carrier)}" onerror="this.style.display='none'">
                     ` : ""}
                     <div class="baAir__meta">
-                      <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
-                      <span class="baAir__sep">|</span>
-                      <span class="baAir__cab">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
+                      <span class="baAir__line">
+                        <span class="baAir__fn">${escapeHtml(flightNo || carrier || "")}</span>
+                        <span class="baAir__sep">|</span>
+                      </span>
+                      <span class="baCabinBadge">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
                     </div>
                     ${operator ? `<div class="baAir__op">${escapeHtml(operator)}</div>` : ``}
                   </div>
@@ -997,9 +1016,11 @@
 
                 ${lo ? `
                   <div class="baLayRow">
-                    <div class="baLayRow__text">
-                      <span class="baLayRow__dur">${escapeHtml(minsToHM(lo.minutes))} layover</span>
-                      <span class="baLayRow__in"> in ${escapeHtml(lo.at_city || lo.at || "")}</span>
+                    <div class="baLayChip" role="status">
+                      <svg class="baLayChip__icon" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path fill="currentColor" d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"/>
+                      </svg>
+                      <span class="baLayChip__label">${escapeHtml(layLabel)}</span>
                     </div>
                   </div>
                 ` : ``}
@@ -1808,40 +1829,42 @@
     root.innerHTML = `
       <style>
         .baPaidConf .baCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
-        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:18px 20px 14px; border-bottom:1px solid #efefef; }
+        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:22.77px 22px 17.71px 25.3px; border-bottom:1px solid #efefef; }
         .baPaidConf .baCard__route{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:22px; letter-spacing:-0.03em; line-height:1.15; color:#111; }
         .baPaidConf .baArr{ margin:0 10px; }
         .baPaidConf .baCard__date{ margin-top:8px; font-size:15px; opacity:.75; font-weight:500; }
-        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:500; white-space:nowrap; padding-top:8px; margin-right:20px; }
-        .baPaidConf .baFlights{ padding:8px 0; }
-        .baPaidConf .baFlightBlock{ padding:0 20px; }
-        .baPaidConf .baFlight{ display:grid; grid-template-columns:1fr 250px; gap:16px; padding:16px 0; border-top:1px solid #f1f1f1; }
+        .baPaidConf .baCard__tt{ font-size:13px; opacity:.75; font-weight:500; white-space:nowrap; padding-top:10.12px; margin-right:22px; }
+        .baPaidConf .baFlights{ padding:10.12px 0; }
+        .baPaidConf .baFlightBlock{ padding:0 22px 0 25.3px; }
+        .baPaidConf .baFlight{ display:grid; grid-template-columns:1fr 250px; gap:16px; padding:20.24px 0; border-top:1px solid #f1f1f1; }
         .baPaidConf .baFlightBlock:first-child .baFlight{ border-top:0; }
-        .baPaidConf .baFlight__main{ display:grid; grid-template-columns:22px 1fr; gap:14px; align-items:flex-start; min-width:0; }
-        .baPaidConf .baTL{ width:22px; margin-top:6px; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.8; }
-        .baPaidConf .baTL__dot{ width:10px; height:10px; border-radius:50%; background:#d0d0d0; }
-        .baPaidConf .baTL__dot--end{ background:#fff; border:2px solid #d0d0d0; width:10px; height:10px; }
-        .baPaidConf .baTL__chev{ width:8px; height:6px; border-left:2px solid #d7d7d7; border-bottom:2px solid #d7d7d7; transform:rotate(-45deg); margin-left:1px; }
+        .baPaidConf .baFlight__main{ display:grid; grid-template-columns:36px 1fr; column-gap:14px; row-gap:0; align-items:start; min-width:0; }
+        .baPaidConf .baTLSeg{ width:36px; }
+        .baPaidConf .baTLSeg__ring{ border-color:#171717; }
+        .baPaidConf .baTLSeg__stem{ background:#171717; }
+        .baPaidConf .baFlight__main > .baTLSeg--mid,
+        .baPaidConf .baFlight__main > .baTLSeg--bot{ margin-top:0; }
+        .baPaidConf .baFlight__main > .baFlight__row--meta{ margin-top:0; padding-top:14px; box-sizing:border-box; }
+        .baPaidConf .baFlight__main > .baFlight__row--arr{ margin-top:0; padding-top:16px; box-sizing:border-box; }
+        @media (min-width:1280px){
+          .baPaidConf .baFlight__main{ grid-template-columns:48px 1fr; }
+          .baPaidConf .baTLSeg{ width:48px; }
+        }
         .baPaidConf .baRow{ display:grid; grid-template-columns:150px 1fr; gap:10px; align-items:baseline; min-width:0; }
         .baPaidConf .baTimeLine{ display:flex; align-items:baseline; gap:10px; min-width:0; }
         .baPaidConf .baTime{ font-size:16px; font-weight:600; letter-spacing:-0.02em; line-height:1.1; white-space:nowrap; }
         .baPaidConf .baMD{ font-size:13px; font-weight:500; opacity:.65; white-space:nowrap; }
-        .baPaidConf .baMD--nextDay{ color:#c56a00; opacity:.85; }
         .baPaidConf .baLocLine{ font-size:15px; font-weight:600; line-height:1.2; min-width:0; }
-        .baPaidConf .baCity,.baPaidConf .baIata{ display:inline; }
-        .baPaidConf .baIata{ font-weight:600; margin-left:5px; opacity:.85; }
-        .baPaidConf .baRow--meta{ margin-top:14px; grid-template-columns:1fr; gap:6px; }
-        .baPaidConf .baRow--meta + .baRow{ margin-top:16px; }
+        .baPaidConf .baRow--meta{ margin-top:0; grid-template-columns:1fr; gap:6px; }
         .baPaidConf .baMetaRow{ font-size:12px; font-weight:500; opacity:.68; line-height:1.35; }
         .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-width:0; padding-top:6px; }
         .baPaidConf .baAir__logo{ width:90px; height:28px; object-fit:contain; }
-        .baPaidConf .baAir__meta{ font-size:14px; opacity:.75; font-weight:500; white-space:nowrap; }
+        .baPaidConf .baAir__meta{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:500; white-space:nowrap; }
+        .baPaidConf .baAir__line{ display:inline-flex; align-items:center; opacity:.75; }
         .baPaidConf .baAir__fn{ font-weight:600; opacity:.9; }
         .baPaidConf .baAir__sep{ margin:0 8px; opacity:.5; }
         .baPaidConf .baAir__op{ font-size:13px; opacity:.6; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:14px 0; margin:0; }
-        .baPaidConf .baLayRow__text{ font-size:14px; font-weight:600; color:#6b6b6b; }
-        .baPaidConf .baLayRow__dur{ font-weight:600; color:#6b6b6b; }
+        .baPaidConf .baLayRow{ border-top:1px solid #efefef; border-bottom:1px solid #efefef; padding:10px 0; margin:0; }
         .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:12px; overflow:hidden; margin-bottom:14px; box-shadow:none; font-size:1em; }
         .baPaidConf .baPaidPaxCard__head{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:1.25em; letter-spacing:-0.025em; padding:16px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
         .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:500; color:#4b4b4b; flex-wrap:wrap; }
@@ -1871,9 +1894,9 @@
           .baPaidConf .baMetaRow{ font-size:18px; }
           .baPaidConf .baAir__meta{ font-size:21px; }
           .baPaidConf .baAir__op{ font-size:19.5px; }
-          .baPaidConf .baLayRow__text{ font-size:21px; }
+          .baPaidConf .baLayChip__label{ font-size:17.85px; }
           .baPaidConf .baLocLine{ margin-left:45px; }
-          .baPaidConf .baLayRow__text{ font-size:14px; }
+          .baPaidConf .baLayChip__label{ font-size:11.9px; }
         }
       </style>
       <div class="baPaidConf" style="padding:24px;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:920px;margin:0 auto">
@@ -2747,6 +2770,14 @@
     const ticketCents = Number(data.quote?.ticket ?? 0) || 0;
     const serviceCents = Number(data.quote?.service ?? 0) || 0;
     const careCents = Number(data.quote?.care ?? 0) || 0;
+    const carePaxCount = Math.max(1, (() => {
+      const pda = getPassengerDetailsArray(data);
+      if (pda && pda.length) return pda.length;
+      if (Array.isArray(data.passengers) && data.passengers.length) return data.passengers.length;
+      return 1;
+    })());
+    const carePerPaxCents = Math.round(careCents / carePaxCount);
+    const carePerPersonLabel = `${fmtMoney(carePerPaxCents)} per person`;
 
     function baseTicketService(){ return ticketCents + serviceCents; }
     function selectedTipAmount(){
@@ -3450,7 +3481,8 @@
     justify-content:space-between;
     gap: 12px;
     align-items:flex-start;
-    padding: 18px 20px 14px;
+    /* top / right / bottom / left — left +15% vs right */
+    padding: 22.77px 22px 17.71px 25.3px;
     border-bottom: 1px solid #efefef;
   }
   .baCard__route{
@@ -3472,55 +3504,123 @@
     opacity: 0.75;
     font-weight: 500;
     white-space:nowrap;
-    padding-top: 8px;
-    margin-right: 20px;
+    padding-top: 10.12px;
+    margin-right: 22px;
   }
 
-  .baFlights{ padding: 8px 0; }
-  .baFlightBlock{ padding: 0 20px; }
+  .baFlights{ padding: 10.12px 0; }
+  /* top/bottom 0; right 22px; left +15% */
+  .baFlightBlock{ padding: 0 22px 0 25.3px; }
 
   .baFlight{
     display:grid;
     grid-template-columns: 1fr 250px;
     gap: 16px;
-    padding: 16px 0;
+    padding: 20.24px 0;
     border-top: 1px solid #f1f1f1;
   }
   .baFlightBlock:first-child .baFlight{ border-top: 0; }
 
   .baFlight__main{
     display:grid;
-    grid-template-columns: 22px 1fr;
-    gap: 14px;
-    align-items:flex-start;
+    grid-template-columns: 36px 1fr;
+    column-gap: 14px;
+    row-gap: 0;
+    align-items: start;
     min-width:0;
   }
+  @media (min-width: 1280px){
+    .baFlight__main{ grid-template-columns: 48px 1fr; }
+  }
 
-  .baTL{
-    width: 22px;
-    margin-top: 6px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap: 6px;
-    opacity:.8;
+  /* Timeline column (Tailwind-aligned: w-9 xl:w-12, gray-1000 stems, white ring nodes) */
+  .baTLSeg{
+    position: relative;
+    display: flex;
+    width: 36px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    align-self: stretch;
   }
-  .baTL__dot{
-    width: 10px; height: 10px; border-radius: 50%;
-    background: #d0d0d0;
+  @media (min-width: 1280px){
+    .baTLSeg{ width: 48px; }
   }
-  .baTL__dot--end{
-    background:#fff;
-    border: 2px solid #d0d0d0;
-    width: 10px; height: 10px;
+  .baTLSeg--top{
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-top: 4px;
   }
-  .baTL__chev{
-    width: 8px; height: 6px;
-    border-left: 2px solid #d7d7d7;
-    border-bottom: 2px solid #d7d7d7;
-    transform: rotate(-45deg);
-    margin-left: 1px;
+  .baTLSeg--mid{
+    flex-direction: column;
+    padding: 0;
   }
+  .baTLSeg--bot{
+    flex-direction: column;
+    justify-content: flex-end;
+    padding-bottom: 4px;
+  }
+  .baTLSeg__pad{
+    position: relative;
+    z-index: 1;
+    background: var(--ba-card, #fff);
+    padding: 2px;
+    box-sizing: border-box;
+  }
+  .baTLSeg__ring{
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: var(--ba-card, #fff);
+    border: 2px solid #171717;
+    box-sizing: border-box;
+  }
+  .baTLSeg__stem{
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    background: #171717;
+    pointer-events: none;
+  }
+  /* Stem from bottom of ring (no extra __pad gap); pt + __pad + ring = 4+2+10 */
+  .baTLSeg--top .baTLSeg__stem--downQuarter{
+    top: calc(4px + 2px + 10px);
+    bottom: 0;
+    height: auto;
+  }
+  /* Stem to top of lower ring: seg pb + __pad + ring */
+  .baTLSeg--bot .baTLSeg__stem--upQuarter{
+    top: 0;
+    bottom: calc(4px + 2px + 10px);
+    height: auto;
+  }
+  .baTLSeg__stem--full{
+    top: 0;
+    bottom: 0;
+    height: auto;
+  }
+
+  /* Timeline column stays flush between rows; spacing is padding on the right column only */
+  .baFlight__main > .baTLSeg--mid,
+  .baFlight__main > .baTLSeg--bot{
+    margin-top: 0;
+  }
+  .baFlight__main > .baFlight__row--meta{
+    margin-top: 0;
+    padding-top: 14px;
+    box-sizing: border-box;
+  }
+  .baFlight__main > .baFlight__row--arr{
+    margin-top: 0;
+    padding-top: 16px;
+    box-sizing: border-box;
+  }
+  .baFlight__main .baRow--meta{
+    margin-top: 0;
+  }
+  .baFlight__row{ min-width: 0; }
 
   /* move cities closer to times */
   .baRow{
@@ -3550,11 +3650,6 @@
     opacity: 0.65;
     white-space:nowrap;
   }
-  .baMD--nextDay{
-    color: #c56a00;
-    opacity: 0.85;
-  }
-
   .baLocLine{
     font-size: 15px;
     font-weight: 600;
@@ -3563,25 +3658,11 @@
     white-space:normal;
     word-wrap: break-word;
   }
-  .baCity{
-    display: inline;
-  }
-  .baIata{
-    font-weight: 600;
-    text-decoration: none;
-    margin-left: 5px;
-    opacity: .85;
-    display: inline;
-  }
-
   /* flight time smaller */
   .baRow--meta{
     margin-top: 14px;
     grid-template-columns: 1fr;
     gap: 6px;
-  }
-  .baRow--meta + .baRow{
-    margin-top: 16px;
   }
   .baMetaRow{
     font-size: 12px;
@@ -3607,13 +3688,42 @@
     object-fit: contain;
   }
   .baAir__meta{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     font-size: 14px;
-    opacity: .75;
     font-weight: 700;
-    white-space:nowrap;
+    white-space: nowrap;
+  }
+  .baAir__line{
+    display: inline-flex;
+    align-items: center;
+    opacity: .75;
   }
   .baAir__fn{ font-weight: 600; }
   .baAir__sep{ margin: 0 8px; opacity:.5; }
+  /* Matches Tailwind: w-fit rounded-sm px-2 py-[5px] text-xs 2xl:py-1 2xl:text-sm bg-[#EEF4FB] text-[#3661EB] */
+  .baCabinBadge{
+    display: inline-block;
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0.125rem;
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 600;
+    background: #EEF4FB;
+    color: #3661EB;
+    vertical-align: middle;
+  }
+  @media (min-width: 1536px){
+    .baCabinBadge{
+      padding-top: 4px;
+      padding-bottom: 4px;
+      font-size: 14px;
+    }
+  }
   .baAir__op{
     font-size: 13px;
     opacity:.6;
@@ -3627,15 +3737,45 @@
   .baLayRow{
     border-top: 1px solid #efefef;
     border-bottom: 1px solid #efefef;
-    padding: 14px 0;
+    padding: 10px 0;
     margin: 0;
   }
-  .baLayRow__text{
-    font-size: 14px;
-    font-weight: 600;
-    color: #6b6b6b;
+  /* Tailwind-aligned: flex gap-1.5 rounded-sm bg-gray-50 px-2.5 py-1.5 text-gray-500 xl:px-3 xl:py-2 */
+  .baLayChip{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0.125rem;
+    background: #f9fafb;
+    color: #6b7280;
+    padding: 6px 10px;
   }
-  .baLayRow__dur{ font-weight: 600; color: #6b6b6b; }
+  @media (min-width: 1280px){
+    .baLayChip{ padding: 8px 12px; }
+  }
+  .baLayChip__icon{
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    color: inherit;
+  }
+  @media (min-width: 1536px){
+    .baLayChip__icon{ width: 14px; height: 14px; }
+  }
+  /* ~15% smaller than prior 11 / 12 / 14px */
+  .baLayChip__label{
+    font-size: 9.35px;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+  @media (min-width: 640px){
+    .baLayChip__label{ font-size: 10.2px; }
+  }
+  @media (min-width: 1536px){
+    .baLayChip__label{ font-size: 11.9px; }
+  }
 
   /* Passenger panel */
   .baPaxWrap{ position: sticky; top: 14px; }
@@ -4155,7 +4295,7 @@
   }
   .baPanelTitle{ font-weight: 600; margin-bottom: 10px; letter-spacing: -0.02em; }
   .baTipSection{ margin-top: 18px; }
-  /* Tips card shell — matches Travel Care Service (baCareBox) header + content */
+  /* Tips card shell — visually aligned with Travel Care (baCareCard) */
   .baTipBox{
     background: #fff;
     border: 1px solid var(--ba-border);
@@ -4680,6 +4820,47 @@
     flex-shrink: 0;
   }
 
+  /*
+   * Tablet / narrow desktop (e.g. 1024px with two-column checkout): a fixed 250px airline column plus
+   * baRow’s 150px time column left ~30–50px for city text → vertical character wrapping and stretched
+   * timeline (baTLSeg align-self: stretch). Use compact airline column + ellipsis until full mobile rules.
+   */
+  @media (max-width: 1200px){
+    .baFlight{
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .baFlight__main{ min-width: 0; }
+    .baRow{
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+    }
+    .baLocLine{
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .baAir{
+      flex-shrink: 0;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding-top: 6px;
+      padding-left: 12px;
+    }
+    .baAir__logo{
+      width: 64px;
+      height: 22px;
+    }
+    .baAir__meta{
+      font-size: 12px;
+      white-space: nowrap;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+  }
+
   /* Mobile: flight details — cities+airport in one line; airline block compact on the right */
   @media (max-width: 980px){
     /* Card header: route on one line, travel time aligned right with airline block below */
@@ -4704,7 +4885,7 @@
     .baCard__tt{
       flex-shrink: 0;
       margin-right: 0;
-      padding-top: 6px;
+      padding-top: 7.59px;
     }
     .baFlight{
       grid-template-columns: 1fr auto;
@@ -4723,7 +4904,7 @@
       width: 64px;
       height: 22px;
     }
-    .baAir__meta{ font-size: 12px; white-space: nowrap; }
+    .baAir__meta{ font-size: 12px; white-space: nowrap; flex-wrap: wrap; justify-content: flex-end; }
     .baLocLine{
       white-space: nowrap;
       overflow: hidden;
@@ -4749,6 +4930,10 @@
     align-items: start;
     margin-top: 16px;
   }
+  .baExtrasShell__left,
+  .baExtrasRight{
+    min-width: 0;
+  }
   @media (max-width: 980px){
     .baExtrasShell{ grid-template-columns: 1fr; display: flex; flex-direction: column; }
     /*
@@ -4770,211 +4955,215 @@
     .baExtrasStripe{ margin-top: 0 !important; }
   }
 
-  /* Travel Care Service Box */
-  .baCareBox{
+  /* Travel Care Service — compact card + toggle (care_selected via update_selection unchanged) */
+  .baCareCard{
     background: #fff;
-    border: 1px solid var(--ba-border);
-    border-radius: var(--ba-radius-md);
+    color: #111;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     overflow: hidden;
     box-shadow: none;
+    font-family: var(--ba-font);
   }
-  .baCareBox__header{
-    background: var(--ba-chrome);
-    padding: 16px 20px;
-    color: #fff;
+  .baCareCard__head{
+    padding: 18px 14px;
+    border-bottom: 1px solid #efefef;
+    box-sizing: border-box;
   }
-  .baCareBox__headerLeft{
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
+  @media (min-width: 1024px){
+    .baCareCard__head{ padding: 22px 18px; }
   }
-  .baCareBox__icon{
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
-    color: #fff;
-    margin-top: 2px;
+  @media (min-width: 1536px){
+    .baCareCard__head{ padding: 26px 26px; }
   }
-  .baCareBox__titleWrap{
-    flex: 1;
+  .baCareCard__body{
+    padding: 18px 14px 20px;
+    box-sizing: border-box;
   }
-  .baCareBox__title{
+  @media (min-width: 1024px){
+    .baCareCard__body{ padding: 22px 18px 22px; }
+  }
+  @media (min-width: 1536px){
+    .baCareCard__body{ padding: 26px 26px 24px; }
+  }
+  .baCareCard__title{
+    margin: 0;
+    font-family: var(--ba-font);
     font-weight: 600;
-    font-size: 18px;
-    margin-bottom: 4px;
+    font-size: 22px;
     letter-spacing: -0.03em;
-    line-height: 1.25;
+    line-height: 1.15;
+    color: #111;
   }
-  .baCareBox__subtitle{
-    font-size: 13px;
-    opacity: 0.85;
-    font-weight: 500;
-    line-height: 1.4;
+  @media (max-width: 980px){
+    .baCareCard__title{
+      font-size: clamp(16px, 5.2vw, 24px);
+      line-height: 1.4;
+      padding-bottom: 2px;
+    }
   }
-  .baCareBox__content{
-    padding: 20px;
-  }
-  .baCareBox__benefits{
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-  .baCareBox__benefit{
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  .baCareBox__check{
-    color: #0b6b2f;
-    font-weight: 700;
+  .baCareCard__accentSvg{
+    display: inline-block;
+    position: relative;
+    top: -1px;
     flex-shrink: 0;
-    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    vertical-align: middle;
+    color: currentColor;
   }
-  .baCareBox__benefitText{
-    flex: 1;
-    min-width: 0;
+  @media (min-width: 768px){
+    .baCareCard__accentSvg{
+      width: 20px;
+      height: 20px;
+      margin-right: 8px;
+    }
   }
-  .baCareBox__benefitTitle{
-    font-size: 16px;
-    line-height: 1.4;
+  .baCareCard__accent{
+    margin: 0;
+    font-size: 0.875rem;
     font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  .baCareBox__benefitSub{
-    font-size: 12px;
-    opacity: 0.85;
     line-height: 1.4;
-    margin-top: 4px;
+    color: #111;
   }
-  .baCareBox__recommended{
-    background: var(--ba-chrome);
-    color: #fff;
-    padding: 8px 20px;
-    font-weight: 600;
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    text-align: center;
-    border-radius: 0 0 8px 8px;
+  @media (min-width: 1280px){
+    .baCareCard__accent{
+      font-size: 1rem;
+      line-height: 1.45;
+    }
   }
-  .baCareBox__options{
-    padding: 18px 20px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+  .baCareCard__body > .baCareCard__accent:not(:first-child){
+    margin-top: 22px;
   }
-  /* TCS custom selector UI - keeps underlying radio for accessibility */
-  .ba-tcs-choice{
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  @media (min-width: 1024px){
+    .baCareCard__body > .baCareCard__accent:not(:first-child){ margin-top: 26px; }
   }
-  .ba-tcs-option{
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
+  .baCareCard__body > .baCareCard__accent + .baCareCard__desc{
+    margin-top: 12px;
+  }
+  @media (min-width: 1024px){
+    .baCareCard__body > .baCareCard__accent + .baCareCard__desc{ margin-top: 14px; }
+  }
+  .baCareCard__body > .baCareCard__desc + .baCareCard__accent{
+    margin-top: 22px;
+  }
+  @media (min-width: 1024px){
+    .baCareCard__body > .baCareCard__desc + .baCareCard__accent{ margin-top: 26px; }
+  }
+  .baCareCard__desc{
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #6b7280;
+  }
+  @media (min-width: 1280px){
+    .baCareCard__desc{
+      font-size: 1rem;
+      line-height: 1.75;
+    }
+  }
+  .baCareCard__learnRow{
+    margin: 20px 0 0;
+  }
+  @media (min-width: 1024px){
+    .baCareCard__learnRow{ margin-top: 24px; }
+  }
+  .baCareCard__learnMore{
+    display: inline;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: var(--ba-font);
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #111;
+    text-decoration: underline;
     cursor: pointer;
-    padding: 14px 16px;
-    border-radius: 8px;
-    border: 2px solid #e7e7e7;
-    background: #fff;
-    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
   }
-  .ba-tcs-option:hover{
-    border-color: #ccc;
-    background: #fafafa;
+  @media (min-width: 1280px){
+    .baCareCard__learnMore{
+      font-size: 1rem;
+      line-height: 1.75;
+    }
   }
-  .ba-tcs-option:focus-within{
+  .baCareCard__learnMore:hover{ color: #000; }
+  .baCareCard__learnMore:focus-visible{
     outline: 2px solid #111;
     outline-offset: 2px;
+    border-radius: 2px;
   }
-  .ba-tcs-option:has(input:checked){
-    border-color: #111;
-    background: rgba(0, 0, 0, 0.06);
-    box-shadow: 0 0 0 1px #111;
+  .baCareCard__learnMore:disabled{
+    opacity: 0.5;
+    cursor: not-allowed;
   }
-  .ba-tcs-option:has(input:checked):hover{
-    border-color: #111;
-    background: rgba(0, 0, 0, 0.08);
+  .baCareCard__foot{
+    padding: 18px 14px 20px;
+    border-top: 1px solid #efefef;
+    box-sizing: border-box;
   }
-  /* Visually hide radio, keep for accessibility (keyboard + screen readers) */
-  .ba-tcs-option input[type="radio"]{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  @media (min-width: 1024px){
+    .baCareCard__foot{ padding: 22px 18px 24px; }
   }
-  .ba-tcs-indicator{
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    border-radius: 50%;
-    border: 2px solid #ccc;
-    background: #fff;
-    margin-top: 2px;
-    flex-shrink: 0;
+  @media (min-width: 1536px){
+    .baCareCard__foot{ padding: 26px 26px 28px; }
+  }
+  .baCareCard__row{
     display: flex;
+    width: 100%;
     align-items: center;
-    justify-content: center;
-    transition: border-color 0.2s, background 0.2s;
+    justify-content: space-between;
+    gap: 12px;
   }
-  .ba-tcs-option input[type="radio"]:checked ~ .ba-tcs-indicator{
-    border-color: #111;
+  .baCareCard__priceLabel{
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25;
+    color: #4b5563;
+  }
+  @media (min-width: 1280px){
+    .baCareCard__priceLabel{ font-size: 1rem; }
+  }
+  .baCareSwitch{
+    position: relative;
+    flex-shrink: 0;
+    width: 36px;
+    height: 20px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: #e5e7eb;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: background 0.2s;
+    box-sizing: border-box;
+  }
+  .baCareSwitch[data-state="checked"]{
     background: #111;
   }
-  .ba-tcs-option input[type="radio"]:checked ~ .ba-tcs-indicator::after{
-    content: "✓";
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    line-height: 1;
-  }
-  .ba-tcs-label{
-    flex: 1;
-    font-size: 14px;
-    line-height: 1.5;
-    color: #333;
-  }
-  .ba-tcs-label strong{
-    font-weight: 600;
-  }
-  .ba-tcs-terms{
+  .baCareSwitch__thumb{
     display: block;
-    font-size: 13px;
-    margin-top: 6px;
-    color: #555;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: transform 0.2s;
+    transform: translateX(0);
   }
-  .ba-tcs-option .baCareRadio__link{
-    color: #0066cc;
-    text-decoration: underline;
-    font-weight: 500;
-    cursor: pointer;
+  .baCareSwitch[data-state="checked"] .baCareSwitch__thumb{
+    transform: translateX(16px);
   }
-  .ba-tcs-option .baCareRadio__link:hover{
-    color: #0052a3;
+  .baCareSwitch:focus-visible{
+    outline: 2px solid rgba(17,17,17,0.35);
+    outline-offset: 2px;
   }
-  .ba-tcs-option:has(input[type="radio"]:disabled){
+  .baCareSwitch:disabled{
+    opacity: 0.5;
     cursor: not-allowed;
-    opacity: 0.7;
-  }
-  .ba-tcs-option input[type="radio"]:disabled ~ .ba-tcs-label{
-    cursor: not-allowed;
-  }
-  .ba-tcs-option input[type="radio"]:disabled ~ .ba-tcs-indicator{
-    opacity: 0.6;
-  }
-  /* Legacy baCareRadio kept for compatibility, now uses tcs classes */
-  .baCareRadio{
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    cursor: pointer;
   }
 
   /* Summary Box (Sticky) */
@@ -5384,6 +5573,16 @@
     color: #666;
     line-height: 1.45;
   }
+  @media (min-width: 981px){
+    .baTcsDisclaimer{
+      max-width: 100%;
+    }
+    .baTcsDisclaimer__line1{
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+  }
   .baTcsDisclaimer__line1{
     margin: 0 0 4px 0;
   }
@@ -5705,79 +5904,34 @@
     <div class="baExtras" id="baExtras" style="display:none">
         <div class="baExtrasLeft">
           
-          <div class="baCareBox">
-            <div class="baCareBox__header">
-              <div class="baCareBox__headerLeft">
-                <svg class="baCareBox__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <div class="baCareBox__titleWrap">
-                  <div class="baCareBox__title">Travel Care Service</div>
-                  <div class="baCareBox__subtitle">Add flexible cancellation, refund options, and priority support to your booking.</div>
-                </div>
-              </div>
+          <div class="baCareCard">
+            <div class="baCareCard__head">
+              <h3 class="baCareCard__title">Let's make your ticket refundable?</h3>
             </div>
-            <div class="baCareBox__content">
-              <div class="baCareBox__benefits">
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <div class="baCareBox__benefitText">
-                    <div class="baCareBox__benefitTitle">Cancel Anytime — 80% Cash Refund</div>
-                    <div class="baCareBox__benefitSub">Cancel for any reason and receive 80% of your ticket price back to your original payment method.</div>
-                  </div>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <div class="baCareBox__benefitText">
-                    <div class="baCareBox__benefitTitle">Prefer Credit? Get 90% Back</div>
-                    <div class="baCareBox__benefitSub">Choose a 90% refund as Business-Airfare credit for future travel. Validity and usage terms apply.</div>
-                  </div>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <div class="baCareBox__benefitText">
-                    <div class="baCareBox__benefitTitle">First Airline Exchange Fee Covered</div>
-                    <div class="baCareBox__benefitSub">We cover the airline's first exchange/change penalty once. Fare difference may apply.</div>
-                  </div>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <div class="baCareBox__benefitText">
-                    <div class="baCareBox__benefitTitle">Mishandled Baggage Assistance</div>
-                    <div class="baCareBox__benefitSub">Priority support to help track and escalate delayed/mishandled baggage according to airline policy.</div>
-                  </div>
-                </div>
-                <div class="baCareBox__benefit">
-                  <span class="baCareBox__check">✓</span>
-                  <div class="baCareBox__benefitText">
-                    <div class="baCareBox__benefitTitle">Didn't Use It? Get a Travel Voucher</div>
-                    <div class="baCareBox__benefitSub">Receive a voucher equal to 50% of your TCS cost, up to $150, if no TCS benefits were used.</div>
-                  </div>
-                </div>
-              </div>
+            <div class="baCareCard__body">
+              <p class="baCareCard__accent"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 24 24" class="baCareCard__accentSvg" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5.67591 4.25667C9.60392 1.03828 15.4094 1.26236 19.076 4.92893C22.9812 8.83418 22.9812 15.1658 19.076 19.0711C15.1707 22.9763 8.83906 22.9763 4.93382 19.0711C2.40932 16.5466 1.51676 13.0081 2.25611 9.76666L2.33275 9.45394L4.26718 9.96315C3.56967 12.623 4.26329 15.5721 6.34803 17.6569C9.47222 20.781 14.5375 20.781 17.6617 17.6569C20.7859 14.5327 20.7859 9.46734 17.6617 6.34315C14.8441 3.5255 10.4475 3.24903 7.32006 5.51375L7.09886 5.67983L8.1158 6.6967L3.5196 7.75736L4.58026 3.16117L5.67591 4.25667ZM13.0049 6V8H15.5049V10H10.0049C9.72874 10 9.50488 10.2239 9.50488 10.5C9.50488 10.7455 9.68176 10.9496 9.91501 10.9919L10.0049 11H14.0049C15.3856 11 16.5049 12.1193 16.5049 13.5C16.5049 14.8807 15.3856 16 14.0049 16H13.0049V18H11.0049V16H8.50488V14H14.0049C14.281 14 14.5049 13.7761 14.5049 13.5C14.5049 13.2545 14.328 13.0504 14.0948 13.0081L14.0049 13H10.0049C8.62417 13 7.50488 11.8807 7.50488 10.5C7.50488 9.11929 8.62417 8 10.0049 8H11.0049V6H13.0049Z"></path></svg> Need to cancel? — Get 80% Cash Refund</p>
+              <p class="baCareCard__desc">Cancel for any reason and get 80% of your ticket price back to your card.</p>
+              <p class="baCareCard__accent"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 256 256" class="baCareCard__accentSvg" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M230.33,141.06a24.43,24.43,0,0,0-21.24-4.23l-41.84,9.62A28,28,0,0,0,140,112H89.94a31.82,31.82,0,0,0-22.63,9.37L44.69,144H16A16,16,0,0,0,0,160v40a16,16,0,0,0,16,16H120a7.93,7.93,0,0,0,1.94-.24l64-16a6.94,6.94,0,0,0,1.19-.4L226,182.82l.44-.2a24.6,24.6,0,0,0,3.93-41.56ZM16,160H40v40H16Zm203.43,8.21-38,16.18L119,200H56V155.31l22.63-22.62A15.86,15.86,0,0,1,89.94,128H140a12,12,0,0,1,0,24H112a8,8,0,0,0,0,16h32a8.32,8.32,0,0,0,1.79-.2l67-15.41.31-.08a8.6,8.6,0,0,1,6.3,15.9ZM164,96a36,36,0,0,0,5.9-.48,36,36,0,1,0,28.22-47A36,36,0,1,0,164,96Zm60-12a20,20,0,1,1-20-20A20,20,0,0,1,224,84ZM164,40a20,20,0,0,1,19.25,14.61,36,36,0,0,0-15,24.93A20.42,20.42,0,0,1,164,80a20,20,0,0,1,0-40Z"></path></svg> Prefer Credit? — Get 90% for Future Use</p>
+              <p class="baCareCard__desc">Choose a 90% credit for future travel with us. Validity and usage terms apply.</p>
+              <p class="baCareCard__learnRow">
+                <button type="button" class="baCareCard__learnMore" id="baTcsLearnMore" aria-haspopup="dialog" aria-expanded="false" aria-controls="baTcsTermsModal" ${selectionLocked || isExpired ? "disabled" : ""}>Learn more</button>
+              </p>
             </div>
-            <div class="baCareBox__recommended">RECOMMENDED</div>
-            <div class="baCareBox__options">
-              <div class="ba-tcs-choice">
-                <label class="ba-tcs-option baCareRadio">
-                  <input type="radio" name="baCareOption" value="yes" id="baCareYes" ${careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""} aria-label="Yes, add Travel Care Service">
-                  <span class="ba-tcs-indicator" aria-hidden="true"></span>
-                  <span class="ba-tcs-label">
-                    <strong>Yes</strong>, add Travel Care Service for <strong>${fmtMoney(careCents)}</strong>
-                    <span class="ba-tcs-terms">I have read and agree to the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baCareRadio__link" id="baTermsLink">Terms and Conditions</a></span>
-                  </span>
-                </label>
-                <label class="ba-tcs-option baCareRadio">
-                  <input type="radio" name="baCareOption" value="no" id="baCareNo" ${!careSelected ? "checked" : ""} ${selectionLocked || isExpired ? "disabled" : ""} aria-label="No, I choose not to protect">
-                  <span class="ba-tcs-indicator" aria-hidden="true"></span>
-                  <span class="ba-tcs-label">
-                    <strong>No</strong>, I choose not to protect. Travel Care Service is not available after booking. <a href="#" class="baCareRadio__link" id="baReadMoreLink">Read more</a>
-                  </span>
-                </label>
+            <div class="baCareCard__foot">
+              <div class="baCareCard__row">
+                <span class="baCareCard__priceLabel" id="baCarePriceLabel">${escapeHtml(carePerPersonLabel)}</span>
+                <button type="button" role="switch" class="baCareSwitch" id="baCareToggle"
+                  aria-checked="${careSelected ? "true" : "false"}"
+                  data-state="${careSelected ? "checked" : "unchecked"}"
+                  aria-labelledby="baCarePriceLabel"
+                  ${selectionLocked || isExpired ? "disabled" : ""}>
+                  <span class="baCareSwitch__thumb" aria-hidden="true"></span>
+                </button>
+              </div>
             </div>
           </div>
           <div class="baTcsDisclaimer">
-            <p class="baTcsDisclaimer__line1">Your card will be charged according to the selected options. For full details, click "Terms and Conditions" above.</p>
+            <p class="baTcsDisclaimer__line1">Your card will be charged according to the selected options. For full details, use "Learn more" above or see <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer">Terms and Conditions</a>.</p>
             <p class="baTcsDisclaimer__line2">Travel Care Service is not an insurance policy and does not replace travel insurance obtained or obtainable by you.</p>
           </div>
         </div>
@@ -5885,7 +6039,6 @@
           </div>
         </div>
     </div>
-      </div>
 
         <div class="baExtrasRight">
           <div id="baPayChatRail" class="baPayChatRail" aria-hidden="true"></div>
@@ -5911,7 +6064,7 @@
                   return `
                     <div class="baSummaryBox__flightLeg">
                       ${legLabel ? `<div class="baSummaryBox__flightLegLabel">${escapeHtml(legLabel)}</div>` : ""}
-                      <div class="baSummaryBox__flightRoute">${escapeHtml(cp.fromCity || cp.fromIata || "")} (${escapeHtml(cp.fromIata || "")}) → ${escapeHtml(cp.toCity || cp.toIata || "")} (${escapeHtml(cp.toIata || "")})</div>
+                      <div class="baSummaryBox__flightRoute">${escapeHtml(routeHeadlineLabel(cp.fromCity, cp.fromIata))} <span class="baArr">→</span> ${escapeHtml(routeHeadlineLabel(cp.toCity, cp.toIata))}</div>
                       <div class="baSummaryBox__flightDate">${escapeHtml(dateLabel)}</div>
                     </div>
                   `;
@@ -6691,10 +6844,14 @@
       if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
     }
 
-    // Travel Care Service radio buttons - custom UI (ba-tcs-option) wraps visually hidden inputs
-    // careYes/careNo are the underlying radios; handleCareSelection drives update_selection
-    const careYes = document.getElementById("baCareYes");
-    const careNo = document.getElementById("baCareNo");
+    // Travel Care Service toggle — same care_selected + update_selection + Stripe remount as legacy radios
+    const careToggleBtn = document.getElementById("baCareToggle");
+    function syncCareToggleUI() {
+      if (!careToggleBtn) return;
+      const on = !!careSelected;
+      careToggleBtn.setAttribute("aria-checked", on ? "true" : "false");
+      careToggleBtn.setAttribute("data-state", on ? "checked" : "unchecked");
+    }
     
     // Disable only payment buttons while totals are being updated
     // This prevents proceeding with stale totals while keeping TCS/tip inputs interactive
@@ -6721,8 +6878,7 @@
       
       // OPTIMISTIC UPDATE: Update UI immediately
       careSelected = newSelected;
-      if (careYes) careYes.checked = newSelected;
-      if (careNo) careNo.checked = !newSelected;
+      syncCareToggleUI();
       updateSummaryBox();
       updateTotalsUI();
       
@@ -6758,8 +6914,7 @@
         .catch((e) => {
           // REVERT on error
           careSelected = wasSelected;
-          if (careYes) careYes.checked = wasSelected;
-          if (careNo) careNo.checked = !wasSelected;
+          syncCareToggleUI();
           updateSummaryBox();
           updateTotalsUI();
           setSaving(false);
@@ -6768,14 +6923,11 @@
         });
     }
 
-    if (careYes) {
-      careYes.addEventListener("change", () => {
-        if (careYes.checked) handleCareSelection(true);
-      });
-    }
-    if (careNo) {
-      careNo.addEventListener("change", () => {
-        if (careNo.checked) handleCareSelection(false);
+    syncCareToggleUI();
+    if (careToggleBtn) {
+      careToggleBtn.addEventListener("click", () => {
+        if (selectionLocked || isExpired) return;
+        handleCareSelection(!careSelected);
       });
     }
 
@@ -7178,24 +7330,25 @@
       requestAnimationFrame(() => overlay.classList.add("active"));
     }
 
-    const termsLink = document.getElementById("baTermsLink");
-    const readMoreLink = document.getElementById("baReadMoreLink");
+    const tcsLearnMoreBtn = document.getElementById("baTcsLearnMore");
 
-    if (termsLink) {
-      termsLink.setAttribute("href", termsUrl);
-      termsLink.setAttribute("target", "_blank");
-      termsLink.setAttribute("rel", "noopener noreferrer");
-      termsLink.addEventListener("click", (e) => {
+    function openBaTcsTermsModal() {
+      const modal = document.getElementById("baTcsTermsModal");
+      if (modal) {
+        modal.removeAttribute("hidden");
+        const closeBtn = modal.querySelector(".baTcsModal__close");
+        if (closeBtn) closeBtn.focus();
+        document.body.style.overflow = "hidden";
+        if (tcsLearnMoreBtn) tcsLearnMoreBtn.setAttribute("aria-expanded", "true");
+      } else {
+        window.open(termsUrl, "_blank", "noopener,noreferrer");
+      }
+    }
+
+    if (tcsLearnMoreBtn) {
+      tcsLearnMoreBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        const modal = document.getElementById("baTcsTermsModal");
-        if (modal) {
-          modal.removeAttribute("hidden");
-          const closeBtn = modal.querySelector(".baTcsModal__close");
-          if (closeBtn) closeBtn.focus();
-          document.body.style.overflow = "hidden";
-        } else {
-          window.open(termsUrl, "_blank", "noopener,noreferrer");
-        }
+        openBaTcsTermsModal();
       });
     }
 
@@ -7216,7 +7369,10 @@
       function closeModal() {
         modal.setAttribute("hidden", "");
         document.body.style.overflow = "";
-        if (termsLink) termsLink.focus();
+        if (tcsLearnMoreBtn) {
+          tcsLearnMoreBtn.setAttribute("aria-expanded", "false");
+          tcsLearnMoreBtn.focus();
+        }
       }
 
       function handleKeydown(e) {
@@ -7269,20 +7425,6 @@
         });
       });
     })();
-
-    if (readMoreLink) {
-      readMoreLink.addEventListener("click", (e) => {
-        e.preventDefault();
-        createPopup("Declining Travel Care Service means that you will", `<ul class="baReadMorePopup__list" style="margin:0; padding-left:20px; color:#8b3a3a; list-style:disc; columns:2; column-gap:24px;">
-<li style="margin-bottom:8px;">Have to deal with the airline directly for trip related requests</li>
-<li style="margin-bottom:8px;">Face hefty fees to make changes or cancellations</li>
-<li style="margin-bottom:8px;">Not be guaranteed to get the refunds you are eligible for under Travel Care Service</li>
-<li style="margin-bottom:8px;">Not have added flexibility or protection to your trip</li>
-<li style="margin-bottom:8px;">Miss out on personalized customer service</li>
-<li style="margin-bottom:0;">Miss out on waivers for our service fees and vouchers for future bookings</li>
-</ul>`);
-      });
-    }
 
     function disablePrimary(reason){
       const payBtn = document.getElementById("baPayBtn");
