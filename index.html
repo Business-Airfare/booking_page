@@ -121,7 +121,7 @@
   }
 
   // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
-  /** Desktop: keep summary + #baPayChatRail in .baExtrasRight. Mobile (≤980px): move them into .baExtrasShell__left *before* #baExtras so they sit above Travel Care + Stripe. */
+  /** Desktop: keep summary + #baPayChatRail in .baExtrasRight. Mobile (≤980px): move #baPayChatRail before #baExtras; move .baSummaryBox into #baStripeWrap between Secure payment and the terms card. */
   window.__baRestoreSummaryChatToExtrasRight = function __baRestoreSummaryChatToExtrasRight(rootEl) {
     if (!rootEl || rootEl.nodeType !== 1) return;
     var right = rootEl.querySelector(".baExtrasRight");
@@ -139,20 +139,34 @@
     var extras = rootEl.querySelector("#baExtras");
     var rail = rootEl.querySelector("#baPayChatRail");
     var summary = rootEl.querySelector(".baSummaryBox");
+    var stripeWrap = rootEl.querySelector("#baStripeWrap");
+    var termsCard = stripeWrap && stripeWrap.querySelector(".baStripePayCard--terms");
     if (!leftWrap || !extras || !rail || !summary) return;
-    if (
-      summary.parentElement === leftWrap &&
-      rail.parentElement === leftWrap &&
-      summary.nextElementSibling === rail &&
-      rail.nextElementSibling === extras
-    ) {
+    if (!stripeWrap || !termsCard) {
+      if (
+        summary.parentElement === leftWrap &&
+        rail.parentElement === leftWrap &&
+        summary.nextElementSibling === rail &&
+        rail.nextElementSibling === extras
+      ) {
+        return;
+      }
+      leftWrap.insertBefore(summary, extras);
+      leftWrap.insertBefore(rail, extras);
       return;
     }
-    leftWrap.insertBefore(summary, extras);
-    leftWrap.insertBefore(rail, extras);
+    var railOk = rail.parentElement === leftWrap && rail.nextElementSibling === extras;
+    var summaryOk = summary.parentElement === stripeWrap && summary.nextElementSibling === termsCard;
+    if (railOk && summaryOk) return;
+    if (!railOk) {
+      leftWrap.insertBefore(rail, extras);
+    }
+    if (!summaryOk) {
+      stripeWrap.insertBefore(summary, termsCard);
+    }
   };
 
-  /** After BOOK + checkout, move #baPayChatMount into #baPayChatRail; on mobile, DOM-order summary + chat above #baExtras. */
+  /** After BOOK + checkout, move #baPayChatMount into #baPayChatRail; on mobile, chat above #baExtras and summary between payment card and terms. */
   window.__baRelocatePaymentChatAboveSummary = function __baRelocatePaymentChatAboveSummary(rootEl) {
     if (!rootEl || rootEl.nodeType !== 1) return;
     var rail = rootEl.querySelector("#baPayChatRail");
@@ -1513,13 +1527,11 @@
     }
 
     // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
-    // On mobile only: make text inside input boxes bold (user-typed content); labels stay default via rules.
     const isMobileStripe = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
     const stripeAppearance = isMobileStripe
       ? {
           theme: "stripe",
-          variables: { fontSizeBase: "38px", spacingUnit: "8px" },
-          rules: { ".Input": { fontWeight: "700" } }
+          variables: { fontSizeBase: "38px", spacingUnit: "8px" }
         }
       : { theme: "stripe" };
 
@@ -5765,14 +5777,14 @@
     .baExtrasShell{ grid-template-columns: 1fr; display: flex; flex-direction: column; }
     /*
      * Mobile column: display:contents on __left hoists .baExtrasShell__left's children to .baExtrasShell.
-     * After BOOK, JS moves .baSummaryBox + #baPayChatRail before #baExtras inside __left so they appear above Travel Care (see __baMoveSummaryChatBeforeExtrasBlock).
+     * After BOOK, JS moves #baPayChatRail before #baExtras and .baSummaryBox into #baStripeWrap above the terms card (see __baMoveSummaryChatBeforeExtrasBlock).
      */
     .baExtrasShell__left{ display: contents; }
     .baExtrasLeft{ display: contents; }
     .baExtrasRight{ display: contents; }
     .baExtrasShell__left > #baExtras,
-    .baExtrasShell__left > .baSummaryBox,
-    .baExtrasShell__left > .baPayChatRail{
+    .baExtrasShell__left > .baPayChatRail,
+    #baStripeWrap > .baSummaryBox{
       width: 100%;
       min-width: 0;
       max-width: 100%;
@@ -6332,6 +6344,87 @@
     line-height: 1.4;
     text-align: right;
     font-style: italic;
+  }
+  /* Mobile: match Travel Care / Tips card type scale (see baCareCard__title, baTipBox__title, body 0.875rem, tip chips ~15px) */
+  @media (max-width: 1000px){
+    .baSummaryBox{
+      padding: 18px 14px;
+    }
+    .baSummaryBox__flight{
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .baSummaryBox__flightLabel{
+      font-size: clamp(16px, 5.2vw, 24px);
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+    .baSummaryBox__flightRoute{
+      font-size: clamp(15px, 4.2vw, 18px);
+      line-height: 1.45;
+    }
+    .baSummaryBox__flightDate{
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+    .baSummaryBox__flightLegLabel{
+      font-size: 12px;
+      letter-spacing: 0.07em;
+      margin-bottom: 4px;
+    }
+    .baSummaryBox__divider{
+      margin: 14px 0;
+    }
+    .baSummaryBox__items{
+      gap: 18px;
+    }
+    /* Line items: same relative scale as desktop (14px / 16px / 12px → 0.875rem / 1rem / 0.75rem) */
+    .baSummaryBox__itemLabel{
+      font-size: 0.875rem;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+    .baSummaryBox__itemValue{
+      font-size: 1rem;
+      line-height: 1.5;
+      font-weight: 600;
+    }
+    .baSummaryBox__itemSub,
+    .baSummaryBox__itemSubValue{
+      font-size: 0.75rem;
+      line-height: 1.5;
+      font-weight: 400;
+      opacity: 0.7;
+    }
+    .baSummaryBox__total{
+      margin-top: 10px;
+    }
+    .baSummaryBox__totalLabel{
+      font-size: clamp(16px, 4.2vw, 20px);
+      margin-bottom: 10px;
+    }
+    .baSummaryBox__totalValue{
+      font-size: clamp(24px, 7vw, 34px);
+      line-height: 1.12;
+    }
+    .baSummaryBox__totalWords{
+      font-size: 0.8125rem;
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+  }
+  /* Summary in zoomed #baStripeWrap on ≤980px: scale each tier by 1/zoom; ratios stay 0.875 : 1 : 0.75 rem like desktop */
+  @media (max-width: 980px){
+    #baStripeWrap > .baSummaryBox .baSummaryBox__itemLabel{
+      font-size: calc(0.875rem / var(--ba-stripe-mobile-zoom, 0.7));
+    }
+    #baStripeWrap > .baSummaryBox .baSummaryBox__itemValue{
+      font-size: calc(1rem / var(--ba-stripe-mobile-zoom, 0.7));
+    }
+    #baStripeWrap > .baSummaryBox .baSummaryBox__itemSub,
+    #baStripeWrap > .baSummaryBox .baSummaryBox__itemSubValue{
+      font-size: calc(0.75rem / var(--ba-stripe-mobile-zoom, 0.7));
+    }
   }
 
   /* Popup overlay */
