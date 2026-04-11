@@ -3787,6 +3787,8 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    /* Shared rail width so circle row and label row use identical column tracks */
+    --ba-progress-rail: 52px;
   }
   .baHeaderProgressTopRow,
   .baHeaderProgressBottomRow{
@@ -3817,31 +3819,40 @@
   }
   .baHeaderProgressCirclesRow,
   .baHeaderProgressLabelsRow{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--ba-progress-rail) minmax(0, 1fr) var(--ba-progress-rail) minmax(0, 1fr);
+    gap: 0;
     opacity: 0.92;
     min-width: 0;
+    width: 100%;
+  }
+  .baHeaderProgressCirclesRow{
+    align-items: center;
   }
   .baHeaderProgressLabelsRow{
-    align-items: flex-start;
+    align-items: start;
   }
   .baProgressCircleSlot,
   .baProgressLabelSlot{
-    flex: 1 1 0;
     min-width: 0;
     display: flex;
     justify-content: center;
+  }
+  .baHeaderProgressCirclesRow .baProgressCircleSlot{
+    align-items: center;
+  }
+  .baHeaderProgressLabelsRow .baProgressLabelSlot{
+    align-items: flex-start;
   }
   .baProgressLabelSlot .baProgressStepLabel{
     text-align: center;
   }
   .baProgressLabelsGap{
-    width: 52px;
-    flex-shrink: 0;
-    align-self: flex-start;
+    width: 100%;
+    height: 0;
+    align-self: center;
     pointer-events: none;
+    box-sizing: border-box;
   }
   .baProgressStepCircle{
     width: 28px;
@@ -3878,9 +3889,10 @@
     color: #fff;
   }
   .baProgressStepLine{
-    width: 52px;
+    width: 100%;
+    max-width: 100%;
     height: 0;
-    flex-shrink: 0;
+    box-sizing: border-box;
     align-self: center;
     border: 0;
     border-top: 1px solid rgba(255,255,255,.22);
@@ -3920,11 +3932,49 @@
     .baHeaderProgressSubtitle{
       text-align: center;
     }
-    .baHeaderProgressCirclesRow,
-    .baHeaderProgressLabelsRow{
-      justify-content: center;
-      flex-wrap: wrap;
+  }
+
+  /* Narrow / mobile: single column flow — title, step circles, (subtitle if any), labels; hide default itinerary line */
+  @media (max-width: 1000px){
+    .baHeaderProgressInner{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      --ba-progress-rail: clamp(12px, 4.2vw, 40px);
+    }
+    .baHeaderProgressTopRow,
+    .baHeaderProgressBottomRow{
+      display: contents;
+    }
+    .baHeaderProgressTitle{
+      order: 1;
       width: 100%;
+      max-width: 100%;
+      text-align: center;
+    }
+    .baHeaderProgressCirclesRow{
+      order: 2;
+      width: 100%;
+      max-width: 100%;
+    }
+    .baHeaderProgressSubtitle{
+      order: 3;
+      width: 100%;
+      max-width: 100%;
+      text-align: center;
+    }
+    .baHeaderProgressSubtitle--hideOnNarrow{
+      display: none !important;
+    }
+    .baHeaderProgressLabelsRow{
+      order: 4;
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+    .baProgressStepLabel{
+      white-space: normal;
       max-width: 100%;
     }
   }
@@ -6642,7 +6692,7 @@
         </div>
       </div>
       <div class="baHeaderProgressBottomRow">
-        <div class="baHeaderProgressSubtitle">${isExpired ? "Contact your travel agent to check the flight availability." : (agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : "Your itinerary is almost confirmed.")}</div>
+        <div class="baHeaderProgressSubtitle${!isExpired && !agentPhone ? " baHeaderProgressSubtitle--hideOnNarrow" : ""}">${isExpired ? "Contact your travel agent to check the flight availability." : (agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : "Your itinerary is almost confirmed.")}</div>
         <div class="baHeaderProgressLabelsRow">
           <div class="baProgressLabelSlot">
             <div class="baProgressStepLabel">Request a quote</div>
