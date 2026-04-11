@@ -1047,6 +1047,7 @@
   let billingEmail = "";
   let payerEmail = ""; // Payer email for receipt (separate from Stripe billing email)
   let billingAddressComplete = false;
+  let paymentDetailsComplete = false;
   
   // Helper function to check if wallet payment methods require remount
   function shouldForceRemountForWalletPayment() {
@@ -1111,6 +1112,8 @@
     setTimeout(function() {
       const e = document.getElementById("baStripeLoadingOverlay");
       if (e && e.parentNode) e.remove();
+      const formWrap = document.getElementById("baStripeFormContentWrap");
+      if (formWrap) formWrap.style.minHeight = "";
     }, 200);
   }
 
@@ -1196,6 +1199,8 @@
         payerEmailInput.style.borderColor = "#e7e7e7";
       }
     }
+    const payerEmailEl = document.getElementById("baPayerEmail");
+    if (payerEmailEl && payerEmailOk) payerEmailEl.classList.remove("baPayCheckoutWarn");
 
     const addrOk = !!billingAddressComplete;
 
@@ -1205,19 +1210,22 @@
     const tipAgreeCheckbox = document.getElementById("baTipAgree");
     const tipCentsChosen = getTipChargeCentsFromDOM();
     const tipMeaningful = tipCentsChosen > 0;
-    const tipsOk = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
+    const tipRequiresAgree = tipCentsChosen > 100;
+    const tipsOk = !tipRequiresAgree || tipAgreeToggleIsOn(tipAgreeCheckbox);
 
     const tipSaveOk = !tipMeaningful || !tipSaveError;
 
     const acceptanceOk = acceptanceCompleted;
 
-    const coreOk = payerEmailOk && addrOk && termsOk && tipSaveOk;
+    const paymentDetailsOk = !!paymentDetailsComplete;
+    const coreOk = payerEmailOk && addrOk && paymentDetailsOk && termsOk && tipSaveOk;
     const fullyOk = coreOk && tipsOk && acceptanceOk;
-    const tipAckBlocking = tipMeaningful && !tipsOk;
+    const tipAckBlocking = tipRequiresAgree && !tipsOk;
 
     return {
       payerEmailOk,
       addrOk,
+      paymentDetailsOk,
       termsOk,
       hasTipSelected: tipMeaningful,
       tipsOk,
@@ -1227,6 +1235,85 @@
       fullyOk,
       tipAckBlocking
     };
+  }
+
+  function clearPayCheckoutHighlights(){
+    document.querySelectorAll(".baPayCheckoutWarn").forEach(function (n) {
+      n.classList.remove("baPayCheckoutWarn");
+    });
+    const tipRow = document.querySelector(".baTipAgreeRow");
+    if (tipRow) tipRow.classList.remove("is-warn");
+    const termsSec = document.getElementById("baTermsAgreeSection");
+    if (termsSec) termsSec.classList.remove("is-warn");
+  }
+
+  function scrollPayCheckoutIntoView(el){
+    if (!el) return;
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (_) {
+      try {
+        el.scrollIntoView({ block: "center" });
+      } catch (__) {}
+    }
+  }
+
+  function showPayCheckoutIssue(which){
+    clearPayCheckoutHighlights();
+    if (which === "email") {
+      const inp = document.getElementById("baPayerEmail");
+      if (inp) {
+        inp.classList.add("baPayCheckoutWarn");
+        scrollPayCheckoutIntoView(inp);
+        try {
+          inp.focus({ preventScroll: true });
+        } catch (_) {
+          try {
+            inp.focus();
+          } catch (__) {}
+        }
+      }
+      return;
+    }
+    if (which === "address") {
+      const mount = document.getElementById("baAddressMount");
+      if (mount) {
+        mount.classList.add("baPayCheckoutWarn");
+        scrollPayCheckoutIntoView(mount);
+      }
+      try {
+        if (addressElement && typeof addressElement.focus === "function") addressElement.focus();
+      } catch (_) {}
+      return;
+    }
+    if (which === "payment") {
+      const mount = document.getElementById("baStripeMount");
+      if (mount) {
+        mount.classList.add("baPayCheckoutWarn");
+        scrollPayCheckoutIntoView(mount);
+      }
+      try {
+        if (paymentElement && typeof paymentElement.focus === "function") paymentElement.focus();
+      } catch (_) {}
+      return;
+    }
+    if (which === "tip") {
+      showTipAgreementRequiredUI();
+      const row = document.querySelector(".baTipAgreeRow");
+      if (row) row.classList.add("baPayCheckoutWarn");
+      return;
+    }
+    if (which === "terms") {
+      showTermsAgreementRequiredUI();
+      const ctl = document.querySelector(".baTermsAgreeControl");
+      if (ctl) ctl.classList.add("baPayCheckoutWarn");
+      return;
+    }
+    if (which === "acceptance") {
+      showTermsAgreementRequiredUI();
+      const ctl = document.querySelector(".baTermsAgreeControl");
+      if (ctl) ctl.classList.add("baPayCheckoutWarn");
+    }
   }
 
   function showTipAgreementRequiredUI(){
@@ -1251,19 +1338,47 @@
     }
   }
 
-  function setConfirmEnabled(){
-    const s = computeBillingValidationState();
-    const interactable = s.coreOk && (s.fullyOk || s.tipAckBlocking);
-    const confirmBtn = document.getElementById("baStripeConfirm");
-    const msg = document.getElementById("baStripeMsg");
-    if (!confirmBtn) return;
-    confirmBtn.disabled = !interactable;
-    confirmBtn.style.opacity = interactable ? "1" : ".6";
-    confirmBtn.style.cursor = interactable ? "pointer" : "not-allowed";
-    confirmBtn.style.pointerEvents = interactable ? "auto" : "none";
-    if (!interactable && msg && !msg.textContent) {
-      msg.textContent = "Please enter billing details to continue.";
+  function showTermsAgreementRequiredUI(){
+    const termsSection = document.getElementById("baTermsAgreeSection");
+    if (termsSection) {
+      termsSection.classList.add("is-warn");
+      try {
+        termsSection.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch (_) {
+        termsSection.scrollIntoView({ block: "center" });
+      }
     }
+    const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+    if (termsCheckbox) {
+      try {
+        termsCheckbox.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          termsCheckbox.focus();
+        } catch (_) {}
+      }
+    }
+  }
+
+  function setConfirmEnabled(){
+    const confirmBtn = document.getElementById("baStripeConfirm");
+    if (!confirmBtn) return;
+    if (confirmBtn.getAttribute("data-ba-totals-saving") === "1" || confirmBtn.getAttribute("data-ba-processing") === "1") {
+      confirmBtn.disabled = true;
+      confirmBtn.style.opacity = ".6";
+      confirmBtn.style.cursor = "not-allowed";
+      confirmBtn.style.pointerEvents = "none";
+      return;
+    }
+    const wrap = document.getElementById("baStripeWrap");
+    if (!wrap) return;
+    const disp = wrap.style.display || "";
+    const shown = disp === "flex" || (disp !== "none" && typeof getComputedStyle === "function" && getComputedStyle(wrap).display !== "none");
+    if (!shown) return;
+    confirmBtn.disabled = false;
+    confirmBtn.style.opacity = "1";
+    confirmBtn.style.cursor = "pointer";
+    confirmBtn.style.pointerEvents = "auto";
   }
 
   function validateBillingUI(){
@@ -1275,6 +1390,7 @@
         result,
         payerEmailOk: s.payerEmailOk,
         addrOk: s.addrOk,
+        paymentDetailsOk: s.paymentDetailsOk,
         termsOk: s.termsOk,
         tipsOk: s.tipsOk,
         acceptanceOk: s.acceptanceOk,
@@ -1385,9 +1501,16 @@
     // Clear mount containers
     const addrMount = document.getElementById("baAddressMount");
     const payMount = document.getElementById("baStripeMount");
+    paymentDetailsComplete = false;
     
-    if (addrMount) addrMount.innerHTML = "";
-    if (payMount) payMount.innerHTML = "";
+    if (addrMount) {
+      addrMount.innerHTML = "";
+      addrMount.classList.remove("baPayCheckoutWarn");
+    }
+    if (payMount) {
+      payMount.innerHTML = "";
+      payMount.classList.remove("baPayCheckoutWarn");
+    }
 
     // UI only: Stripe Appearance API for mobile (font/spacing). Does not affect payment processing, Stripe API calls, webhooks, or backend.
     // On mobile only: make text inside input boxes bold (user-typed content); labels stay default via rules.
@@ -1431,12 +1554,8 @@
 
     addressElement.on("change", (event) => {
       billingAddressComplete = !!(event && event.complete);
-      const s = computeBillingValidationState();
-      const m = document.getElementById("baStripeMsg");
-      if (m) {
-        if (s.fullyOk) m.textContent = "";
-        else if (!s.coreOk) m.textContent = "Please enter billing details to continue.";
-      }
+      const addrM = document.getElementById("baAddressMount");
+      if (addrM && billingAddressComplete) addrM.classList.remove("baPayCheckoutWarn");
       setConfirmEnabled();
     });
     
@@ -1499,6 +1618,12 @@
     
     // Listen for payment method changes to track selected method
     paymentElement.on("change", (event) => {
+      if (event && typeof event.complete === "boolean") {
+        paymentDetailsComplete = !!event.complete;
+        const payM = document.getElementById("baStripeMount");
+        if (payM && paymentDetailsComplete) payM.classList.remove("baPayCheckoutWarn");
+        setConfirmEnabled();
+      }
       if (!event || !event.value || !event.value.type) return;
       const newType = event.value.type;
       // Ignore spurious "card" from newly mounted element right after a wallet remount (Stripe can fire change(card) after "ready")
@@ -1651,10 +1776,11 @@
       throw new Error("Please accept the Terms and Conditions to proceed with payment.");
     }
     
-    // Check tips agreement if a positive tip is selected
+    // Check tips agreement when tip charge is more than $1
     const tipAgreeCheckbox = document.getElementById("baTipAgree");
-    const tipMeaningful = getTipChargeCentsFromDOM() > 0;
-    if (tipMeaningful && !tipAgreeToggleIsOn(tipAgreeCheckbox)) {
+    const tipCentsConfirm = getTipChargeCentsFromDOM();
+    const tipRequiresAckConfirm = tipCentsConfirm > 100;
+    if (tipRequiresAckConfirm && !tipAgreeToggleIsOn(tipAgreeCheckbox)) {
       throw new Error("Please accept the tip agreement to proceed with payment.");
     }
 
@@ -1892,16 +2018,17 @@
 
     root.innerHTML = `
       <style>
-        .baPaidConf .baCard{ --ba-flight-cols:minmax(0,1fr) minmax(132px,200px); --ba-flight-xgap:18px; --ba-flight-ygap:14px; --ba-timeline-col:36px; --ba-flight-main-gap:0px; --ba-time-rail-offset:calc(var(--ba-timeline-col) + var(--ba-flight-main-gap)); --ba-segment-rule:1px solid rgba(0,0,0,.06); background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
-        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:20px 22px 16px 25.3px; border-bottom:1px solid rgba(0,0,0,.07); }
+        .baPaidConf .baCard{ --ba-flight-cols:minmax(0,1fr) minmax(132px,200px); --ba-flight-xgap:18px; --ba-flight-ygap:14px; --ba-timeline-col:36px; --ba-flight-main-gap:0px; --ba-time-rail-offset:calc(var(--ba-timeline-col) + var(--ba-flight-main-gap)); --ba-segment-rule:1px solid rgba(0,0,0,.06); --ba-air-rail:14px; background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:16px; box-shadow:none; }
+        .baPaidConf .baCard__head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:18px 14px; border-bottom:1px solid rgba(0,0,0,.07); }
         .baPaidConf .baCard__route{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:22px; letter-spacing:-0.03em; line-height:1.15; color:#111; }
         .baPaidConf .baArr{ margin:0 10px; }
-        .baPaidConf .baCard__date{ margin-top:6px; font-size:14px; opacity:.72; font-weight:500; letter-spacing:.01em; }
-        .baPaidConf .baCard__tt{ font-size:12px; opacity:.68; font-weight:500; white-space:nowrap; padding-top:8px; margin-right:22px; letter-spacing:.02em; }
-        .baPaidConf .baFlights{ padding:8px 0 6px; }
-        .baPaidConf .baFlightBlock{ padding:0 22px 0 25.3px; }
+        .baPaidConf .baCard__date{ margin-top:10px; font-size:14px; opacity:.72; font-weight:500; letter-spacing:.01em; }
+        .baPaidConf .baCard__tt{ font-size:12px; opacity:.68; font-weight:500; white-space:nowrap; padding-top:2px; margin-right:var(--ba-air-rail); letter-spacing:.02em; }
+        .baPaidConf .baFlights{ padding:0 0 20px; }
+        .baPaidConf .baFlightBlock{ padding:0 14px; box-sizing:border-box; }
         .baPaidConf .baFlight{ display:grid; grid-template-columns:var(--ba-flight-cols); gap:var(--ba-flight-ygap) var(--ba-flight-xgap); align-items:start; padding:16px 0; border-top:var(--ba-segment-rule); }
-        .baPaidConf .baFlightBlock:first-child .baFlight{ border-top:0; }
+        .baPaidConf .baFlightBlock:first-child .baFlight{ border-top:0; padding-top:18px; }
+        .baPaidConf .baFlightBlock:last-child .baFlight{ padding-bottom:0; }
         .baPaidConf .baFlight__main{ display:grid; grid-template-columns:var(--ba-timeline-col) minmax(0,1fr); column-gap:var(--ba-flight-main-gap); row-gap:0; align-items:start; min-width:0; }
         .baPaidConf .baTLSeg{ width:var(--ba-timeline-col); }
         .baPaidConf .baTLSeg__ring{ border-color:#c4c4c4; }
@@ -1920,7 +2047,7 @@
         .baPaidConf .baLocLine{ font-size:16px; font-weight:500; line-height:1.25; min-width:0; letter-spacing:-0.02em; color:#1a1a1a; }
         .baPaidConf .baRow--meta{ margin-top:0; grid-template-columns:1fr; gap:4px; }
         .baPaidConf .baMetaRow{ font-size:11px; font-weight:500; opacity:.62; line-height:1.4; letter-spacing:.03em; }
-        .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:flex-end; justify-content:flex-start; gap:8px; min-width:0; padding-top:2px; padding-right:22px; align-self:start; text-align:right; }
+        .baPaidConf .baAir{ display:flex; flex-direction:column; align-items:flex-end; justify-content:flex-start; gap:8px; min-width:0; padding-top:2px; padding-right:var(--ba-air-rail); align-self:start; text-align:right; }
         .baPaidConf .baAir__logo{ width:87px; height:28px; object-fit:contain; opacity:.96; }
         .baPaidConf .baAir__meta{ display:flex; flex-direction:row; flex-wrap:wrap; align-items:baseline; justify-content:flex-end; gap:0 5px; max-width:100%; font-size:13px; font-weight:500; line-height:1.3; }
         .baPaidConf .baAir__line{ display:contents; }
@@ -1928,9 +2055,28 @@
         .baPaidConf .baAir__sep{ margin:0; padding:0 1px; font-weight:400; font-size:13px; color:#9a9a9a; opacity:1; user-select:none; }
         .baPaidConf .baAir__op{ font-size:11px; opacity:.58; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; }
         .baPaidConf .baLayRow{ display:grid; grid-template-columns:var(--ba-flight-cols); column-gap:var(--ba-flight-xgap); align-items:center; border-top:var(--ba-segment-rule); border-bottom:none; padding:7px 0; margin:0; }
-        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:14px; box-shadow:none; font-size:1em; }
-        .baPaidConf .baPaidPaxCard__head{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:1.25em; letter-spacing:-0.025em; padding:16px 18px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
-        .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:500; color:#4b4b4b; flex-wrap:wrap; }
+        .baPaidConf .baPaidPaxCard{ background:#fff; border:1px solid #e7e7e7; border-radius:8px; overflow:hidden; margin-bottom:16px; box-shadow:none; font-size:1em; }
+        .baPaidConf .baPaidPaxCard__head{ font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-weight:600; font-size:1.25em; letter-spacing:-0.025em; padding:18px 14px 12px; border-bottom:1px solid #efefef; color:#2b2b2b; }
+        .baPaidConf .baPaidPaxCard__summary{ padding:10px 14px 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:0.9375em; font-weight:500; color:#4b4b4b; flex-wrap:wrap; }
+        @media (min-width:1024px){
+          .baPaidConf .baCard{ --ba-air-rail:18px; }
+          .baPaidConf .baCard__head{ padding:22px 18px; }
+          .baPaidConf .baCard__date{ margin-top:12px; }
+          .baPaidConf .baFlights{ padding:0 0 24px; }
+          .baPaidConf .baFlightBlock:first-child .baFlight{ padding-top:22px; }
+          .baPaidConf .baFlightBlock{ padding:0 18px; }
+          .baPaidConf .baPaidPaxCard__head{ padding:22px 18px 12px; }
+          .baPaidConf .baPaidPaxCard__summary{ padding:10px 18px 14px; }
+        }
+        @media (min-width:1536px){
+          .baPaidConf .baCard{ --ba-air-rail:26px; }
+          .baPaidConf .baCard__head{ padding:26px 26px; }
+          .baPaidConf .baFlights{ padding:0 0 28px; }
+          .baPaidConf .baFlightBlock:first-child .baFlight{ padding-top:26px; }
+          .baPaidConf .baFlightBlock{ padding:0 26px; }
+          .baPaidConf .baPaidPaxCard__head{ padding:26px 26px 12px; }
+          .baPaidConf .baPaidPaxCard__summary{ padding:10px 26px 14px; }
+        }
         .baPaidConf .baPaidPaxSummaryName{ flex:1 1 auto; max-width:70%; font-size:1.067em; font-weight:600; padding:0; border:none; border-radius:0; background:transparent; display:flex; align-items:center; justify-content:flex-start; gap:10px; line-height:1.3; min-width:0; color:#111; text-align:left; }
         .baPaidConf .baPaidPaxSummaryFirst,.baPaidConf .baPaidPaxSummaryLast{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .baPaidConf .baPaidPaxSummaryDivider{ width:1px; height:1em; align-self:center; background:#dcdcdc; display:inline-block; flex-shrink:0; }
@@ -1939,7 +2085,7 @@
         .baPaidConf .baPaidPaxSummaryDot{ opacity:.6; }
         .baPaidConf .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
         .baPaidConfGreen{ text-align:center; }
-        @media (max-width:640px){ .baPaidConf .baCard{ --ba-flight-cols:1fr; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
+        @media (max-width:640px){ .baPaidConf .baCard{ --ba-flight-cols:1fr; --ba-air-rail:0px; } .baPaidConf .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; } }
         @media (max-width:1000px){
           .baPaidConfTop{ font-size:2rem; }
           .baPaidConfTop .baPaidConfTitle{ font-size:2.5em; }
@@ -2985,14 +3131,7 @@
     }
 
     let bannerHtml = "";
-    if (isExpired){
-      bannerHtml = `
-        <div class="baBanner baBanner--bad">
-          <div class="baBanner__t">This payment link has expired</div>
-          <div class="baBanner__b">Contact your agent to book this flight option.</div>
-        </div>
-      `;
-    } else if (selectionLocked){
+    if (!isExpired && selectionLocked){
       bannerHtml = `
         <div class="baBanner baBanner--warn">
           <div class="baBanner__t">Payment started</div>
@@ -3109,7 +3248,7 @@
             <div class="baField">
               <label class="baLbl">Phone (with country code)</label>
               <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
-                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" style="border:0;flex:1;padding:10px 12px;font-size:15px;box-sizing:border-box;margin:0;height:auto;line-height:normal">
               </div>
               <div class="baErr">Please enter a valid phone number.</div>
             </div>
@@ -3199,7 +3338,7 @@
             <div class="baField">
               <label class="baLbl">Phone (with country code)</label>
               <div class="baPhoneWrapper" style="display:flex;border:1px solid #e7e7e7;border-radius:6px;overflow:hidden;background:#fff;box-sizing:border-box">
-                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" style="border:0;flex:1;padding:10px 12px;font-size:15px;font-weight:700;box-sizing:border-box;margin:0;height:auto;line-height:normal">
+                <input class="baBoxInput" value="${escapeHtml(pax.phone || "")}" data-pax="${idx}" data-field="phone" style="border:0;flex:1;padding:10px 12px;font-size:15px;box-sizing:border-box;margin:0;height:auto;line-height:normal">
               </div>
               <div class="baErr">Please enter a valid phone number.</div>
             </div>
@@ -3254,6 +3393,163 @@
     margin: 0;
     padding: 0;
   }
+  .baStripeWrap{
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-sizing: border-box;
+  }
+  .baStripePayCard{
+    background: #fff;
+    color: #111;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-family: var(--ba-font);
+  }
+  .baStripePayCard__head{
+    padding: 18px 14px;
+    border-bottom: 1px solid #efefef;
+    box-sizing: border-box;
+  }
+  @media (min-width: 1024px){
+    .baStripePayCard__head{ padding: 22px 18px; }
+  }
+  @media (min-width: 1536px){
+    .baStripePayCard__head{ padding: 26px 26px; }
+  }
+  .baStripePayCard__title{
+    margin: 0;
+    font-family: var(--ba-font);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: #111;
+  }
+  @media (max-width: 980px){
+    .baStripePayCard__title{
+      font-size: clamp(16px, 5.2vw, 24px);
+      line-height: 1.4;
+      padding-bottom: 2px;
+    }
+  }
+  .baStripePayCard__sub{
+    margin: 10px 0 0 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-weight: 400;
+    color: #6b7280;
+  }
+  @media (min-width: 1024px){
+    .baStripePayCard__sub{ margin-top: 12px; }
+  }
+  @media (min-width: 1280px){
+    .baStripePayCard__sub{
+      font-size: 1rem;
+      line-height: 1.75;
+    }
+  }
+  .baStripePayCard__body{
+    padding: 18px 14px 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  @media (min-width: 1024px){
+    .baStripePayCard__body{ padding: 22px 18px 24px; }
+  }
+  @media (min-width: 1536px){
+    .baStripePayCard__body{ padding: 26px 26px 28px; }
+  }
+  .baStripePayCard__body--terms{
+    padding: 18px 14px 20px;
+  }
+  @media (min-width: 1024px){
+    .baStripePayCard__body--terms{
+      padding: 22px 18px 24px;
+    }
+  }
+  @media (min-width: 1536px){
+    .baStripePayCard__body--terms{
+      padding: 26px 26px 28px;
+    }
+  }
+  .baStripePayCard__body .baPayerEmailWrap{
+    margin-bottom: 0;
+  }
+  .baStripePayCard__body .baPayerEmailWrap .baLbl{
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4b5563;
+    margin-bottom: 6px;
+  }
+  @media (min-width: 1280px){
+    .baStripePayCard__body .baPayerEmailWrap .baLbl{
+      font-size: 1rem;
+    }
+  }
+  #baStripeFormContentWrap{
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #baStripeElementsWrap{
+    min-height: 0;
+  }
+  .baStripePayCard__body .baStripeAddressWrap{
+    margin-bottom: 0;
+  }
+  #baStripeWrap .baStripePayCard--terms .baTermsAgreeSection{
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+  #baStripeWrap .baStripePayCard--terms .baTermsAgreeSection.is-warn{
+    margin: -2px;
+    padding: 10px 10px 12px;
+    border-radius: 6px;
+    background: #FDE8E8;
+    border: 1px solid #D0A7A7;
+  }
+  #baStripeConfirm{
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #111;
+    background: #111;
+    color: #fff;
+    font-weight: 600;
+    font-family: var(--ba-font);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .baPayCheckoutWarn{
+    outline: 2px solid #C34A4A !important;
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  #baPayerEmail.baPayCheckoutWarn{
+    border-color: #C34A4A !important;
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  #baAddressMount.baPayCheckoutWarn,
+  #baStripeMount.baPayCheckoutWarn{
+    border-radius: 8px;
+    outline-offset: 2px;
+  }
   @media (max-width: 980px){
     html{ zoom: 1.5; }
     /* Stripe-only zoom on mobile: change --ba-stripe-mobile-zoom to scale the Stripe block (e.g. 1, 1.1, 1.2, 1.5) */
@@ -3269,17 +3565,27 @@
       min-height: 1.5em;
       box-sizing: border-box;
     }
-    /* Terms checkbox only: 1.5x larger on mobile */
-    #baStripeWrap .baTermsAgreeCheck{
-      margin-top: 5px;
+    /* Terms control: larger tap target inside zoomed Stripe block */
+    #baStripeWrap .baTermsAgreeControl{
       width: 27px;
       height: 27px;
+      margin-top: 5px;
+    }
+    #baStripeWrap .baTermsAgreeCheck:checked + .baTermsAgreeCheckFace::after{
+      width: 6px;
+      height: 11px;
+      margin-left: -3px;
+      margin-top: -6px;
+      border-width: 0 2.5px 2.5px 0;
     }
     /* Email field: ~2x larger on mobile for readability and tap target */
     #baStripeWrap .baPayerEmailWrap{
       width: 100% !important;
       margin-bottom: 28px !important;
       box-sizing: border-box !important;
+    }
+    #baStripeWrap .baStripePayCard__body > .baPayerEmailWrap{
+      margin-bottom: 0 !important;
     }
     #baStripeWrap .baPayerEmailWrap .baLbl{
       font-size: 33.6px !important;
@@ -3478,21 +3784,28 @@
   .baHeaderProgressInner{
     max-width: 1220px;
     margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1.38fr 0.82fr;
-    gap: 24px;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  .baHeaderProgressLeft{
-    min-width: 0;
+  .baHeaderProgressTopRow,
+  .baHeaderProgressBottomRow{
+    display: grid;
+    grid-template-columns: minmax(0, 1.38fr) minmax(0, 0.82fr);
+    column-gap: 24px;
+    align-items: end;
+  }
+  .baHeaderProgressBottomRow{
+    align-items: baseline;
   }
   .baHeaderProgressTitle{
     font-weight: 600;
     font-size: 20px;
     color: #fff;
-    margin-bottom: 4px;
+    margin: 0;
     letter-spacing: -0.025em;
     line-height: 1.25;
+    min-width: 0;
   }
   .baHeaderProgressSubtitle{
     font-size: 14px;
@@ -3500,19 +3813,35 @@
     font-weight: 500;
     line-height: 1.45;
     opacity: 0.9;
+    min-width: 0;
   }
-  .baHeaderProgressSteps{
+  .baHeaderProgressCirclesRow,
+  .baHeaderProgressLabelsRow{
     display: flex;
     align-items: center;
-    gap: 12px;
     justify-content: flex-start;
+    gap: 12px;
     opacity: 0.92;
+    min-width: 0;
   }
-  .baProgressStep{
+  .baHeaderProgressLabelsRow{
+    align-items: flex-start;
+  }
+  .baProgressCircleSlot,
+  .baProgressLabelSlot{
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
+    justify-content: center;
+  }
+  .baProgressLabelSlot .baProgressStepLabel{
+    text-align: center;
+  }
+  .baProgressLabelsGap{
+    width: 52px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    pointer-events: none;
   }
   .baProgressStepCircle{
     width: 28px;
@@ -3556,7 +3885,7 @@
     border: 0;
     border-top: 1px solid rgba(255,255,255,.22);
     background: transparent;
-    margin-top: 0;
+    margin: 0;
   }
   .baProgressStepLine.completed{
     border-top-color: rgba(255,255,255,.52);
@@ -3576,9 +3905,28 @@
     .baHeaderRight{ gap: 16px; flex: 1; justify-content: flex-end; min-width: 0; order: 1; }
     .baHeaderPhone{ font-size: 21px; white-space: nowrap; }
     .baHeaderPhone a{ white-space: nowrap; }
-    .baHeaderProgressInner{ grid-template-columns: 1fr; align-items: center; gap: 16px; text-align: center; }
-    .baHeaderProgressLeft{ display: flex; flex-direction: column; align-items: center; }
-    .baHeaderProgressSteps{ width: 100%; justify-content: center; }
+    .baHeaderProgressInner{ gap: 12px; }
+    .baHeaderProgressTopRow,
+    .baHeaderProgressBottomRow{
+      grid-template-columns: 1fr;
+      justify-items: center;
+      text-align: center;
+      align-items: center;
+    }
+    .baHeaderProgressBottomRow{
+      align-items: center;
+    }
+    .baHeaderProgressTitle,
+    .baHeaderProgressSubtitle{
+      text-align: center;
+    }
+    .baHeaderProgressCirclesRow,
+    .baHeaderProgressLabelsRow{
+      justify-content: center;
+      flex-wrap: wrap;
+      width: 100%;
+      max-width: 100%;
+    }
   }
 
   .baWrap{
@@ -3643,6 +3991,8 @@
     --ba-flight-main-gap: 0px;
     --ba-time-rail-offset: calc(var(--ba-timeline-col) + var(--ba-flight-main-gap));
     --ba-segment-rule: 1px solid rgba(0,0,0,.06);
+    /* Right inset for airline column + header travel-time (align .baCard__tt with cabin chip) */
+    --ba-air-rail: 14px;
     background: var(--ba-card);
     border: 1px solid var(--ba-border);
     border-radius: var(--ba-radius-md);
@@ -3655,13 +4005,17 @@
     justify-content:space-between;
     gap: 12px;
     align-items:flex-start;
-    /* top / right / bottom / left — left +15% vs right */
-    padding: 20px 22px 16px 25.3px;
+    /* Match Travel Care / Tips card headers (baCareCard__head, baTipBox__header) */
+    padding: 18px 14px;
     border-bottom: 1px solid rgba(0,0,0,.07);
   }
-  /* Align route/date with itinerary content (after timeline column), not the timeline rail */
+  @media (min-width: 1024px){
+    .baCard__head{ padding: 22px 18px; }
+  }
+  @media (min-width: 1536px){
+    .baCard__head{ padding: 26px 26px; }
+  }
   .baCard__headL{
-    margin-left: var(--ba-time-rail-offset);
     min-width: 0;
   }
   .baCard__route{
@@ -3674,25 +4028,43 @@
   }
   .baArr{ margin: 0 10px; }
   .baCard__date{
-    margin-top: 6px;
+    margin-top: 10px;
     font-size: 14px;
     opacity: 0.72;
     font-weight: 500;
     letter-spacing: 0.01em;
+  }
+  @media (min-width: 1024px){
+    .baCard__date{ margin-top: 12px; }
   }
   .baCard__tt{
     font-size: 12px;
     opacity: 0.68;
     font-weight: 500;
     white-space:nowrap;
-    padding-top: 8px;
-    margin-right: 22px;
+    padding-top: 2px;
+    margin-right: var(--ba-air-rail);
     letter-spacing: 0.02em;
   }
 
-  .baFlights{ padding: 8px 0 6px; }
-  /* top/bottom 0; right 22px; left +15% */
-  .baFlightBlock{ padding: 0 22px 0 25.3px; }
+  /* Inset below headline / above card bottom: match baTipBox__content & baCareCard__body (not stacked with .baFlight padding) */
+  .baFlights{ padding: 0 0 20px; }
+  @media (min-width: 1024px){
+    .baFlights{ padding: 0 0 24px; }
+  }
+  @media (min-width: 1536px){
+    .baFlights{ padding: 0 0 28px; }
+  }
+  .baFlightBlock{
+    padding: 0 14px;
+    box-sizing: border-box;
+  }
+  @media (min-width: 1024px){
+    .baFlightBlock{ padding: 0 18px; }
+  }
+  @media (min-width: 1536px){
+    .baFlightBlock{ padding: 0 26px; }
+  }
 
   .baFlight{
     display:grid;
@@ -3702,7 +4074,19 @@
     padding: 16px 0;
     border-top: var(--ba-segment-rule);
   }
-  .baFlightBlock:first-child .baFlight{ border-top: 0; }
+  .baFlightBlock:first-child .baFlight{
+    border-top: 0;
+    padding-top: 18px;
+  }
+  @media (min-width: 1024px){
+    .baFlightBlock:first-child .baFlight{ padding-top: 22px; }
+  }
+  @media (min-width: 1536px){
+    .baFlightBlock:first-child .baFlight{ padding-top: 26px; }
+  }
+  .baFlightBlock:last-child .baFlight{
+    padding-bottom: 0;
+  }
 
   .baFlight__main{
     display:grid;
@@ -3712,8 +4096,14 @@
     align-items: start;
     min-width:0;
   }
+  @media (min-width: 1024px){
+    .baCard{ --ba-air-rail: 18px; }
+  }
   @media (min-width: 1280px){
     .baCard{ --ba-timeline-col: 48px; }
+  }
+  @media (min-width: 1536px){
+    .baCard{ --ba-air-rail: 26px; }
   }
 
   /* Timeline column (Tailwind-aligned: w-9 xl:w-12, gray-1000 stems, white ring nodes) */
@@ -3858,8 +4248,7 @@
     letter-spacing: 0.03em;
   }
 
-  /* Airline column: logo + single composed metadata row (fn · cabin)
-     padding-right matches .baCard__tt margin-right so both use the same internal right rail */
+  /* Airline column: padding-right shared with .baCard__tt via --ba-air-rail */
   .baAir{
     display:flex;
     flex-direction:column;
@@ -3868,7 +4257,7 @@
     gap: 8px;
     min-width:0;
     padding-top: 2px;
-    padding-right: 22px;
+    padding-right: var(--ba-air-rail);
     align-self: start;
     text-align: right;
   }
@@ -4003,12 +4392,12 @@
     border: 1px solid var(--ba-border);
     border-radius: var(--ba-radius-md);
     overflow:hidden;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     box-shadow: none;
   }
   .baPaxCard.is-collapsed{ cursor:pointer; }
   .baPaxCard__head{
-    padding: 16px 18px;
+    padding: 18px 14px;
     font-family: var(--ba-font);
     font-weight: 600;
     font-size: 18px;
@@ -4018,6 +4407,12 @@
     align-items:center;
     justify-content:space-between;
     gap: 10px;
+  }
+  @media (min-width: 1024px){
+    .baPaxCard__head{ padding: 22px 18px; }
+  }
+  @media (min-width: 1536px){
+    .baPaxCard__head{ padding: 26px 26px; }
   }
   .baPaxCard__title{ min-width: 0; }
   .baPaxHeadNum{ margin-left: 6px; font-weight: 700; opacity: 0.85; }
@@ -4049,7 +4444,7 @@
   .baPaxCard__remove:hover:not([disabled]){ background: #b00020; color: #fff; }
   .baPaxCard__remove[disabled]{ opacity: .55; cursor: not-allowed; }
   .baPaxCard__summary{
-    padding: 8px 18px 14px;
+    padding: 8px 14px 14px;
     display:flex;
     align-items:center;
     justify-content:space-between;
@@ -4059,6 +4454,12 @@
     color: #4b4b4b;
     border-bottom: 1px solid #efefef;
     white-space: nowrap;
+  }
+  @media (min-width: 1024px){
+    .baPaxCard__summary{ padding: 8px 18px 14px; }
+  }
+  @media (min-width: 1536px){
+    .baPaxCard__summary{ padding: 8px 26px 14px; }
   }
   .baPaxCard.is-collapsed .baPaxCard__summary{
     border-bottom: 0;
@@ -4132,9 +4533,15 @@
   }
   .baPaxCard.is-expanded .baPaxCard__summary{ display:none; }
   .baPaxCard.is-collapsed .baPaxCard__head{
-    padding: 12px 18px;
+    padding: 12px 14px;
     font-size: 17px;
     border-bottom: 1px solid #efefef;
+  }
+  @media (min-width: 1024px){
+    .baPaxCard.is-collapsed .baPaxCard__head{ padding: 12px 18px; }
+  }
+  @media (min-width: 1536px){
+    .baPaxCard.is-collapsed .baPaxCard__head{ padding: 12px 26px; }
   }
   @media (max-width: 620px){
     .baPaxCard__summary{ flex-direction:column; align-items:flex-start; }
@@ -4144,8 +4551,14 @@
     display:grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px 18px;
-    padding: 16px 18px 18px;
+    padding: 16px 14px 18px;
     align-items:start;
+  }
+  @media (min-width: 1024px){
+    .baPaxGrid{ padding: 22px 18px 22px; }
+  }
+  @media (min-width: 1536px){
+    .baPaxGrid{ padding: 26px 26px 24px; }
   }
   .baPaxGender{ grid-column: 1 / -1; }
 
@@ -4575,10 +4988,10 @@
     box-sizing: border-box;
   }
   @media (min-width: 1024px){
-    .baTipBox__content{ padding: 22px 18px 22px; }
+    .baTipBox__content{ padding: 22px 18px 24px; }
   }
   @media (min-width: 1536px){
-    .baTipBox__content{ padding: 26px 26px 24px; }
+    .baTipBox__content{ padding: 26px 26px 28px; }
   }
   .baTipBox__content .baTipCard{
     background: transparent;
@@ -4682,7 +5095,7 @@
     align-self: stretch;
     border-top: 1px solid #efefef;
     padding-top: 12px;
-    padding-bottom: 10px;
+    padding-bottom: 0;
     margin-top: 0;
     margin-left: -14px;
     margin-right: -14px;
@@ -4847,47 +5260,114 @@
   }
 
   .baTermsAgreeSection{
-    margin-top: 20px;
-    padding: 16px;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    background: #fff;
-    transition: all 0.2s ease;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    transition: background 0.2s ease, border-color 0.2s ease;
   }
   .baTermsAgreeSection.is-warn{
+    margin: -2px;
+    padding: 10px 10px 12px;
+    border-radius: 6px;
     background: #FDE8E8;
-    border-color: #D0A7A7;
+    border: 1px solid #D0A7A7;
   }
   .baTermsAgreeLabel{
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 12px;
     cursor: pointer;
+  }
+  .baTermsAgreeControl{
+    position: relative;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    box-sizing: border-box;
   }
   .baTermsAgreeCheck{
-    margin-top: 3px;
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    z-index: 2;
     cursor: pointer;
-    accent-color: #d1ad54;
+    appearance: none;
+    -webkit-appearance: none;
   }
-  .baTermsAgreeSection.is-warn .baTermsAgreeCheck{
-    border: 2px solid #C34A4A;
+  .baTermsAgreeCheck:disabled{
+    cursor: not-allowed;
+  }
+  .baTermsAgreeCheckFace{
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    box-sizing: border-box;
+    border: 1px solid #0f0f0f;
+    border-radius: 2px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.08);
+    pointer-events: none;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .baTermsAgreeCheck:checked + .baTermsAgreeCheckFace{
+    background: #0f0f0f;
+    border-color: #0f0f0f;
+  }
+  .baTermsAgreeCheck:checked + .baTermsAgreeCheckFace::after{
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    width: 4px;
+    height: 7px;
+    margin-left: -2px;
+    margin-top: -4px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    box-sizing: border-box;
+  }
+  .baTermsAgreeCheck:focus-visible + .baTermsAgreeCheckFace{
+    outline: 2px solid #0f0f0f;
+    outline-offset: 1px;
+  }
+  .baTermsAgreeCheck:disabled + .baTermsAgreeCheckFace{
+    opacity: 0.5;
+  }
+  .baTermsAgreeSection.is-warn .baTermsAgreeCheckFace{
+    border-color: #C34A4A;
+    border-width: 2px;
+  }
+  .baTermsAgreeSection.is-warn .baTermsAgreeCheck:checked + .baTermsAgreeCheckFace{
+    border-color: #0f0f0f;
+    border-width: 1px;
   }
   .baTermsAgreeText{
+    font-family: var(--ba-font);
     font-size: 13px;
-    line-height: 1.6;
-    color: #333;
+    line-height: 1.5;
+    font-weight: 400;
+    color: #6b7280;
   }
   .baTermsLink{
-    color: #0000FF;
+    color: #5f6673;
+    font-weight: 400;
     text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(15, 23, 42, 0.28);
+    text-underline-offset: 3px;
     cursor: pointer;
-    font-weight: 500;
   }
   .baTermsLink:hover{
-    color: #0000cc;
+    color: #4b5563;
+    text-decoration-color: rgba(15, 23, 42, 0.42);
   }
   .baTermsAgreeWarning{
     margin-top: 12px;
@@ -5156,6 +5636,7 @@
       --ba-flight-cols: 1fr auto;
       --ba-flight-xgap: 14px;
       --ba-flight-ygap: 12px;
+      --ba-air-rail: 0px;
     }
     /* Card header: route on one line, travel time aligned right with airline block below */
     .baCard__head{
@@ -5178,7 +5659,6 @@
     }
     .baCard__tt{
       flex-shrink: 0;
-      margin-right: 0;
       padding-top: 7.59px;
     }
     .baFlight{
@@ -5400,6 +5880,10 @@
     padding: 18px 14px 20px;
     border-top: 1px solid #efefef;
     box-sizing: border-box;
+    cursor: pointer;
+  }
+  .baCareCard__foot:has(#baCareToggle:disabled){
+    cursor: not-allowed;
   }
   @media (min-width: 1024px){
     .baCareCard__foot{ padding: 22px 18px 24px; }
@@ -6141,24 +6625,36 @@
   </div>
   <div class="baHeaderProgress">
     <div class="baHeaderProgressInner">
-      <div class="baHeaderProgressLeft">
-        <div class="baHeaderProgressTitle">Carefully check your flight and passenger details</div>
-        <div class="baHeaderProgressSubtitle">${agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : 'Your itinerary is almost confirmed.'}</div>
+      <div class="baHeaderProgressTopRow">
+        <div class="baHeaderProgressTitle">${isExpired ? "This payment link has expired." : "Carefully check your flight and passenger details"}</div>
+        <div class="baHeaderProgressCirclesRow">
+          <div class="baProgressCircleSlot">
+            <div class="baProgressStepCircle completed">✓</div>
+          </div>
+          <div class="baProgressStepLine completed"></div>
+          <div class="baProgressCircleSlot">
+            <div class="baProgressStepCircle completed">✓</div>
+          </div>
+          <div class="baProgressStepLine completed"></div>
+          <div class="baProgressCircleSlot">
+            <div class="baProgressStepCircle active">3</div>
+          </div>
+        </div>
       </div>
-      <div class="baHeaderProgressSteps">
-        <div class="baProgressStep">
-          <div class="baProgressStepCircle completed">✓</div>
-          <div class="baProgressStepLabel">Request a quote</div>
-        </div>
-        <div class="baProgressStepLine completed"></div>
-        <div class="baProgressStep">
-          <div class="baProgressStepCircle completed">✓</div>
-          <div class="baProgressStepLabel">Review flight options</div>
-        </div>
-        <div class="baProgressStepLine completed"></div>
-        <div class="baProgressStep">
-          <div class="baProgressStepCircle active">3</div>
-          <div class="baProgressStepLabel">Complete payment</div>
+      <div class="baHeaderProgressBottomRow">
+        <div class="baHeaderProgressSubtitle">${isExpired ? "Contact your travel agent to check the flight availability." : (agentPhone ? `Have any questions? I am always available at ${escapeHtml(agentPhone)}` : "Your itinerary is almost confirmed.")}</div>
+        <div class="baHeaderProgressLabelsRow">
+          <div class="baProgressLabelSlot">
+            <div class="baProgressStepLabel">Request a quote</div>
+          </div>
+          <div class="baProgressLabelsGap"></div>
+          <div class="baProgressLabelSlot">
+            <div class="baProgressStepLabel">Review flight options</div>
+          </div>
+          <div class="baProgressLabelsGap"></div>
+          <div class="baProgressLabelSlot">
+            <div class="baProgressStepLabel">Complete payment</div>
+          </div>
         </div>
       </div>
     </div>
@@ -6284,39 +6780,48 @@
           <div class="baExtrasStripe" style="margin-top:18px">
             <div id="baPayHint" style="margin-top:10px;font-size:13px;opacity:.75"></div>
 
-            <div id="baStripeWrap" style="display:none;margin-top:16px;padding:16px;border:1px solid #eee;border-radius:8px;background:#fff">
-              <div class="baPayerEmailWrap" style="margin-bottom:12px">
-                <label class="baLbl" style="display:block;margin-bottom:6px;font-weight:600;font-size:16.8px">Email</label>
-                <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" class="baBoxInput" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:8px;font-size:15px;box-sizing:border-box">
-                <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
-              </div>
-
-              <div id="baStripeFormContentWrap" style="position:relative;min-height:280px">
-                <div class="baStripeAddressWrap" style="margin-bottom:14px">
-                  <div id="baAddressMount"></div>
+            <div id="baStripeWrap" class="baStripeWrap" style="display:none;margin-top:16px">
+              <div class="baStripePayCard">
+                <div class="baStripePayCard__head">
+                  <h3 class="baStripePayCard__title">Secure payment</h3>
+                  <p class="baStripePayCard__sub">We will order your tickets as soon as the payment is confirmed.</p>
                 </div>
-                <div id="baStripeElementsWrap" style="min-height:160px">
-                  <div style="font-weight:600;letter-spacing:-0.02em;margin:16px 0 10px;color:#111">Payment details</div>
-                  <div id="baStripeMount"></div>
+                <div class="baStripePayCard__body">
+                  <div class="baPayerEmailWrap">
+                    <label class="baLbl" for="baPayerEmail">Email</label>
+                    <input id="baPayerEmail" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" class="baBoxInput" required style="width:100%;padding:10px 12px;border:1px solid #e7e7e7;border-radius:8px;font-size:15px;box-sizing:border-box">
+                    <div class="baPayerEmailErr" style="display:none;margin-top:4px;font-size:13px;color:#d92d20">Please enter a valid email address.</div>
+                  </div>
+
+                  <div id="baStripeFormContentWrap">
+                    <div class="baStripeAddressWrap">
+                      <div id="baAddressMount"></div>
+                    </div>
+                    <div id="baStripeElementsWrap">
+                      <div id="baStripeMount"></div>
+                    </div>
+                  </div>
                 </div>
-                <button id="baStripeConfirm"
-                  style="margin-top:14px;width:100%;padding:12px 16px;border-radius:8px;border:1px solid #111;background:#111;color:#fff;font-weight:600;cursor:not-allowed;opacity:.6"
-                  disabled>
-                  Pay now
-                </button>
               </div>
 
-              <div id="baStripeMsg" style="margin-top:10px;font-size:13px;opacity:.8">Please enter billing details to continue.</div>
-
-              <div id="baTermsAgreeSection" class="baTermsAgreeSection">
-                <label class="baTermsAgreeLabel">
-                  <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
-                  <span class="baTermsAgreeText">
-                    <strong>By checking this box I affirm</strong> that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a> and <a href="https://www.business-airfare.com/convention" target="_blank" rel="noopener noreferrer" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a>.
-                  </span>
-                </label>
-                <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
+              <div class="baStripePayCard baStripePayCard--terms">
+                <div class="baStripePayCard__body baStripePayCard__body--terms">
+                  <div id="baTermsAgreeSection" class="baTermsAgreeSection">
+                    <label class="baTermsAgreeLabel">
+                      <span class="baTermsAgreeControl">
+                        <input id="baTermsAgreeCheck" class="baTermsAgreeCheck" type="checkbox" ${selectionLocked || isExpired ? "disabled" : ""}>
+                        <span class="baTermsAgreeCheckFace" aria-hidden="true"></span>
+                      </span>
+                      <span class="baTermsAgreeText">
+                        By checking this box I affirm that I have read, understood and accepted present <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a>, <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a> and <a href="https://www.business-airfare.com/convention" target="_blank" rel="noopener noreferrer" class="baTermsLink">airline liability limitations</a>, confirmed the accuracy of flight itinerary, and verified the spelling of the name(s) of the passenger(s) to be matching passenger(s) passport(s) / <a href="#" class="baTermsLink">valid travel document(s)</a>, as well as I have taken the consent of Credit Card Holder and all the passengers regarding the <a href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener noreferrer" class="baTermsLink">Terms and Conditions</a> and <a href="https://www.business-airfare.com/privacy-policy" target="_blank" rel="noopener noreferrer" class="baTermsLink">Privacy Policy</a>.
+                      </span>
+                    </label>
+                    <div id="baTermsAgreeWarning" class="baTermsAgreeWarning">Please check this box if you accept the Rules and Restrictions</div>
+                  </div>
+                </div>
               </div>
+
+              <button type="button" id="baStripeConfirm" disabled>Pay now</button>
             </div>
 
             <div class="baMerchantLegalFooter" role="contentinfo" aria-label="Payment processor and legal">
@@ -6936,7 +7441,6 @@
     const selMsg = document.getElementById("baSelMsg");
     const hint = document.getElementById("baPayHint");
     const wrap = document.getElementById("baStripeWrap");
-    const msg = document.getElementById("baStripeMsg");
     const confirmBtn = document.getElementById("baStripeConfirm");
 
     function setSelMsg(t){ if (selMsg) selMsg.textContent = t || ""; }
@@ -6968,12 +7472,14 @@
         tipErrorMsg.textContent = "";
         tipErrorMsg.style.display = "none";
       }
+      const tipSec = document.querySelector(".baTipSection");
+      if (tipSec) tipSec.classList.remove("baPayCheckoutWarn");
     }
 
     async function updateTipAgreementUI(){
       const tipAgree = document.getElementById("baTipAgree");
       const tipAgreeRow = document.querySelector(".baTipAgreeRow");
-      const shouldWarn = selectedTipAmount() > 0 && !tipAgreed;
+      const shouldWarn = getTipChargeCentsFromDOM() > 100 && !tipAgreed;
       if (tipAgree) setTipAgreeToggleDom(tipAgree, !!tipAgreed);
       if (tipAgreeRow && !shouldWarn) tipAgreeRow.classList.remove("is-warn");
       
@@ -7004,13 +7510,6 @@
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
             // The user can try again or the error will be handled when they click Pay
             acceptanceCompleted = false;
-            // Show error message if msg element exists
-            const msg = document.getElementById("baStripeMsg");
-            if (msg) {
-              msg.textContent = "Could not record acceptance. Please try again or contact support.";
-              msg.style.color = "#b00020";
-            }
-            // Update button state even on error
             setConfirmEnabled();
           } finally {
             acceptanceInProgress = false;
@@ -7148,9 +7647,16 @@
         continueBtn.style.cursor = disabled ? "not-allowed" : "pointer";
       }
       if (confirmBtn) {
-        confirmBtn.disabled = disabled;
-        confirmBtn.style.opacity = disabled ? ".6" : "1";
-        confirmBtn.style.cursor = disabled ? "not-allowed" : "pointer";
+        if (disabled) confirmBtn.setAttribute("data-ba-totals-saving", "1");
+        else confirmBtn.removeAttribute("data-ba-totals-saving");
+        if (disabled) {
+          confirmBtn.disabled = true;
+          confirmBtn.style.opacity = ".6";
+          confirmBtn.style.cursor = "not-allowed";
+          confirmBtn.style.pointerEvents = "none";
+        } else {
+          setConfirmEnabled();
+        }
       }
     }
     
@@ -7212,6 +7718,15 @@
         if (selectionLocked || isExpired) return;
         handleCareSelection(!careSelected);
       });
+      const careFoot = careToggleBtn.closest(".baCareCard__foot");
+      if (careFoot) {
+        careFoot.addEventListener("click", (e) => {
+          if (selectionLocked || isExpired) return;
+          if (careToggleBtn.disabled) return;
+          if (e.target.closest("#baCareToggle")) return;
+          careToggleBtn.click();
+        });
+      }
     }
 
     // Tip buttons
@@ -7484,6 +7999,10 @@
     if (tipAgree) {
       tipAgree.addEventListener("click", async () => {
         if (selectionLocked || isExpired) return;
+        const tipRowWarn = document.querySelector(".baTipAgreeRow");
+        if (tipRowWarn) tipRowWarn.classList.remove("baPayCheckoutWarn");
+        const tipSecWarn = document.querySelector(".baTipSection");
+        if (tipSecWarn) tipSecWarn.classList.remove("baPayCheckoutWarn");
         if (shouldForceRemountForWalletPayment()) showStripeLoadingOverlay();
         const next = !tipAgreeToggleIsOn(tipAgree);
         tipAgreed = next;
@@ -7539,24 +8058,26 @@
     async function updateTermsAgreementUI() {
       const termsCheckbox = document.getElementById("baTermsAgreeCheck");
       const termsSection = document.getElementById("baTermsAgreeSection");
-      const termsWarning = document.getElementById("baTermsAgreeWarning");
       
       if (!termsCheckbox || !termsSection) return;
       
       const isChecked = termsCheckbox.checked;
-      const shouldWarn = !isChecked;
-      
-      // Update section styling
-      if (shouldWarn) {
-        termsSection.classList.add("is-warn");
+
+      if (!isChecked) {
+        termsSection.classList.remove("is-warn");
+        const termsCtl = document.querySelector(".baTermsAgreeControl");
+        if (termsCtl) termsCtl.classList.remove("baPayCheckoutWarn");
         acceptanceCompleted = false;
       } else {
         termsSection.classList.remove("is-warn");
+        const termsCtl2 = document.querySelector(".baTermsAgreeControl");
+        if (termsCtl2) termsCtl2.classList.remove("baPayCheckoutWarn");
         
         // Check if both checkboxes are checked, then call record_acceptance
         const tipAgreeCheckbox = document.getElementById("baTipAgree");
-        const tipMeaningful = getTipChargeCentsFromDOM() > 0;
-        const tipChecked = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
+        const tipCentsT = getTipChargeCentsFromDOM();
+        const tipRequiresAckT = tipCentsT > 100;
+        const tipChecked = !tipRequiresAckT || tipAgreeToggleIsOn(tipAgreeCheckbox);
         
         // Both checkboxes must be checked to record acceptance
         // tip_ack should always be true when recording (it means "I acknowledge tips/extra charges")
@@ -7566,7 +8087,8 @@
             console.log("[BOOK_FLOW] Recording acceptance from terms checkbox", {
               termsChecked: true,
               tipChecked,
-              hasTipSelected: tipMeaningful
+              hasTipSelected: tipCentsT > 0,
+              tipRequiresAck: tipRequiresAckT
             });
             // Always pass true for tip_ack - it means "I acknowledge tips/extra charges" regardless of whether tip is selected
             await recordAcceptance(publicId, true, true);
@@ -7580,18 +8102,11 @@
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
             // The user can try again or the error will be handled when they click Pay
             acceptanceCompleted = false;
-            // Show error message if msg element exists
-            const msg = document.getElementById("baStripeMsg");
-            if (msg) {
-              msg.textContent = "Could not record acceptance. Please try again or contact support.";
-              msg.style.color = "#b00020";
-            }
-            // Update button state even on error
             setConfirmEnabled();
           } finally {
             acceptanceInProgress = false;
           }
-        } else if (!tipChecked && tipMeaningful) {
+        } else if (!tipChecked && tipRequiresAckT) {
           // If tip checkbox is not checked but tip is selected, reset acceptance
           // (but don't uncheck the terms checkbox - user might check tip checkbox next)
           acceptanceCompleted = false;
@@ -7599,7 +8114,6 @@
         }
       }
       
-      // Always update button state
       setConfirmEnabled();
     }
 
@@ -7615,6 +8129,10 @@
     if (payerEmailInput) {
       payerEmailInput.addEventListener("input", () => {
         payerEmail = payerEmailInput.value.trim().toLowerCase();
+        const emailInp = document.getElementById("baPayerEmail");
+        if (emailInp && /^\S+@\S+\.\S+$/.test(String(payerEmailInput.value || "").trim())) {
+          emailInp.classList.remove("baPayCheckoutWarn");
+        }
         setConfirmEnabled();
       });
       payerEmailInput.addEventListener("blur", () => {
@@ -7893,25 +8411,23 @@
               window.__baRelocatePaymentChatAboveSummary(root);
             }
             if (wrap) {
-              wrap.style.display = "block";
+              wrap.style.display = "flex";
+              setConfirmEnabled();
             }
             
             // Hide sticky bar
             if (stickyBar) stickyBar.style.display = "none";
             
-            // Scroll to Optional Services section
-            try { extrasSection.scrollIntoView({ behavior: "smooth", block: "start" }); } catch(_) {}
+            // Center the Travel Care (TCS) card in the viewport (#baExtras + tips + Stripe is tall; aligning the card beats aligning the section top)
+            const tcsCardEl = extrasSection.querySelector(".baCareCard");
+            const scrollTarget = tcsCardEl || extrasSection;
+            try { scrollTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }); } catch(_) {}
             
-            if (msg) msg.textContent = "";
             console.log("[BOOK_FLOW] Stripe Elements initialized successfully - sections revealed");
           } else {
             // Error - show message
             const errorMsg = payload?.error || `HTTP ${res.status}`;
             console.error("[BOOK_FLOW] start_payment failed:", errorMsg);
-            if (msg) {
-              msg.textContent = "Could not load payment form. Please refresh the page.";
-              msg.style.color = "#b00020";
-            }
             // Restore button text on error
             const payBtn = document.getElementById("baPayBtn");
             const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
@@ -7922,10 +8438,6 @@
         } catch (e) {
           // Network or other error
           console.error("[BOOK_FLOW] start_payment error:", e.message);
-          if (msg) {
-            msg.textContent = "Could not load payment form. Please refresh the page.";
-            msg.style.color = "#b00020";
-          }
           // Restore button text on error
           const payBtn = document.getElementById("baPayBtn");
           const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
@@ -7969,12 +8481,13 @@
         // Record acceptance before calling start_payment
         const termsCheckbox = document.getElementById("baTermsAgreeCheck");
         const tipAgreeCheckbox = document.getElementById("baTipAgree");
-        const tipMeaningful = getTipChargeCentsFromDOM() > 0;
         const termsChecked = termsCheckbox && termsCheckbox.checked;
-        const tipChecked = !tipMeaningful || tipAgreeToggleIsOn(tipAgreeCheckbox);
+        const tipCentsPre = getTipChargeCentsFromDOM();
+        const tipRequiresAckPre = tipCentsPre > 100;
+        const tipChecked = !tipRequiresAckPre || tipAgreeToggleIsOn(tipAgreeCheckbox);
 
         if (!termsChecked || !tipChecked) {
-          if (tipMeaningful && !tipChecked) showTipAgreementRequiredUI();
+          if (tipRequiresAckPre && !tipChecked) showTipAgreementRequiredUI();
           throw new Error("Please check both the Terms & Conditions and Tip agreement boxes before proceeding.");
         }
 
@@ -8039,8 +8552,6 @@
         // Wait for Stripe Elements iframes to appear
         await waitForStripeReady(8000);
         console.log("[BOOK_FLOW] Stripe Elements ready");
-
-        if (msg) msg.textContent = "";
 
         return Promise.resolve();
 
@@ -8122,29 +8633,50 @@
           e.stopPropagation();
           return false;
         }
+        e.preventDefault();
+        e.stopPropagation();
+
         const payState = computeBillingValidationState();
-        if (!payState.fullyOk) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (payState.tipAckBlocking) {
-            showTipAgreementRequiredUI();
-          } else if (msg) {
-            msg.textContent = "Please complete all required fields and accept the terms.";
+        if (!payState.payerEmailOk) {
+          showPayCheckoutIssue("email");
+          return false;
+        }
+        if (!payState.addrOk) {
+          showPayCheckoutIssue("address");
+          return false;
+        }
+        if (!payState.paymentDetailsOk) {
+          showPayCheckoutIssue("payment");
+          return false;
+        }
+        if (!payState.tipSaveOk) {
+          clearPayCheckoutHighlights();
+          const tipSec = document.querySelector(".baTipSection");
+          if (tipSec) {
+            tipSec.classList.add("baPayCheckoutWarn");
+            scrollPayCheckoutIntoView(tipSec);
           }
+          return false;
+        }
+        if (payState.tipAckBlocking) {
+          showPayCheckoutIssue("tip");
+          return false;
+        }
+        if (!payState.termsOk) {
+          showPayCheckoutIssue("terms");
+          return false;
+        }
+        if (!payState.acceptanceOk) {
+          showPayCheckoutIssue("acceptance");
           return false;
         }
 
         try {
-          if (!validateBillingUI()) {
-            if (msg) msg.textContent = "Please complete all required fields and accept the terms.";
-            return;
-          }
-          
+          confirmBtn.setAttribute("data-ba-processing", "1");
           confirmBtn.disabled = true;
           confirmBtn.style.opacity = ".6";
           confirmBtn.style.cursor = "not-allowed";
           confirmBtn.style.pointerEvents = "none";
-          if (msg) msg.textContent = "Processing payment…";
           
           // Show payment processing overlay
           showPaymentOverlay();
@@ -8154,7 +8686,6 @@
           // PaymentIntent status after confirm (3DS: succeeded when challenge completed; processing for async methods)
           const st = pi && pi.status ? pi.status : "unknown";
           if (st === "succeeded") {
-            if (msg) msg.textContent = "Payment successful. Thank you!";
             // Complete percentage to 100% immediately when payment succeeds
             completePaymentPercentage();
             // Retry logic to check for paid status (backend webhook may take time)
@@ -8185,6 +8716,8 @@
                   // Payment was successful in Stripe, backend just hasn't updated yet
                   hidePaymentOverlay(); // Hide overlay if backend hasn't updated after retries
                   console.warn("[BOOK_FLOW] Payment succeeded but session not marked as paid after retries");
+                  confirmBtn.removeAttribute("data-ba-processing");
+                  setConfirmEnabled();
                 }
               } catch (err) {
                 console.error("[BOOK_FLOW] Error checking paid status:", err);
@@ -8194,6 +8727,8 @@
                   setTimeout(checkPaidStatus, retryDelay);
                 } else {
                   hidePaymentOverlay(); // Hide overlay if we've exhausted retries
+                  confirmBtn.removeAttribute("data-ba-processing");
+                  setConfirmEnabled();
                 }
               }
             };
@@ -8202,26 +8737,18 @@
             setTimeout(checkPaidStatus, retryDelay);
           } else if (st === "processing") {
             // Keep overlay visible for processing status
-            if (msg) msg.textContent = "Payment processing. Please wait — confirmation will update shortly.";
           } else {
             hidePaymentOverlay(); // Hide overlay for other statuses
-            if (msg) msg.textContent = "Payment status: " + st + ". If this looks wrong, contact your agent.";
+            confirmBtn.removeAttribute("data-ba-processing");
+            setConfirmEnabled();
           }
 
         } catch (e) {
           hidePaymentOverlay(); // Hide overlay on error
           const errorMsg = e && e.message ? e.message : String(e);
           console.error("[BOOK_FLOW] Payment error:", errorMsg);
-          if (msg) {
-            msg.textContent = "Payment error: " + errorMsg;
-            msg.style.color = "#b00020";
-          }
-          // Only re-enable if validation passes
-          const isValid = validateBillingUI();
-          confirmBtn.disabled = !isValid;
-          confirmBtn.style.opacity = isValid ? "1" : ".6";
-          confirmBtn.style.cursor = isValid ? "pointer" : "not-allowed";
-          confirmBtn.style.pointerEvents = isValid ? "auto" : "none";
+          confirmBtn.removeAttribute("data-ba-processing");
+          setConfirmEnabled();
         }
       });
     }
