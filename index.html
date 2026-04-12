@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Secure Booking | Business Air Travel</title>
 <meta name="description" content="Secure online payment for Business Air Travel bookings. Fast, encrypted, and protected checkout.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,9 +49,37 @@
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
   }
-  const publicId = qs("public_id");
+
+  /** Last known payment link id in this tab (survives some 3DS returns if return_url drops query params). */
+  const BA_PAY_PUBLIC_ID_KEY = "ba_pay_active_public_id";
+  function resolvePublicId() {
+    let id = qs("public_id");
+    if (!id && qs("payment_intent_client_secret") && qs("redirect_status")) {
+      try {
+        id = sessionStorage.getItem(BA_PAY_PUBLIC_ID_KEY);
+      } catch (_) {}
+    }
+    return id;
+  }
+  let publicId = resolvePublicId();
+  try {
+    const idFromUrl = qs("public_id");
+    if (idFromUrl) sessionStorage.setItem(BA_PAY_PUBLIC_ID_KEY, idFromUrl);
+  } catch (_) {}
+
   /** Append ?debug_book=1 to log validateBillingUI spam (Stripe address "change" fires often). */
   const DEBUG_BOOK_FLOW = qs("debug_book") === "1";
+  /** Append ?debug_pay=1 for [BOOK_FLOW] / [STRIPE] / [TIP_SELECTION] console diagnostics. */
+  const DEBUG_PAY = qs("debug_pay") === "1";
+  function payLog(...args) {
+    if (DEBUG_PAY) console.log(...args);
+  }
+  function payWarn(...args) {
+    if (DEBUG_PAY) console.warn(...args);
+  }
+  function payErr(...args) {
+    if (DEBUG_PAY) console.error(...args);
+  }
 
   const root = document.getElementById("baPayRoot");
   if (!root) return;
@@ -1072,7 +1102,7 @@
     // Primary check: if user has selected a wallet payment method, we need to remount
     const walletMethods = ["apple_pay", "google_pay"];
     if (selectedPaymentMethodType && walletMethods.includes(selectedPaymentMethodType)) {
-      console.log("[STRIPE] Wallet payment method selected (" + selectedPaymentMethodType + "), force remount needed");
+      payLog("[STRIPE] Wallet payment method selected (" + selectedPaymentMethodType + "), force remount needed");
       return true;
     }
     
@@ -1089,18 +1119,18 @@
         const tabs = payMount.querySelectorAll('[role="tab"], .tab, [data-testid*="tab"]');
         if (tabs.length > 1) {
           // Multiple tabs likely means wallet methods are available
-          console.log("[STRIPE] Multiple payment method tabs detected, wallet methods likely available");
+          payLog("[STRIPE] Multiple payment method tabs detected, wallet methods likely available");
           // Only remount if we're not sure it's just card - be conservative
           // Actually, let's not remount based on this alone - wait for user selection
         }
       }
     } catch (e) {
-      console.warn("[STRIPE] Error detecting wallet methods:", e);
+      payWarn("[STRIPE] Error detecting wallet methods:", e);
     }
     
     // Default: don't force remount for credit card payments
     // Only remount if user has explicitly selected a wallet payment method
-    console.log("[STRIPE] No wallet payment method selected, skipping force remount");
+    payLog("[STRIPE] No wallet payment method selected, skipping force remount");
     return false;
   }
 
@@ -1148,13 +1178,13 @@
       });
       const payload = await res.json().catch(() => ({}));
       if (res.ok && payload.client_secret) {
-        console.log("[STRIPE] Remounting Elements for wallet so amount is correct");
+        payLog("[STRIPE] Remounting Elements for wallet so amount is correct");
         remountingForWalletType = walletType; // use value captured at start so a stray "change" during fetch doesn't flip to card
         await mountStripePaymentElement(payload.client_secret, true, true);
         lastWalletRemountAt = Date.now();
       }
     } catch (e) {
-      console.warn("[STRIPE] Wallet remount failed:", e);
+      payWarn("[STRIPE] Wallet remount failed:", e);
     } finally {
       walletRemountInProgress = false;
     }
@@ -1494,7 +1524,7 @@
           }
         }
       } catch (e) {
-        console.warn("[STRIPE] Could not read address before remount:", e);
+        payWarn("[STRIPE] Could not read address before remount:", e);
       }
     }
 
@@ -1586,11 +1616,11 @@
             }
           } catch (setErr) {
             // setValue might not be available or might fail - that's okay
-            console.warn("[STRIPE] Could not restore address values:", setErr);
+            payWarn("[STRIPE] Could not restore address values:", setErr);
           }
         }, 300);
       } catch (e) {
-        console.warn("[STRIPE] Could not restore address:", e);
+        payWarn("[STRIPE] Could not restore address:", e);
       }
     }
 
@@ -1622,7 +1652,7 @@
       try {
         const paymentMethodTypes = paymentElement?.getElement?.()?.paymentMethodTypes || [];
         // If wallet methods are available, we may need to remount when amount changes
-        console.log("[STRIPE] Available payment methods:", paymentMethodTypes);
+        payLog("[STRIPE] Available payment methods:", paymentMethodTypes);
       } catch (e) {
         // Ignore - method might not be available
       }
@@ -1643,7 +1673,7 @@
         return;
       }
       selectedPaymentMethodType = newType;
-      console.log("[STRIPE] Payment method selected:", selectedPaymentMethodType);
+      payLog("[STRIPE] Payment method selected:", selectedPaymentMethodType);
       // When user selects a wallet method, show overlay instantly then remount with current amount
       const walletMethods = ["apple_pay", "google_pay"];
       if (walletMethods.includes(selectedPaymentMethodType)) {
@@ -1780,7 +1810,7 @@
   }
 
   async function confirmStripePayment(){
-    console.log("[BOOK_FLOW] Pay button clicked - will record acceptance, call start_payment, then confirm with Stripe");
+    payLog("[BOOK_FLOW] Pay button clicked - will record acceptance, call start_payment, then confirm with Stripe");
     
     // HARD VALIDATION: Check all required checkboxes before proceeding
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
@@ -1798,13 +1828,13 @@
 
     // Ensure Stripe Elements are initialized
     if (!stripe || !elements || !paymentElement) {
-      console.log("[BOOK_FLOW] Stripe Elements not initialized, calling initializePayment");
+      payLog("[BOOK_FLOW] Stripe Elements not initialized, calling initializePayment");
       await initializePayment();
     } else {
-      console.log("[BOOK_FLOW] Stripe Elements already initialized, checking acceptance state");
+      payLog("[BOOK_FLOW] Stripe Elements already initialized, checking acceptance state");
       // If Stripe is already initialized but acceptance not recorded, record it now
       if (!acceptanceCompleted) {
-        console.log("[BOOK_FLOW] Acceptance not completed, recording now");
+        payLog("[BOOK_FLOW] Acceptance not completed, recording now");
         try {
           const acceptRes = await fetch(RECORD_ACCEPTANCE, {
             method: "POST",
@@ -1816,7 +1846,7 @@
             })
           });
           const acceptPayload = await acceptRes.json().catch(() => ({}));
-          console.log("[BOOK_FLOW] record_acceptance response", {
+          payLog("[BOOK_FLOW] record_acceptance response", {
             status: acceptRes.status,
             ok: acceptRes.ok,
             payload: acceptPayload
@@ -1828,7 +1858,7 @@
           
           // Update PaymentIntent metadata with acceptance info
           // This ensures the PaymentIntent has correct acceptance metadata before confirmation
-          console.log("[BOOK_FLOW] Updating PaymentIntent metadata with acceptance info");
+          payLog("[BOOK_FLOW] Updating PaymentIntent metadata with acceptance info");
           try {
             const updateRes = await fetch(START_PAYMENT, {
               method: "POST",
@@ -1842,16 +1872,16 @@
             if (updateRes.ok && updatePayload.client_secret) {
               // PaymentIntent was updated, but we don't need to remount Stripe Elements
               // The client_secret should be the same, so existing elements will work
-              console.log("[BOOK_FLOW] PaymentIntent metadata updated successfully");
+              payLog("[BOOK_FLOW] PaymentIntent metadata updated successfully");
             } else {
-              console.warn("[BOOK_FLOW] Could not update PaymentIntent metadata, but continuing with payment");
+              payWarn("[BOOK_FLOW] Could not update PaymentIntent metadata, but continuing with payment");
             }
           } catch (updateErr) {
-            console.warn("[BOOK_FLOW] Error updating PaymentIntent metadata:", updateErr);
+            payWarn("[BOOK_FLOW] Error updating PaymentIntent metadata:", updateErr);
             // Don't throw - we can still proceed with payment
           }
         } catch (acceptErr) {
-          console.error("[BOOK_FLOW] record_acceptance error", acceptErr);
+          payErr("[BOOK_FLOW] record_acceptance error", acceptErr);
           throw new Error(`Acceptance required: ${acceptErr.message}`);
         }
       }
@@ -1871,7 +1901,7 @@
     const billingName = String((addr.value && addr.value.name) ? addr.value.name : "").trim();
     if (billingName.length < 2) throw new Error("Please enter your full name in the billing address section.");
 
-    console.log("[BOOK_FLOW] Confirming payment with Stripe", {
+    payLog("[BOOK_FLOW] Confirming payment with Stripe", {
       hasElements: !!elements,
       hasPaymentElement: !!paymentElement,
       currentClientSecret: currentClientSecret
@@ -1885,7 +1915,7 @@
     // Verify PaymentIntent is current before confirming
     // Elements are already updated when TCS/tip changes, so we don't remount here to avoid disrupting Apple Pay
     // Stripe Elements will automatically use the updated PaymentIntent amount when confirming
-    console.log("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation");
+    payLog("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation");
     try {
       const refreshRes = await fetch(START_PAYMENT, {
         method: "POST",
@@ -1898,24 +1928,24 @@
       const refreshPayload = await refreshRes.json().catch(() => ({}));
       if (refreshRes.ok && refreshPayload.client_secret) {
         if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
-          console.log("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
+          payLog("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
           currentClientSecret = refreshPayload.client_secret;
           await mountStripePaymentElement(refreshPayload.client_secret, false);
           await new Promise(resolve => setTimeout(resolve, 1500));
         } else if (refreshPayload.client_secret !== currentClientSecret) {
           // PaymentIntent was recreated (e.g. amount changed) but Elements are already mounted.
           // Remount so the correct amount is used, especially when user switched to wallet (Apple/Google Pay).
-          console.log("[BOOK_FLOW] PaymentIntent recreated with new amount - remounting Elements so charge amount is correct");
+          payLog("[BOOK_FLOW] PaymentIntent recreated with new amount - remounting Elements so charge amount is correct");
           currentClientSecret = refreshPayload.client_secret;
           if (selectedPaymentMethodType && ["apple_pay", "google_pay"].includes(selectedPaymentMethodType)) remountingForWalletType = selectedPaymentMethodType;
           await mountStripePaymentElement(refreshPayload.client_secret, true, true);
           await new Promise(resolve => setTimeout(resolve, 800));
         } else {
-          console.log("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
+          payLog("[BOOK_FLOW] PaymentIntent is current, Elements should reflect correct amount");
         }
       }
     } catch (refreshErr) {
-      console.warn("[BOOK_FLOW] Error verifying PaymentIntent:", refreshErr);
+      payWarn("[BOOK_FLOW] Error verifying PaymentIntent:", refreshErr);
       // Don't throw - proceed with existing PaymentIntent
     }
     
@@ -1940,7 +1970,7 @@
     });
 
     if (error) {
-      console.error("[BOOK_FLOW] Stripe confirmPayment error:", error);
+      payErr("[BOOK_FLOW] Stripe confirmPayment error:", error);
       
       // Handle Apple Pay specific errors more gracefully
       const errorMessage = error.message || "Payment failed";
@@ -1951,7 +1981,7 @@
       throw new Error(errorMessage);
     }
     
-    console.log("[BOOK_FLOW] Payment confirmed successfully", {
+    payLog("[BOOK_FLOW] Payment confirmed successfully", {
       status: paymentIntent?.status,
       id: paymentIntent?.id
     });
@@ -3946,7 +3976,7 @@
     }
   }
 
-  /* Narrow / mobile: single column flow — title, step circles, (subtitle if any), labels; hide default itinerary line */
+  /* Narrow / mobile: single column flow — title, subtitle, step circles, labels; hide default itinerary line when empty */
   @media (max-width: 1000px){
     .baHeaderProgressInner{
       display: flex;
@@ -3965,16 +3995,16 @@
       max-width: 100%;
       text-align: center;
     }
-    .baHeaderProgressCirclesRow{
+    .baHeaderProgressSubtitle{
       order: 2;
       width: 100%;
       max-width: 100%;
+      text-align: center;
     }
-    .baHeaderProgressSubtitle{
+    .baHeaderProgressCirclesRow{
       order: 3;
       width: 100%;
       max-width: 100%;
-      text-align: center;
     }
     .baHeaderProgressSubtitle--hideOnNarrow{
       display: none !important;
@@ -7637,19 +7667,19 @@
         if (termsChecked && !acceptanceInProgress && !acceptanceCompleted) {
           acceptanceInProgress = true;
           try {
-            console.log("[BOOK_FLOW] Recording acceptance from tip checkbox", {
+            payLog("[BOOK_FLOW] Recording acceptance from tip checkbox", {
               termsChecked: true,
               tipChecked: true
             });
             // Always pass true for tip_ack - it means "I acknowledge tips/extra charges"
             await recordAcceptance(publicId, true, true);
             acceptanceCompleted = true;
-            console.log("[BOOK_FLOW] Acceptance recorded successfully");
+            payLog("[BOOK_FLOW] Acceptance recorded successfully");
             
             // Immediately update button state after successful acceptance
             setConfirmEnabled();
           } catch (e) {
-            console.error("[BOOK_FLOW] Failed to record acceptance:", e);
+            payErr("[BOOK_FLOW] Failed to record acceptance:", e);
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
             // The user can try again or the error will be handled when they click Pay
             acceptanceCompleted = false;
@@ -7839,7 +7869,7 @@
                 await new Promise(resolve => setTimeout(resolve, 600));
               }
             } catch (e) {
-              console.error("Failed to update Stripe Elements:", e);
+              payErr("Failed to update Stripe Elements:", e);
             }
           }
         })
@@ -7948,7 +7978,7 @@
             try {
               const tip = buildTipPayload();
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-              console.log("[TIP_SELECTION] Saving custom chip selection:", tip);
+              payLog("[TIP_SELECTION] Saving custom chip selection:", tip);
               clearTipError();
               updateTotalsUI();
               setSaving(false);
@@ -7969,7 +7999,7 @@
                     if (tipMode === "custom") focusBaTipCustomInputSoon();
                   }
                 } catch (remountErr) {
-                  console.error("Failed to update Stripe Elements:", remountErr);
+                  payErr("Failed to update Stripe Elements:", remountErr);
                 }
               }
             } catch (e) {
@@ -7984,7 +8014,7 @@
               const errorMsg = "Could not save tip selection. Please try again.";
               setSelMsg(errorMsg);
               showTipError(errorMsg);
-              console.error("[TIP_SELECTION] Failed to save custom chip selection:", e);
+              payErr("[TIP_SELECTION] Failed to save custom chip selection:", e);
             }
             return;
           }
@@ -8011,9 +8041,9 @@
 
             try {
               const tip = buildTipPayload();
-              console.log("[TIP_SELECTION] Saving tip preset selection:", tip);
+              payLog("[TIP_SELECTION] Saving tip preset selection:", tip);
               const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-              console.log("[TIP_SELECTION] Tip preset saved successfully:", result);
+              payLog("[TIP_SELECTION] Tip preset saved successfully:", result);
               clearTipError();
               updateTotalsUI();
               setSaving(false);
@@ -8031,7 +8061,7 @@
               const errorMsg = "Could not save tip selection. Please try again.";
               setSelMsg(errorMsg);
               showTipError(errorMsg);
-              console.error("[TIP_SELECTION] Failed to save tip preset:", e);
+              payErr("[TIP_SELECTION] Failed to save tip preset:", e);
             }
             return;
           }
@@ -8072,11 +8102,11 @@
           setSelMsg("");
 
           const tip = buildTipPayload();
-          console.log("[TIP_SELECTION] Saving custom tip selection:", tip);
+          payLog("[TIP_SELECTION] Saving custom tip selection:", tip);
 
           try {
             const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-            console.log("[TIP_SELECTION] Custom tip saved successfully:", result);
+            payLog("[TIP_SELECTION] Custom tip saved successfully:", result);
             clearTipError();
 
             applyTipHighlights();
@@ -8097,7 +8127,7 @@
             const errorMsg = "Could not save tip selection. Please try again.";
             setSelMsg(errorMsg);
             showTipError(errorMsg);
-            console.error("[TIP_SELECTION] Failed to save custom tip:", e);
+            payErr("[TIP_SELECTION] Failed to save custom tip:", e);
           }
         } catch (e) {
           // REVERT on error
@@ -8157,9 +8187,9 @@
         setSelMsg("");
         try {
           const tip = buildTipPayload();
-          console.log("[TIP_SELECTION] Saving tip checkbox confirmation:", tip);
+          payLog("[TIP_SELECTION] Saving tip checkbox confirmation:", tip);
           const result = await updateSelection(data.public_id, { care_selected: !!careSelected, tip });
-          console.log("[TIP_SELECTION] Tip checkbox save successful:", result);
+          payLog("[TIP_SELECTION] Tip checkbox save successful:", result);
           clearTipError();
           updateTotalsUI();
           updateTipAgreementUI(); // Update button state after save
@@ -8179,7 +8209,7 @@
                 await new Promise(resolve => setTimeout(resolve, 600));
               }
             } catch (remountErr) {
-              console.error("Failed to update Stripe Elements:", remountErr);
+              payErr("Failed to update Stripe Elements:", remountErr);
             }
           }
         } catch (e) {
@@ -8192,7 +8222,7 @@
           const errorMsg = "Could not save tip selection. Please try again.";
           setSelMsg(errorMsg);
           showTipError(errorMsg);
-          console.error("[TIP_SELECTION] Failed to save tip toggle:", e);
+          payErr("[TIP_SELECTION] Failed to save tip toggle:", e);
         }
       });
     }
@@ -8227,7 +8257,7 @@
         if (tipChecked && !acceptanceInProgress && !acceptanceCompleted) {
           acceptanceInProgress = true;
           try {
-            console.log("[BOOK_FLOW] Recording acceptance from terms checkbox", {
+            payLog("[BOOK_FLOW] Recording acceptance from terms checkbox", {
               termsChecked: true,
               tipChecked,
               hasTipSelected: tipCentsT > 0,
@@ -8236,12 +8266,12 @@
             // Always pass true for tip_ack - it means "I acknowledge tips/extra charges" regardless of whether tip is selected
             await recordAcceptance(publicId, true, true);
             acceptanceCompleted = true;
-            console.log("[BOOK_FLOW] Acceptance recorded successfully");
+            payLog("[BOOK_FLOW] Acceptance recorded successfully");
             
             // Immediately update button state after successful acceptance
             setConfirmEnabled();
           } catch (e) {
-            console.error("[BOOK_FLOW] Failed to record acceptance:", e);
+            payErr("[BOOK_FLOW] Failed to record acceptance:", e);
             // Don't uncheck the checkbox on error - just mark acceptance as incomplete
             // The user can try again or the error will be handled when they click Pay
             acceptanceCompleted = false;
@@ -8476,7 +8506,7 @@
     // Function to reveal payment UI sections (TCS, tips, Stripe area)
     // Attempts to initialize Stripe Elements, but handles acceptance_required gracefully
     async function revealPaymentUI() {
-      console.log("[BOOK_FLOW] revealPaymentUI called - revealing UI and attempting to initialize Stripe Elements");
+      payLog("[BOOK_FLOW] revealPaymentUI called - revealing UI and attempting to initialize Stripe Elements");
       
       if (extrasSection) {
         // Keep sections hidden initially - they will be shown after Stripe elements are loaded
@@ -8517,7 +8547,7 @@
         // Initialize Stripe Elements immediately when Book is clicked
         // This allows users to see and fill in the payment form
         try {
-          console.log("[BOOK_FLOW] Calling start_payment to initialize Stripe Elements");
+          payLog("[BOOK_FLOW] Calling start_payment to initialize Stripe Elements");
           const res = await fetch(START_PAYMENT, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -8531,7 +8561,7 @@
           
           if (res.ok && payload.client_secret) {
             // Success - initialize Stripe Elements
-            console.log("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
+            payLog("[BOOK_FLOW] start_payment succeeded, initializing Stripe Elements");
             await mountStripePaymentElement(payload.client_secret, false);
             trackPaymentLinkEventOncePerSession(
               "checkout_started",
@@ -8566,11 +8596,11 @@
             const scrollTarget = tcsCardEl || extrasSection;
             try { scrollTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }); } catch(_) {}
             
-            console.log("[BOOK_FLOW] Stripe Elements initialized successfully - sections revealed");
+            payLog("[BOOK_FLOW] Stripe Elements initialized successfully - sections revealed");
           } else {
             // Error - show message
             const errorMsg = payload?.error || `HTTP ${res.status}`;
-            console.error("[BOOK_FLOW] start_payment failed:", errorMsg);
+            payErr("[BOOK_FLOW] start_payment failed:", errorMsg);
             // Restore button text on error
             const payBtn = document.getElementById("baPayBtn");
             const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
@@ -8580,7 +8610,7 @@
           }
         } catch (e) {
           // Network or other error
-          console.error("[BOOK_FLOW] start_payment error:", e.message);
+          payErr("[BOOK_FLOW] start_payment error:", e.message);
           // Restore button text on error
           const payBtn = document.getElementById("baPayBtn");
           const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
@@ -8598,13 +8628,13 @@
     // Function to initialize payment (called only when Pay button is clicked)
     // This function calls start_payment and initializes Stripe Elements
     async function initializePayment() {
-      console.log("[BOOK_FLOW] initializePayment called - will call start_payment and initialize Stripe");
+      payLog("[BOOK_FLOW] initializePayment called - will call start_payment and initialize Stripe");
       
       // Guard: If Stripe Elements are already mounted and ready, return
       if (paymentElement && elements) {
         const payMount = document.getElementById("baStripeMount");
         if (payMount && payMount.querySelector("iframe")) {
-          console.log("[BOOK_FLOW] Stripe Elements already initialized");
+          payLog("[BOOK_FLOW] Stripe Elements already initialized");
           return Promise.resolve();
         }
       }
@@ -8635,7 +8665,7 @@
         }
 
         // Record acceptance
-        console.log("[BOOK_FLOW] Recording acceptance before start_payment");
+        payLog("[BOOK_FLOW] Recording acceptance before start_payment");
         try {
           const acceptRes = await fetch(RECORD_ACCEPTANCE, {
             method: "POST",
@@ -8647,7 +8677,7 @@
             })
           });
           const acceptPayload = await acceptRes.json().catch(() => ({}));
-          console.log("[BOOK_FLOW] record_acceptance response", {
+          payLog("[BOOK_FLOW] record_acceptance response", {
             status: acceptRes.status,
             ok: acceptRes.ok,
             payload: acceptPayload
@@ -8657,12 +8687,12 @@
           }
           acceptanceCompleted = true;
         } catch (acceptErr) {
-          console.error("[BOOK_FLOW] record_acceptance error", acceptErr);
+          payErr("[BOOK_FLOW] record_acceptance error", acceptErr);
           throw new Error(`Acceptance required: ${acceptErr.message}`);
         }
 
         // Call start_payment
-        console.log("[BOOK_FLOW] Calling start_payment", { public_id: publicId });
+        payLog("[BOOK_FLOW] Calling start_payment", { public_id: publicId });
         const res = await fetch(START_PAYMENT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -8673,7 +8703,7 @@
         });
 
         const payload = await res.json().catch(() => ({}));
-        console.log("[BOOK_FLOW] start_payment response", {
+        payLog("[BOOK_FLOW] start_payment response", {
           status: res.status,
           ok: res.ok,
           payload: payload
@@ -8688,18 +8718,18 @@
 
         // Mount Stripe Elements (only if not already mounted)
         // Use preserveState=true to avoid clearing user input if elements already exist
-        console.log("[BOOK_FLOW] Mounting Stripe Elements");
+        payLog("[BOOK_FLOW] Mounting Stripe Elements");
         const shouldPreserve = !!(paymentElement && elements);
         await mountStripePaymentElement(payload.client_secret, shouldPreserve);
 
         // Wait for Stripe Elements iframes to appear
         await waitForStripeReady(8000);
-        console.log("[BOOK_FLOW] Stripe Elements ready");
+        payLog("[BOOK_FLOW] Stripe Elements ready");
 
         return Promise.resolve();
 
       } catch (e) {
-        console.error("[BOOK_FLOW] initializePayment error", e);
+        payErr("[BOOK_FLOW] initializePayment error", e);
         throw e;
       }
     }
@@ -8707,7 +8737,7 @@
 
     // Main handler for Book button click - reveals UI and attempts to initialize Stripe Elements
     async function handleBookClick() {
-      console.log("[BOOK_FLOW] Book button clicked - revealing UI and attempting to initialize Stripe Elements");
+      payLog("[BOOK_FLOW] Book button clicked - revealing UI and attempting to initialize Stripe Elements");
       bookButtonClicked = true;
       const addPaxBtn = document.getElementById("baAddPassengerBtn");
       if (addPaxBtn) { addPaxBtn.disabled = true; }
@@ -8743,11 +8773,11 @@
           await revealPaymentUI();
           optionalServicesRevealed = true;
           
-          console.log("[BOOK_FLOW] UI revealed successfully");
+          payLog("[BOOK_FLOW] UI revealed successfully");
         }
       } catch (e) {
         // Fallback error handling
-        console.error("[BOOK_FLOW] Unexpected error in handleBookClick:", e);
+        payErr("[BOOK_FLOW] Unexpected error in handleBookClick:", e);
         if (hint) hint.textContent = "An unexpected error occurred. Please try again.";
         // Restore button text on error
         const payBtn = document.getElementById("baPayBtn");
@@ -8761,7 +8791,7 @@
     if (payBtn) {
       payBtn.addEventListener("click", () => {
         handleBookClick().catch((e) => {
-          console.error("Error in Book button handler:", e);
+          payErr("Error in Book button handler:", e);
         });
       });
     }
@@ -8858,12 +8888,12 @@
                   // After max retries, still show success message but don't navigate
                   // Payment was successful in Stripe, backend just hasn't updated yet
                   hidePaymentOverlay(); // Hide overlay if backend hasn't updated after retries
-                  console.warn("[BOOK_FLOW] Payment succeeded but session not marked as paid after retries");
+                  payWarn("[BOOK_FLOW] Payment succeeded but session not marked as paid after retries");
                   confirmBtn.removeAttribute("data-ba-processing");
                   setConfirmEnabled();
                 }
               } catch (err) {
-                console.error("[BOOK_FLOW] Error checking paid status:", err);
+                payErr("[BOOK_FLOW] Error checking paid status:", err);
                 // Retry on error if we haven't exceeded max retries
                 if (retryCount < maxRetries) {
                   retryCount++;
@@ -8889,7 +8919,7 @@
         } catch (e) {
           hidePaymentOverlay(); // Hide overlay on error
           const errorMsg = e && e.message ? e.message : String(e);
-          console.error("[BOOK_FLOW] Payment error:", errorMsg);
+          payErr("[BOOK_FLOW] Payment error:", errorMsg);
           confirmBtn.removeAttribute("data-ba-processing");
           setConfirmEnabled();
         }
