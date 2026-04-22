@@ -882,6 +882,7 @@
     if (a === "BA" && c === "R") return "Business Class"; // BA R = Business, not First
     if (a === "MU" && c.charAt(0) === "Q") return "Business Class"; // China Eastern Q = Business, not Economy
     if (a === "AF" && c === "R") return "Economy Class"; // AF R = Economy, not First
+    if (a === "IB" && c === "R") return "Business Class"; // Iberia R = Business, not First
     if (a === "LH" && c === "W") return "Economy Class"; // LH W = Economy, not Premium Economy
     if (a === "LX" && c === "W") return "Economy Class"; // LX W = Economy, not Premium Economy
     if (a === "TK" && c === "W") return "Economy Class"; // TK W = Economy, not Premium Economy
@@ -927,6 +928,30 @@
     return code || "—";
   }
 
+  function journeyEndpoints(j){
+    const segs = Array.isArray(j?.segments) ? j.segments : [];
+    if (!segs.length) return { origin: "", destination: "" };
+    const first = segs[0];
+    const last = segs[segs.length - 1];
+    return {
+      origin: String(first?.origin || "").trim().toUpperCase(),
+      destination: String(last?.destination || "").trim().toUpperCase()
+    };
+  }
+
+  function isRoundTripJourneyPair(journeys){
+    if (!Array.isArray(journeys) || journeys.length !== 2) return false;
+    const first = journeyEndpoints(journeys[0]);
+    const second = journeyEndpoints(journeys[1]);
+    if (!first.origin || !first.destination || !second.origin || !second.destination) return false;
+    return first.origin === second.destination && first.destination === second.origin;
+  }
+
+  function summaryFlightTypeLabel(journeys){
+    if (!Array.isArray(journeys) || journeys.length <= 1) return "One-Way Flight";
+    return isRoundTripJourneyPair(journeys) ? "Round-Trip Flight" : "Multi-City Flight";
+  }
+
   function clampInt(n, min, max){
     const x = Math.round(Number(n));
     if (!Number.isFinite(x)) return min;
@@ -951,6 +976,75 @@
 
   function segmentMealText(s){
     return String(s?.meal || s?.meal_text || s?.service_meal || "").trim();
+  }
+
+  function normalizeCarrierText(value){
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  function resolveCarrierDisplayName(codeOrName){
+    const raw = String(codeOrName || "").trim();
+    if (!raw) return "";
+    const mapped = AIRLINE_NAMES[raw.toUpperCase()];
+    return String(mapped || raw).trim();
+  }
+
+  function formatOperatingCarrierDisplayName(name){
+    const raw = String(name || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "";
+
+    // If already mixed-case, keep as provided.
+    const hasLower = /[a-z]/.test(raw);
+    if (hasLower) return raw;
+
+    const minorWords = new Set(["and", "or", "of", "for", "the", "by"]);
+    return raw
+      .split(" ")
+      .map((word, idx) => {
+        if (!word) return word;
+        if (/^[A-Z0-9]{1,2}$/.test(word)) return word; // Keep short codes like IB, AA
+        const lower = word.toLowerCase();
+        if (idx > 0 && minorWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ");
+  }
+
+  function getOperatingCarrierLabel(segment){
+    const marketingCode = String(segment?.marketing_carrier || "").trim().toUpperCase();
+    const marketingName = resolveCarrierDisplayName(marketingCode);
+    const operatorRaw = String(
+      segment?.operating_carrier_name ||
+      resolveCarrierDisplayName(segment?.operating_carrier) ||
+      segment?.operating_carrier ||
+      segment?.operator ||
+      ""
+    ).trim();
+
+    if (!operatorRaw) return "";
+
+    const normalizedOperator = normalizeCarrierText(operatorRaw);
+    const normalizedMarketingCode = normalizeCarrierText(marketingCode);
+    const normalizedMarketingName = normalizeCarrierText(marketingName);
+
+    if (
+      normalizedOperator &&
+      (normalizedOperator === normalizedMarketingCode || normalizedOperator === normalizedMarketingName)
+    ) {
+      return "";
+    }
+
+    return formatOperatingCarrierDisplayName(operatorRaw);
+  }
+
+  function shouldStackOperatingLabel(operatorName){
+    const text = String(operatorName || "").replace(/\s+/g, " ").trim();
+    if (!text) return false;
+    // Keep short names on one line: "Operated by Iberia"
+    // Stack only when the combined label is likely to overflow the airline rail.
+    return text.length > 14;
   }
 
   // Top-level journey card HTML (used by payment form and paid confirmation)
@@ -990,7 +1084,8 @@
             const flightTime = segmentFlightTime(s);
             const meal = segmentMealText(s);
             const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
-            const operator = String(s.operating_carrier_name || s.operating_carrier || s.operator || "").trim();
+            const operatorLabel = getOperatingCarrierLabel(s);
+            const operatorStackClass = shouldStackOperatingLabel(operatorLabel) ? " baAir__op--stacked" : "";
             const lo = (Array.isArray(j.layovers) && j.layovers[idx]) ? j.layovers[idx] : null;
             const layPlace = lo ? String(lo.at_city || lo.at || "").trim() : "";
             const layLabel = lo
@@ -1053,7 +1148,12 @@
                       </span>
                       <span class="baCabinBadge">${escapeHtml(cabin || ("Class " + (s.booking_class || "")))}</span>
                     </div>
-                    ${operator ? `<div class="baAir__op">${escapeHtml(operator)}</div>` : ``}
+                    ${operatorLabel ? `
+                      <div class="baAir__op${operatorStackClass}" title="Operated by ${escapeHtml(operatorLabel)}">
+                        <span class="baAir__opPrefix">Operated by</span>
+                        <span class="baAir__opName">${escapeHtml(operatorLabel)}</span>
+                      </div>
+                    ` : ``}
                   </div>
                 </div>
 
@@ -4127,7 +4227,7 @@
   .baPage{
     max-width: 1220px;
     margin: 0 auto;
-    padding: 26px 18px 60px;
+    padding: 34px 18px 60px;
   }
   .baGrid{
     display:grid;
@@ -4135,8 +4235,12 @@
     gap: 18px;
     align-items:start;
   }
+  .baFlightsPane #baFlightsFlow{
+    padding-bottom: 22px;
+  }
   @media (max-width: 980px){
     .baGrid{ grid-template-columns:1fr; }
+    .baFlightsPane #baFlightsFlow{ padding-bottom: 24px; }
   }
   @media (max-width: 1000px){
     .baPage{ padding-bottom: 80px; }
@@ -4505,16 +4609,38 @@
     }
   }
   .baAir__op{
+    width: 100%;
     font-size: 11px;
-    opacity:.58;
+    opacity:.74;
     font-weight: 500;
+    color: #555;
     max-width: 100%;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
+    line-height: 1.2;
     letter-spacing: 0.02em;
+    text-align: left;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
   }
-
+  .baAir__op--stacked{
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+  }
+  .baAir__opPrefix{
+    display: inline;
+    white-space: nowrap;
+  }
+  .baAir__opName{
+    display: inline-block;
+    font-weight: 550;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .baLayRow{
     display: grid;
     grid-template-columns: var(--ba-flight-cols);
@@ -6173,6 +6299,11 @@
   .baPaxWrap .baPayChatMount{
     margin-top: 10px;
   }
+  @media (max-width: 980px){
+    .baPaxWrap .baPayChatMount{
+      margin-bottom: 14px;
+    }
+  }
   .baPayChatRail .baPayChatMount{
     margin-top: 0;
   }
@@ -7112,17 +7243,13 @@
                     </svg>
                   </span>
                 </div>
-                ${journeys.length > 0 ? journeys.map((j, idx) => {
+                ${journeys.length > 0 ? journeys.map((j) => {
                   const cp = cityPairFromJourney(j);
                   const first = j?.segments?.[0];
                   const departDay = first?.depart_local ? String(first.depart_local).slice(0,10) : "";
                   const dateLabel = departDay ? dateHeaderLabel(departDay) : "";
-                  const legLabel = journeys.length > 1
-                    ? (idx === 0 ? "Departure" : idx === 1 ? "Return" : `Leg ${idx + 1}`)
-                    : "";
                   return `
                     <div class="baSummaryBox__flightLeg">
-                      ${legLabel ? `<div class="baSummaryBox__flightLegLabel">${escapeHtml(legLabel)}</div>` : ""}
                       <div class="baSummaryBox__flightRoute">${escapeHtml(routeHeadlineLabel(cp.fromCity, cp.fromIata))} <span class="baArr">→</span> ${escapeHtml(routeHeadlineLabel(cp.toCity, cp.toIata))}</div>
                       <div class="baSummaryBox__flightDate">${escapeHtml(dateLabel)}</div>
                     </div>
@@ -7135,7 +7262,7 @@
 
             <div class="baSummaryBox__items">
               <div class="baSummaryBox__item">
-                <div class="baSummaryBox__itemLabel">One-Way Flight</div>
+                <div class="baSummaryBox__itemLabel">${escapeHtml(summaryFlightTypeLabel(journeys))}</div>
                 <div class="baSummaryBox__itemValue">${fmtMoney(baseTicketService())}</div>
                 <div class="baSummaryBox__itemSub">To be processed by BUSINESS AIRFARE LLC</div>
                 <div class="baSummaryBox__itemSubValue">${fmtMoney(baseTicketService())}</div>
