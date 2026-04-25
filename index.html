@@ -36,9 +36,12 @@
   const GET_SESSION = SUPABASE_FUNCTIONS_BASE + "/get_public_session";
   const GET_SESSION_FALLBACK = SUPABASE_FUNCTIONS_FALLBACK_BASE + "/get_public_session";
   const UPDATE_SELECTION = SUPABASE_FUNCTIONS_BASE + "/update_selection";
+  const UPDATE_SELECTION_FALLBACK = SUPABASE_FUNCTIONS_FALLBACK_BASE + "/update_selection";
   const START_PAYMENT = SUPABASE_FUNCTIONS_BASE + "/start_payment";
+  const START_PAYMENT_FALLBACK = SUPABASE_FUNCTIONS_FALLBACK_BASE + "/start_payment";
   const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
   const RECORD_ACCEPTANCE = SUPABASE_FUNCTIONS_BASE + "/record_acceptance";
+  const RECORD_ACCEPTANCE_FALLBACK = SUPABASE_FUNCTIONS_FALLBACK_BASE + "/record_acceptance";
   const ADD_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/add_passenger";
   const REMOVE_PASSENGER = SUPABASE_FUNCTIONS_BASE + "/remove_passenger";
   const TRACK_PAYMENT_LINK_EVENT = SUPABASE_FUNCTIONS_BASE + "/track_payment_link_event";
@@ -55,8 +58,9 @@
   }
 
   async function fetchSessionResilient(targetPublicId, options = {}) {
-    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 4;
-    const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 280;
+    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 12;
+    const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 350;
+    const maxTotalMs = Number.isFinite(options.maxTotalMs) ? Math.max(1000, options.maxTotalMs) : 45000;
     const isRetryable = (status) => status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
     const urls = [
       GET_SESSION + "?public_id=" + encodeURIComponent(targetPublicId),
@@ -64,6 +68,7 @@
     ];
 
     let lastError = null;
+    const startedAt = Date.now();
     for (let attempt = 0; attempt < attempts; attempt++) {
       const preferFallbackFirst = attempt > 0 && (attempt % 2 === 1);
       const orderedUrls = preferFallbackFirst ? [urls[1], urls[0]] : urls;
@@ -80,16 +85,66 @@
           if (!isRetryable(res.status)) throw new Error(message);
           lastError = new Error(message);
         } catch (err) {
-          lastError = err instanceof Error ? err : new Error(String(err));
+          const error = err instanceof Error ? err : new Error(String(err));
+          // For non-retryable HTTP errors (e.g. 400/404), fail fast instead of burning retry budget.
+          const retryableMessage = /HTTP (429|500|502|503|504)\b/.test(error.message);
+          if (!retryableMessage) throw error;
+          lastError = error;
         }
       }
 
+      if (Date.now() - startedAt >= maxTotalMs) break;
       if (attempt < attempts - 1) {
         const delay = baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 120);
         await sleepMs(delay);
       }
     }
     throw lastError || new Error("Failed to load session.");
+  }
+
+  async function postJsonResilient(primaryUrl, fallbackUrl, payload, options = {}) {
+    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 6;
+    const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 250;
+    const maxTotalMs = Number.isFinite(options.maxTotalMs) ? Math.max(1000, options.maxTotalMs) : 18000;
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    const body = JSON.stringify(payload || {});
+    const startedAt = Date.now();
+
+    let lastRes = null;
+    let lastData = {};
+    let lastErr = null;
+    const urls = [primaryUrl, fallbackUrl];
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const preferFallbackFirst = attempt > 0 && (attempt % 2 === 1);
+      const orderedUrls = preferFallbackFirst ? [urls[1], urls[0]] : urls;
+
+      for (const url of orderedUrls) {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          const data = await res.json().catch(() => ({}));
+          lastRes = res;
+          lastData = data;
+
+          if (res.ok || !retryableStatuses.has(res.status) || attempt === attempts - 1) {
+            return { res, data };
+          }
+        } catch (err) {
+          lastErr = err instanceof Error ? err : new Error(String(err));
+        }
+      }
+
+      if (Date.now() - startedAt >= maxTotalMs) break;
+      const delay = baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 120);
+      await sleepMs(delay);
+    }
+
+    if (!lastRes && lastErr) throw lastErr;
+    return { res: lastRes, data: lastData };
   }
 
   /** Last known payment link id in this tab (survives some 3DS returns if return_url drops query params). */
@@ -193,38 +248,45 @@
   }
 
   const START_PAYMENT_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
-  function sleepMs(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
   async function callStartPayment(payload, options = {}) {
-    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 3;
+    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 6;
     const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 250;
+    const maxTotalMs = Number.isFinite(options.maxTotalMs) ? Math.max(1000, options.maxTotalMs) : 18000;
     const body = JSON.stringify(payload || {});
     let lastRes = null;
     let lastData = {};
+    let lastErr = null;
+    const startedAt = Date.now();
+    const urls = [START_PAYMENT, START_PAYMENT_FALLBACK];
 
     for (let attempt = 0; attempt < attempts; attempt++) {
-      try {
-        const res = await fetch(START_PAYMENT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        const data = await res.json().catch(() => ({}));
-        lastRes = res;
-        lastData = data;
+      const preferFallbackFirst = attempt > 0 && (attempt % 2 === 1);
+      const orderedUrls = preferFallbackFirst ? [urls[1], urls[0]] : urls;
+      for (const url of orderedUrls) {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          const data = await res.json().catch(() => ({}));
+          lastRes = res;
+          lastData = data;
 
-        if (res.ok || !START_PAYMENT_RETRYABLE_STATUSES.has(res.status) || attempt === attempts - 1) {
-          return { res, data };
+          if (res.ok || !START_PAYMENT_RETRYABLE_STATUSES.has(res.status) || attempt === attempts - 1) {
+            return { res, data };
+          }
+        } catch (err) {
+          lastErr = err instanceof Error ? err : new Error(String(err));
         }
-      } catch (err) {
-        if (attempt === attempts - 1) throw err;
       }
 
+      if (Date.now() - startedAt >= maxTotalMs) break;
       const delay = baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 100);
       await sleepMs(delay);
     }
 
+    if (!lastRes && lastErr) throw lastErr;
     return { res: lastRes, data: lastData };
   }
 
@@ -1210,7 +1272,7 @@
                     <div class="baFlight__row baFlight__row--meta baRow baRow--meta">
                       <div class="baMetaInline">
                         ${flightTime ? `<div class="baMetaRow baMetaRow--flightTime">${escapeHtml(flightTime)}</div>` : ``}
-                        ${meal ? `<div class="baMetaRow baMetaRow--meal"><span class="baFork">🍴</span>${escapeHtml(meal)}</div>` : ``}
+                        ${meal ? `<div class="baMetaRow baMetaRow--meal"><span class="baFork" aria-hidden="true"><svg class="baFork__svg" focusable="false" viewBox="0 0 10 13" aria-hidden="true" width="8.5" height="11.05"><g><g><path fill="currentColor" d="M2.168 12.56a.263.263 0 0 1-.264-.264V6.652A2.649 2.649 0 0 1 0 4.12V.264C0 .118.118 0 .264 0h.593c.146 0 .264.118.264.264v4.148h1.022V.264c0-.146.118-.264.264-.264h.659c.146 0 .263.118.263.264v4.148h1.023V.264c0-.146.118-.264.263-.264h.594c.146 0 .263.118.264.264V4.12A2.649 2.649 0 0 1 3.57 6.652v5.644a.263.263 0 0 1-.264.264zm6.442 0a.263.263 0 0 1-.264-.264V7.22h-1.64a.264.264 0 0 1-.264-.264V2.799C6.442.35 8.733.028 9.719.002a.26.26 0 0 1 .19.075c.05.049.08.117.08.188l.008 11.994a.264.264 0 0 1-.261.301h-.002z"></path></g></g></svg></span>${escapeHtml(meal)}</div>` : ``}
                       </div>
                     </div>
 
@@ -1387,6 +1449,8 @@
   // ---------- Acceptance state (global scope so validateBillingUI can access it) ----------
   let acceptanceCompleted = false;
   let acceptanceInProgress = false;
+  let acceptancePendingPromise = null;
+  let acceptanceLastAttemptAt = 0;
   let tipSaveError = null; // Track if tip save failed (global scope for validateBillingUI)
 
   function normalizePhone(s){
@@ -2030,25 +2094,7 @@
       if (!acceptanceCompleted) {
         payLog("[BOOK_FLOW] Acceptance not completed, recording now");
         try {
-          const acceptRes = await fetch(RECORD_ACCEPTANCE, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              public_id: publicId, 
-              tip_ack: true, 
-              terms_accepted: true 
-            })
-          });
-          const acceptPayload = await acceptRes.json().catch(() => ({}));
-          payLog("[BOOK_FLOW] record_acceptance response", {
-            status: acceptRes.status,
-            ok: acceptRes.ok,
-            payload: acceptPayload
-          });
-          if (!acceptRes.ok) {
-            throw new Error(`Failed to record acceptance: ${acceptPayload?.error || acceptRes.status}`);
-          }
-          acceptanceCompleted = true;
+          await ensureAcceptanceRecorded("confirmStripePayment");
           
           // Update PaymentIntent metadata with acceptance info
           // This ensures the PaymentIntent has correct acceptance metadata before confirmation
@@ -2175,12 +2221,12 @@
 
   // ---------- selection update ----------
   async function updateSelection(public_id, patch){
-    const res = await fetch(UPDATE_SELECTION, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_id, ...patch })
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await postJsonResilient(
+      UPDATE_SELECTION,
+      UPDATE_SELECTION_FALLBACK,
+      { public_id, ...patch },
+      { attempts: 6, baseDelayMs: 250, maxTotalMs: 18000 },
+    );
     if (!res.ok) {
       const errorMsg = data?.error || ("HTTP " + res.status);
       const details = data?.details ? `: ${data.details}` : "";
@@ -2191,18 +2237,67 @@
 
   // ---------- record acceptance ----------
   async function recordAcceptance(public_id, tip_ack, terms_accepted){
-    const res = await fetch(RECORD_ACCEPTANCE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_id, tip_ack, terms_accepted })
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await postJsonResilient(
+      RECORD_ACCEPTANCE,
+      RECORD_ACCEPTANCE_FALLBACK,
+      { public_id, tip_ack, terms_accepted },
+      { attempts: 6, baseDelayMs: 250, maxTotalMs: 18000 },
+    );
     if (!res.ok) {
       const errorMsg = data?.error || ("HTTP " + res.status);
       const details = data?.details ? `: ${data.details}` : "";
       throw new Error(errorMsg + details);
     }
     return data;
+  }
+
+  async function ensureAcceptanceRecorded(contextLabel) {
+    const termsCheckbox = document.getElementById("baTermsAgreeCheck");
+    const tipAgreeCheckbox = document.getElementById("baTipAgree");
+    const tipCents = getTipChargeCentsFromDOM();
+    const tipRequiresAck = tipCents > 100;
+    const termsChecked = !!(termsCheckbox && termsCheckbox.checked);
+    const tipChecked = !tipRequiresAck || tipAgreeToggleIsOn(tipAgreeCheckbox);
+
+    if (!termsChecked || !tipChecked) {
+      throw new Error("Please check both the Terms & Conditions and Tip agreement boxes before proceeding.");
+    }
+    if (acceptanceCompleted) return;
+
+    if (acceptancePendingPromise) {
+      await acceptancePendingPromise;
+      if (acceptanceCompleted) return;
+    }
+
+    acceptanceInProgress = true;
+    acceptancePendingPromise = (async () => {
+      payLog("[BOOK_FLOW] Ensuring acceptance is recorded", { context: contextLabel || "unknown" });
+      await recordAcceptance(publicId, true, true);
+      acceptanceCompleted = true;
+    })()
+      .catch((err) => {
+        acceptanceCompleted = false;
+        throw err;
+      })
+      .finally(() => {
+        acceptanceInProgress = false;
+        acceptancePendingPromise = null;
+        setConfirmEnabled();
+      });
+
+    await acceptancePendingPromise;
+  }
+
+  function queueAcceptanceSync(contextLabel) {
+    const now = Date.now();
+    // Prevent repeated background attempts from checkbox toggles during transient edge outages.
+    if (acceptanceCompleted || acceptanceInProgress || acceptancePendingPromise) return;
+    if (now - acceptanceLastAttemptAt < 5000) return;
+    acceptanceLastAttemptAt = now;
+
+    ensureAcceptanceRecorded(contextLabel).catch((err) => {
+      payWarn("[BOOK_FLOW] Acceptance background sync failed:", err && err.message ? err.message : String(err));
+    });
   }
 
   // ---------- Paid UI ----------
@@ -4742,6 +4837,20 @@
     flex-shrink: 0;
     font-size: 10px;
     font-weight: 400;
+    opacity: 1;
+    color: #707070;
+  }
+  /* Meal fork icon (SVG) */
+  .baMetaRow--meal .baFork{
+    display: inline-flex;
+    align-items: center;
+    margin-right: 5px;
+    vertical-align: middle;
+    color: #4a4a4a;
+  }
+  .baMetaRow--meal .baFork__svg{
+    display: block;
+    flex-shrink: 0;
   }
 
   /* Airline column: padding-right shared with .baCard__tt via --ba-air-rail */
@@ -8173,7 +8282,7 @@
       if (tipSec) tipSec.classList.remove("baPayCheckoutWarn");
     }
 
-    async function updateTipAgreementUI(){
+    function updateTipAgreementUI(){
       const tipAgree = document.getElementById("baTipAgree");
       const tipAgreeRow = document.querySelector(".baTipAgreeRow");
       const shouldWarn = getTipChargeCentsFromDOM() > 100 && !tipAgreed;
@@ -8188,29 +8297,9 @@
         const termsCheckbox = document.getElementById("baTermsAgreeCheck");
         const termsChecked = termsCheckbox && termsCheckbox.checked;
         
-        if (termsChecked && !acceptanceInProgress && !acceptanceCompleted) {
-          acceptanceInProgress = true;
-          try {
-            payLog("[BOOK_FLOW] Recording acceptance from tip checkbox", {
-              termsChecked: true,
-              tipChecked: true
-            });
-            // Always pass true for tip_ack - it means "I acknowledge tips/extra charges"
-            await recordAcceptance(publicId, true, true);
-            acceptanceCompleted = true;
-            payLog("[BOOK_FLOW] Acceptance recorded successfully");
-            
-            // Immediately update button state after successful acceptance
-            setConfirmEnabled();
-          } catch (e) {
-            payErr("[BOOK_FLOW] Failed to record acceptance:", e);
-            // Don't uncheck the checkbox on error - just mark acceptance as incomplete
-            // The user can try again or the error will be handled when they click Pay
-            acceptanceCompleted = false;
-            setConfirmEnabled();
-          } finally {
-            acceptanceInProgress = false;
-          }
+        if (termsChecked && !acceptanceCompleted) {
+          payLog("[BOOK_FLOW] Queueing acceptance sync from tip checkbox");
+          queueAcceptanceSync("tipCheckbox");
         } else if (!termsChecked) {
           // If terms checkbox is not checked, reset acceptance
           // (but don't uncheck the tip checkbox - user might check terms checkbox next)
@@ -8752,7 +8841,7 @@
     }
 
     // Terms agreement checkbox handler
-    async function updateTermsAgreementUI() {
+    function updateTermsAgreementUI() {
       const termsCheckbox = document.getElementById("baTermsAgreeCheck");
       const termsSection = document.getElementById("baTermsAgreeSection");
       
@@ -8778,31 +8867,12 @@
         
         // Both checkboxes must be checked to record acceptance
         // tip_ack should always be true when recording (it means "I acknowledge tips/extra charges")
-        if (tipChecked && !acceptanceInProgress && !acceptanceCompleted) {
-          acceptanceInProgress = true;
-          try {
-            payLog("[BOOK_FLOW] Recording acceptance from terms checkbox", {
-              termsChecked: true,
-              tipChecked,
-              hasTipSelected: tipCentsT > 0,
-              tipRequiresAck: tipRequiresAckT
-            });
-            // Always pass true for tip_ack - it means "I acknowledge tips/extra charges" regardless of whether tip is selected
-            await recordAcceptance(publicId, true, true);
-            acceptanceCompleted = true;
-            payLog("[BOOK_FLOW] Acceptance recorded successfully");
-            
-            // Immediately update button state after successful acceptance
-            setConfirmEnabled();
-          } catch (e) {
-            payErr("[BOOK_FLOW] Failed to record acceptance:", e);
-            // Don't uncheck the checkbox on error - just mark acceptance as incomplete
-            // The user can try again or the error will be handled when they click Pay
-            acceptanceCompleted = false;
-            setConfirmEnabled();
-          } finally {
-            acceptanceInProgress = false;
-          }
+        if (tipChecked && !acceptanceCompleted) {
+          payLog("[BOOK_FLOW] Queueing acceptance sync from terms checkbox", {
+            hasTipSelected: tipCentsT > 0,
+            tipRequiresAck: tipRequiresAckT
+          });
+          queueAcceptanceSync("termsCheckbox");
         } else if (!tipChecked && tipRequiresAckT) {
           // If tip checkbox is not checked but tip is selected, reset acceptance
           // (but don't uncheck the terms checkbox - user might check tip checkbox next)
@@ -8816,8 +8886,8 @@
 
     const termsCheckbox = document.getElementById("baTermsAgreeCheck");
     if (termsCheckbox) {
-      termsCheckbox.addEventListener("change", async () => {
-        await updateTermsAgreementUI();
+      termsCheckbox.addEventListener("change", () => {
+        updateTermsAgreementUI();
       });
     }
 
@@ -9185,25 +9255,7 @@
         // Record acceptance
         payLog("[BOOK_FLOW] Recording acceptance before start_payment");
         try {
-          const acceptRes = await fetch(RECORD_ACCEPTANCE, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              public_id: publicId, 
-              tip_ack: true, 
-              terms_accepted: true 
-            })
-          });
-          const acceptPayload = await acceptRes.json().catch(() => ({}));
-          payLog("[BOOK_FLOW] record_acceptance response", {
-            status: acceptRes.status,
-            ok: acceptRes.ok,
-            payload: acceptPayload
-          });
-          if (!acceptRes.ok) {
-            throw new Error(`Failed to record acceptance: ${acceptPayload?.error || acceptRes.status}`);
-          }
-          acceptanceCompleted = true;
+          await ensureAcceptanceRecorded("initializePayment");
         } catch (acceptErr) {
           payErr("[BOOK_FLOW] record_acceptance error", acceptErr);
           throw new Error(`Acceptance required: ${acceptErr.message}`);
@@ -9352,8 +9404,12 @@
           return false;
         }
         if (!payState.acceptanceOk) {
-          showPayCheckoutIssue("acceptance");
-          return false;
+          try {
+            await ensureAcceptanceRecorded("confirmButtonClick");
+          } catch (_) {
+            showPayCheckoutIssue("acceptance");
+            return false;
+          }
         }
 
         try {
@@ -9529,7 +9585,7 @@
     return;
   }
 
-  fetchSessionResilient(publicId, { attempts: 4, baseDelayMs: 280 })
+  fetchSessionResilient(publicId, { attempts: 12, baseDelayMs: 350, maxTotalMs: 45000 })
     .then((data) => renderSession(data))
     .catch((err) => renderError(err && err.message ? err.message : String(err)));
 })();
