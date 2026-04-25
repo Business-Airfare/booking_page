@@ -7871,9 +7871,7 @@
         }
       }
 
-      const panel = overlay.querySelector(".baAddPaxModalPanel");
       overlay.addEventListener("click", (e) => { if (e.target === overlay) closeAddPaxModal(); });
-      if (panel) panel.addEventListener("click", (e) => e.stopPropagation());
 
       overlay.querySelector(".baAddPaxModalCancel").addEventListener("click", closeAddPaxModal);
 
