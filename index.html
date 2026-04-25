@@ -32,7 +32,9 @@
 (function () {
   const STRIPE_PUBLISHABLE_KEY = "pk_live_51RpG5EIb9TlAdJMaIuG3ktSOEtrL3o3LVeb0vcodUANSeKbDF0Ktzu5C3uRckyH3h8iMDRBaMZDE4WELGRKk2TSy00w4KiOCkB";
   const SUPABASE_FUNCTIONS_BASE = "https://ofyciacvdpwpkcbbmmxj.functions.supabase.co";
+  const SUPABASE_FUNCTIONS_FALLBACK_BASE = "https://ofyciacvdpwpkcbbmmxj.supabase.co/functions/v1";
   const GET_SESSION = SUPABASE_FUNCTIONS_BASE + "/get_public_session";
+  const GET_SESSION_FALLBACK = SUPABASE_FUNCTIONS_FALLBACK_BASE + "/get_public_session";
   const UPDATE_SELECTION = SUPABASE_FUNCTIONS_BASE + "/update_selection";
   const START_PAYMENT = SUPABASE_FUNCTIONS_BASE + "/start_payment";
   const UPDATE_PAX = SUPABASE_FUNCTIONS_BASE + "/update_passenger_details";
@@ -46,6 +48,48 @@
 
   function qs(name){
     return new URLSearchParams(window.location.search).get(name);
+  }
+
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function fetchSessionResilient(targetPublicId, options = {}) {
+    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 4;
+    const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 280;
+    const isRetryable = (status) => status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+    const urls = [
+      GET_SESSION + "?public_id=" + encodeURIComponent(targetPublicId),
+      GET_SESSION_FALLBACK + "?public_id=" + encodeURIComponent(targetPublicId),
+    ];
+
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const preferFallbackFirst = attempt > 0 && (attempt % 2 === 1);
+      const orderedUrls = preferFallbackFirst ? [urls[1], urls[0]] : urls;
+
+      for (const url of orderedUrls) {
+        try {
+          const res = await fetch(url, { method: "GET" });
+          const txt = await res.text();
+          let data = {};
+          try { data = txt ? JSON.parse(txt) : {}; } catch (_) {}
+          if (res.ok) return data;
+
+          const message = data && data.error ? data.error : ("HTTP " + res.status);
+          if (!isRetryable(res.status)) throw new Error(message);
+          lastError = new Error(message);
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+        }
+      }
+
+      if (attempt < attempts - 1) {
+        const delay = baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 120);
+        await sleepMs(delay);
+      }
+    }
+    throw lastError || new Error("Failed to load session.");
   }
 
   /** Last known payment link id in this tab (survives some 3DS returns if return_url drops query params). */
@@ -9485,14 +9529,7 @@
     return;
   }
 
-  fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" })
-    .then(async (res) => {
-      const txt = await res.text();
-      let data;
-      try { data = JSON.parse(txt); } catch { throw new Error("Bad JSON response"); }
-      if (!res.ok) throw new Error(data && data.error ? data.error : ("HTTP " + res.status));
-      return data;
-    })
+  fetchSessionResilient(publicId, { attempts: 4, baseDelayMs: 280 })
     .then((data) => renderSession(data))
     .catch((err) => renderError(err && err.message ? err.message : String(err)));
 })();
