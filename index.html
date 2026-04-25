@@ -148,6 +148,42 @@
     ));
   }
 
+  const START_PAYMENT_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async function callStartPayment(payload, options = {}) {
+    const attempts = Number.isFinite(options.attempts) ? Math.max(1, options.attempts) : 3;
+    const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(50, options.baseDelayMs) : 250;
+    const body = JSON.stringify(payload || {});
+    let lastRes = null;
+    let lastData = {};
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const res = await fetch(START_PAYMENT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        const data = await res.json().catch(() => ({}));
+        lastRes = res;
+        lastData = data;
+
+        if (res.ok || !START_PAYMENT_RETRYABLE_STATUSES.has(res.status) || attempt === attempts - 1) {
+          return { res, data };
+        }
+      } catch (err) {
+        if (attempt === attempts - 1) throw err;
+      }
+
+      const delay = baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 100);
+      await sleepMs(delay);
+    }
+
+    return { res: lastRes, data: lastData };
+  }
+
   // ---------- agent / customer chat (CRM request page <-> this payment page) ----------
   /** Desktop: keep summary + #baPayChatRail in .baExtrasRight. Mobile (≤980px): move #baPayChatRail before #baExtras; move .baSummaryBox into #baStripeWrap between Secure payment and the terms card. */
   window.__baRestoreSummaryChatToExtrasRight = function __baRestoreSummaryChatToExtrasRight(rootEl) {
@@ -1287,15 +1323,10 @@
     if (!walletType || !["apple_pay", "google_pay"].includes(walletType)) return;
     walletRemountInProgress = true;
     try {
-      const res = await fetch(START_PAYMENT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          public_id: publicId,
-          payer_email: payerEmail || null
-        })
+      const { res, data: payload } = await callStartPayment({
+        public_id: publicId,
+        payer_email: payerEmail || null
       });
-      const payload = await res.json().catch(() => ({}));
       if (res.ok && payload.client_secret) {
         payLog("[STRIPE] Remounting Elements for wallet so amount is correct");
         remountingForWalletType = walletType; // use value captured at start so a stray "change" during fetch doesn't flip to card
@@ -1979,15 +2010,10 @@
           // This ensures the PaymentIntent has correct acceptance metadata before confirmation
           payLog("[BOOK_FLOW] Updating PaymentIntent metadata with acceptance info");
           try {
-            const updateRes = await fetch(START_PAYMENT, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                public_id: publicId,
-                payer_email: payerEmail || null
-              })
+            const { res: updateRes, data: updatePayload } = await callStartPayment({
+              public_id: publicId,
+              payer_email: payerEmail || null
             });
-            const updatePayload = await updateRes.json().catch(() => ({}));
             if (updateRes.ok && updatePayload.client_secret) {
               // PaymentIntent was updated, but we don't need to remount Stripe Elements
               // The client_secret should be the same, so existing elements will work
@@ -2036,15 +2062,10 @@
     // Stripe Elements will automatically use the updated PaymentIntent amount when confirming
     payLog("[BOOK_FLOW] Verifying PaymentIntent is current before confirmation");
     try {
-      const refreshRes = await fetch(START_PAYMENT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          public_id: publicId,
-          payer_email: payerEmail || null
-        })
+      const { res: refreshRes, data: refreshPayload } = await callStartPayment({
+        public_id: publicId,
+        payer_email: payerEmail || null
       });
-      const refreshPayload = await refreshRes.json().catch(() => ({}));
       if (refreshRes.ok && refreshPayload.client_secret) {
         if (refreshPayload.client_secret !== currentClientSecret && (!elements || !paymentElement)) {
           payLog("[BOOK_FLOW] PaymentIntent recreated and Elements not mounted, initializing now");
@@ -9009,16 +9030,10 @@
         // This allows users to see and fill in the payment form
         try {
           payLog("[BOOK_FLOW] Calling start_payment to initialize Stripe Elements");
-          const res = await fetch(START_PAYMENT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              public_id: publicId,
-              payer_email: payerEmail || null
-            })
+          const { res, data: payload } = await callStartPayment({
+            public_id: publicId,
+            payer_email: payerEmail || null
           });
-          
-          const payload = await res.json().catch(() => ({}));
           
           if (res.ok && payload.client_secret) {
             // Success - initialize Stripe Elements
@@ -9154,16 +9169,10 @@
 
         // Call start_payment
         payLog("[BOOK_FLOW] Calling start_payment", { public_id: publicId });
-        const res = await fetch(START_PAYMENT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            public_id: publicId,
-            payer_email: payerEmail || null
-          })
+        const { res, data: payload } = await callStartPayment({
+          public_id: publicId,
+          payer_email: payerEmail || null
         });
-
-        const payload = await res.json().catch(() => ({}));
         payLog("[BOOK_FLOW] start_payment response", {
           status: res.status,
           ok: res.ok,
