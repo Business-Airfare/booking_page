@@ -1032,6 +1032,7 @@
     if (a === "LX" && c === "W") return "Economy Class"; // LX W = Economy, not Premium Economy
     if (a === "TK" && c === "W") return "Economy Class"; // TK W = Economy, not Premium Economy
     if (a === "AC" && c === "W") return "Economy Class"; // Air Canada W = Economy, not Premium Economy
+    if (a === "KU" && c === "S") return "Business Class"; // Kuwait Airways S = Business, not Economy
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
     if (a === "AA" && c.charAt(0) === "P") return "Premium Economy"; // AA P = Premium Economy, not Business
     if (c === "F" || c === "A") return "First Class";
@@ -1141,12 +1142,22 @@
     return "";
   }
 
+  /** IATA CSV strings often end with "pax", "all pax models", or "Ceo" (Classic vs Neo) — tidy for guests. */
+  function formatAircraftTypeForCustomerUi(raw){
+    let s = String(raw ?? "").replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    s = s.replace(/\s+all\s+pax\s+models?\s*$/i, "").trim();
+    s = s.replace(/\s+pax\s*$/i, "").trim();
+    s = s.replace(/\s+Ceo\s*$/i, "").trim();
+    return s.trim();
+  }
+
   function segmentAircraftText(s){
     const code = String(s?.equipment || s?.aircraft || "").trim().toUpperCase();
     const name = String(s?.equipment_name || s?.aircraft_name || "").trim();
-    if (name) return name;
+    if (name) return formatAircraftTypeForCustomerUi(name);
     const fromCsv = aircraftIataLabelFromCode(code);
-    if (fromCsv) return fromCsv;
+    if (fromCsv) return formatAircraftTypeForCustomerUi(fromCsv);
     return code;
   }
 
