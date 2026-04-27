@@ -83,9 +83,9 @@
           try { data = txt ? JSON.parse(txt) : {}; } catch (_) {}
           if (res.ok) return data;
 
-          const message = data && data.error ? data.error : ("HTTP " + res.status);
-          if (!isRetryable(res.status)) throw new Error(message);
-          lastError = new Error(message);
+          const err = errorFromApiResponse(res, data, {});
+          if (!isRetryable(res.status)) throw err;
+          lastError = err;
         } catch (err) {
           const error = err instanceof Error ? err : new Error(String(err));
           // For non-retryable HTTP errors (e.g. 400/404), fail fast instead of burning retry budget.
@@ -247,6 +247,47 @@
     return String(s ?? "").replace(/[&<>"']/g, m => (
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
     ));
+  }
+
+  /** Build an Error from a JSON API body; sets err.geoBlocked for region blocks (403 + code). */
+  function errorFromApiResponse(res, data, options) {
+    options = options || {};
+    const status = res && typeof res.status === "number" ? res.status : 0;
+    const base = data && data.error ? String(data.error) : ("HTTP " + status);
+    const details = options.includeDetails && data && data.details ? (": " + data.details) : "";
+    const err = new Error(base + details);
+    if (status === 403 && data && data.code === "geo_blocked") err.geoBlocked = true;
+    return err;
+  }
+
+  function isGeoBlockedError(err) {
+    return !!(err && err.geoBlocked === true);
+  }
+
+  function renderGeoBlocked() {
+    root.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <div style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 18px 45px rgba(15,23,42,0.18);padding:32px 28px;text-align:center;">
+          <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:999px;background:rgba(209,173,84,0.15);margin-bottom:20px;">
+            <span style="font-size:26px;line-height:1;" aria-hidden="true">&#127758;</span>
+          </div>
+          <h1 style="font-size:20px;font-weight:600;color:#0f172a;letter-spacing:-0.01em;margin:0 0 10px 0;">
+            Checkout is not available in your region
+          </h1>
+          <p style="font-size:14px;line-height:1.65;color:#4b5563;margin:0 0 16px 0;">
+            For regulatory and operational reasons, our secure payment page cannot be used from your current location.
+          </p>
+          <p style="font-size:14px;line-height:1.65;color:#4b5563;margin:0;">
+            If you believe this is a mistake, please contact your Business Air Travel agent. They can help with alternatives or, where appropriate, access from an approved network.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFatalOrGeo(err) {
+    if (isGeoBlockedError(err)) renderGeoBlocked();
+    else renderError(err && err.message ? err.message : String(err));
   }
 
   const START_PAYMENT_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
@@ -805,6 +846,14 @@
   function renderError(msg){
     const text = String(msg ?? "");
     const lower = text.toLowerCase();
+    if (
+      lower.includes("not available from your region") ||
+      lower.includes("geo_blocked") ||
+      lower.includes('"code":"geo_blocked"')
+    ) {
+      renderGeoBlocked();
+      return;
+    }
     if (lower.includes("not found")) {
       root.innerHTML = `
         <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -1147,8 +1196,11 @@
     let s = String(raw ?? "").replace(/\s+/g, " ").trim();
     if (!s) return "";
     s = s.replace(/\s+all\s+pax\s+models?\s*$/i, "").trim();
+    s = s.replace(/\s*\(winglets\)\s+pax\s*$/i, "").trim();
     s = s.replace(/\s+pax\s*$/i, "").trim();
+    s = s.replace(/\s*\(winglets\)\s*$/i, "").trim();
     s = s.replace(/\s+Ceo\s*$/i, "").trim();
+    s = s.replace(/\s+Freighter\s*$/i, "").trim();
     return s.trim();
   }
 
@@ -2152,6 +2204,7 @@
           }
         } catch (acceptErr) {
           payErr("[BOOK_FLOW] record_acceptance error", acceptErr);
+          if (isGeoBlockedError(acceptErr)) throw acceptErr;
           throw new Error(`Acceptance required: ${acceptErr.message}`);
         }
       }
@@ -2263,9 +2316,7 @@
       { attempts: 6, baseDelayMs: 250, maxTotalMs: 18000 },
     );
     if (!res.ok) {
-      const errorMsg = data?.error || ("HTTP " + res.status);
-      const details = data?.details ? `: ${data.details}` : "";
-      throw new Error(errorMsg + details);
+      throw errorFromApiResponse(res, data, { includeDetails: true });
     }
     return data;
   }
@@ -2279,9 +2330,7 @@
       { attempts: 6, baseDelayMs: 250, maxTotalMs: 18000 },
     );
     if (!res.ok) {
-      const errorMsg = data?.error || ("HTTP " + res.status);
-      const details = data?.details ? `: ${data.details}` : "";
-      throw new Error(errorMsg + details);
+      throw errorFromApiResponse(res, data, { includeDetails: true });
     }
     return data;
   }
@@ -3200,7 +3249,7 @@
       })
     });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(out?.error || ("HTTP " + res.status));
+    if (!res.ok) throw errorFromApiResponse(res, out, {});
     return out;
   }
 
@@ -3262,6 +3311,10 @@
           // if saved ok, ensure validation is clean
           validatePassengerBlock(paxIndex);
         }catch(e){
+          if (isGeoBlockedError(e)) {
+            renderGeoBlocked();
+            return;
+          }
           showPaxToast("Could not save changes: " + (e?.message || e), false);
 
           // mark involved fields invalid (server complained)
@@ -8131,6 +8184,15 @@
             });
             lastResult = await res.json().catch(() => ({}));
             if (!res.ok) {
+              if (res.status === 403 && lastResult && lastResult.code === "geo_blocked") {
+                renderGeoBlocked();
+                if (loadingEl) loadingEl.style.display = "none";
+                payBtn.disabled = false;
+                if (btnTitle) btnTitle.textContent = "BOOK";
+                if (saveBtn) saveBtn.disabled = false;
+                if (addPassengerBtn) addPassengerBtn.disabled = false;
+                return;
+              }
               const msg = lastResult?.error || "Could not add passenger. Please try again.";
               showPaxToast(msg, false);
               if (loadingEl) loadingEl.style.display = "none";
@@ -8208,6 +8270,14 @@
         });
         const result = await res.json().catch(() => ({}));
         if (!res.ok) {
+          if (res.status === 403 && result && result.code === "geo_blocked") {
+            renderGeoBlocked();
+            removeBtn.disabled = false;
+            payBtn.disabled = false;
+            if (btnTitle) btnTitle.textContent = "BOOK";
+            if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
+            return;
+          }
           showPaxToast(result?.error || "Could not remove passenger. Please try again.", false);
           removeBtn.disabled = false;
           payBtn.disabled = false;
@@ -9221,9 +9291,11 @@
             
             payLog("[BOOK_FLOW] Stripe Elements initialized successfully - sections revealed");
           } else {
-            // Error - show message
             const errorMsg = payload?.error || `HTTP ${res.status}`;
             payErr("[BOOK_FLOW] start_payment failed:", errorMsg);
+            if (res.status === 403 && payload && payload.code === "geo_blocked") {
+              renderGeoBlocked();
+            }
             // Restore button text on error
             const payBtn = document.getElementById("baPayBtn");
             const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
@@ -9293,6 +9365,7 @@
           await ensureAcceptanceRecorded("initializePayment");
         } catch (acceptErr) {
           payErr("[BOOK_FLOW] record_acceptance error", acceptErr);
+          if (isGeoBlockedError(acceptErr)) throw acceptErr;
           throw new Error(`Acceptance required: ${acceptErr.message}`);
         }
 
@@ -9309,8 +9382,7 @@
         });
         
         if (!res.ok) {
-          const m = payload && payload.error ? payload.error : ("HTTP " + res.status);
-          throw new Error(m);
+          throw errorFromApiResponse(res, payload, {});
         }
 
         if (!payload.client_secret) throw new Error("No client_secret returned from start_payment.");
@@ -9441,7 +9513,11 @@
         if (!payState.acceptanceOk) {
           try {
             await ensureAcceptanceRecorded("confirmButtonClick");
-          } catch (_) {
+          } catch (e) {
+            if (isGeoBlockedError(e)) {
+              renderGeoBlocked();
+              return false;
+            }
             showPayCheckoutIssue("acceptance");
             return false;
           }
@@ -9523,6 +9599,7 @@
           hidePaymentOverlay(); // Hide overlay on error
           const errorMsg = e && e.message ? e.message : String(e);
           payErr("[BOOK_FLOW] Payment error:", errorMsg);
+          if (isGeoBlockedError(e)) renderGeoBlocked();
           confirmBtn.removeAttribute("data-ba-processing");
           setConfirmEnabled();
         }
@@ -9616,13 +9693,13 @@
 
   // Handle return from Stripe 3DS redirect (required for SCA when issuer uses redirect flow)
   if (qs("payment_intent_client_secret") && qs("redirect_status")) {
-    handleStripeRedirectReturn().catch((err) => renderError(err && err.message ? err.message : String(err)));
+    handleStripeRedirectReturn().catch((err) => renderFatalOrGeo(err));
     return;
   }
 
   fetchSessionResilient(publicId, { attempts: 12, baseDelayMs: 350, maxTotalMs: 45000 })
     .then((data) => renderSession(data))
-    .catch((err) => renderError(err && err.message ? err.message : String(err)));
+    .catch((err) => renderFatalOrGeo(err));
 })();
 </script>
 </body>
