@@ -27,6 +27,8 @@
 
 <!-- Stripe.js -->
 <script src="https://js.stripe.com/v3"></script>
+<!-- IATA equipment codes → full names (generated from aircraft type codes.csv) -->
+<script src="aircraft_iata_labels.js"></script>
 
 <script>
 (function () {
@@ -1024,6 +1026,7 @@
     if (a === "BA" && c === "R") return "Business Class"; // BA R = Business, not First
     if (a === "MU" && c.charAt(0) === "Q") return "Business Class"; // China Eastern Q = Business, not Economy
     if (a === "AF" && c === "R") return "Economy Class"; // AF R = Economy, not First
+    if (a === "AY" && c === "R") return "Business Class"; // Finnair R = Business, not First
     if (a === "IB" && c === "R") return "Business Class"; // Iberia R = Business, not First
     if (a === "LH" && c === "W") return "Economy Class"; // LH W = Economy, not Premium Economy
     if (a === "LX" && c === "W") return "Economy Class"; // LX W = Economy, not Premium Economy
@@ -1120,10 +1123,31 @@
     return String(s?.meal || s?.meal_text || s?.service_meal || "").trim();
   }
 
+  /** Strip accidental combined-line tail (e.g. "3 - ARRIVES LHR TERMINAL 3") from stored terminal values. */
+  function sanitizeTerminalForDisplay(raw){
+    let v = String(raw ?? "").trim();
+    if (!v) return "";
+    v = v.replace(/\s+-\s*ARRIVES\b.*$/i, "").trim();
+    v = v.replace(/\s+-\s*DEPARTS\b.*$/i, "").trim();
+    return v;
+  }
+
+  /** Client-side lookup from aircraft_iata_labels.js (generated from aircraft type codes.csv). */
+  function aircraftIataLabelFromCode(code){
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return "";
+    const map = typeof window !== "undefined" && window.BA_AIRCRAFT_IATA_LABELS;
+    if (map && typeof map[c] === "string") return map[c];
+    return "";
+  }
+
   function segmentAircraftText(s){
     const code = String(s?.equipment || s?.aircraft || "").trim().toUpperCase();
     const name = String(s?.equipment_name || s?.aircraft_name || "").trim();
-    return name || code;
+    if (name) return name;
+    const fromCsv = aircraftIataLabelFromCode(code);
+    if (fromCsv) return fromCsv;
+    return code;
   }
 
   function normalizeCarrierText(value){
@@ -1232,8 +1256,8 @@
             const flightTime = segmentFlightTime(s);
             const meal = segmentMealText(s);
             const aircraft = segmentAircraftText(s);
-            const depTerminal = String(s?.departure_terminal || s?.depart_terminal || "").trim();
-            const arrTerminal = String(s?.arrival_terminal || s?.arrive_terminal || "").trim();
+            const depTerminal = sanitizeTerminalForDisplay(s?.departure_terminal || s?.depart_terminal || "");
+            const arrTerminal = sanitizeTerminalForDisplay(s?.arrival_terminal || s?.arrive_terminal || "");
             const flightNo = `${String(carrier)} ${String(s.flight_number || "").trim()}`.trim();
             const operatorLabel = getOperatingCarrierLabel(s);
             const operatorStackClass = shouldStackOperatingLabel(operatorLabel) ? " baAir__op--stacked" : "";
