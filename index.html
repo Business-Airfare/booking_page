@@ -1076,7 +1076,10 @@
     if (a === "TK" && c === "W") return "Economy Class"; // TK W = Economy, not Premium Economy
     if (a === "AC" && c === "W") return "Economy Class"; // Air Canada W = Economy, not Premium Economy
     if (a === "KU" && c === "S") return "Business Class"; // Kuwait Airways S = Business, not Economy
+    if (a === "SQ" && c.charAt(0) === "U") return "Business Class"; // SQ U = Business, not Economy
+    if (a === "EY" && c.charAt(0) === "W") return "Business Class"; // Etihad W = Business, not Economy
     if ((a === "AF" || a === "DL") && c === "A") return "Premium Economy";
+    if (a === "DL" && (c.charAt(0) === "P" || c.charAt(0) === "G")) return "Premium Economy"; // DL P, G = Premium Economy
     if (a === "AA" && c.charAt(0) === "P") return "Premium Economy"; // AA P = Premium Economy, not Business
     if (c === "F" || c === "A") return "First Class";
     if ("JCDIZP".includes(c)) return "Business Class";
