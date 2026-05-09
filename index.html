@@ -32,7 +32,7 @@
 
 <script>
 (function () {
-  const STRIPE_PUBLISHABLE_KEY = "pk_live_51RpG5EIb9TlAdJMaIuG3ktSOEtrL3o3LVeb0vcodUANSeKbDF0Ktzu5C3uRckyH3h8iMDRBaMZDE4WELGRKk2TSy00w4KiOCkB";
+  const STRIPE_PUBLISHABLE_KEY = "pk_test_51RpG5EIb9TlAdJMajS3FihUE4iCrGg1egeXP6zXIZikRLV9hSuNpeXcYqnna968mOYw0RTcrboKPYYBjfXQA3aE600eLwmPhad";
   const SUPABASE_FUNCTIONS_BASE = "https://ofyciacvdpwpkcbbmmxj.functions.supabase.co";
   const SUPABASE_FUNCTIONS_FALLBACK_BASE = "https://ofyciacvdpwpkcbbmmxj.supabase.co/functions/v1";
   const GET_SESSION = SUPABASE_FUNCTIONS_BASE + "/get_public_session";
@@ -1071,6 +1071,10 @@
     if (a === "AF" && c === "R") return "Economy Class"; // AF R = Economy, not First
     if (a === "AY" && c === "R") return "Business Class"; // Finnair R = Business, not First
     if (a === "IB" && c === "R") return "Business Class"; // Iberia R = Business, not First
+    if (a === "QR" && c === "R") return "Business Class"; // Qatar Airways R = Business, not First
+    if (a === "KE" && c.charAt(0) === "R") return "Business Class"; // Korean Air R = Business, not First
+    if (a === "EI" && c.charAt(0) === "R") return "Business Class"; // Aer Lingus R = Business, not First
+    if (a === "OZ" && c.charAt(0) === "U") return "Business Class"; // Asiana U = Business, not Economy
     if (a === "LH" && c === "W") return "Economy Class"; // LH W = Economy, not Premium Economy
     if (a === "LX" && c === "W") return "Economy Class"; // LX W = Economy, not Premium Economy
     if (a === "TK" && c === "W") return "Economy Class"; // TK W = Economy, not Premium Economy
