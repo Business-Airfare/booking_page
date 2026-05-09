@@ -955,6 +955,51 @@
     return `${month} ${ord(day)}, ${year}, ${timeStr}`;
   }
 
+  /** Confirmation hero: "May 9, 2026 · 9:46 PM" */
+  function formatPaidAtConfirmationHero(isoStr){
+    if (!isoStr) return "—";
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return "—";
+    const datePart = d.toLocaleDateString(undefined, { month:"long", day:"numeric", year:"numeric" });
+    const h = d.getHours(), m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = (h % 12) || 12;
+    const timeStr = `${h12}:${String(m).padStart(2,"0")} ${ampm}`;
+    return `${datePart} · ${timeStr}`;
+  }
+
+  /** Short request code for Order reference (e.g. RQ-2026-000099), from session summary when the PQ link was created. */
+  function orderReferenceCodeFromSession(data){
+    const sum = data && data.summary && typeof data.summary === "object" ? data.summary : null;
+    const code =
+      (sum && sum.request_code) ||
+      (data && data.request_code);
+    const c = code != null ? String(code).trim() : "";
+    if (c) return c;
+    return "";
+  }
+
+  function passengerAvatarInitials(first, last){
+    const f = String(first || "").trim();
+    const l = String(last || "").trim();
+    const a = (f[0] || "?").toUpperCase();
+    const b = (l[0] || "").toUpperCase();
+    return a + (b || "");
+  }
+
+  /** Paid confirmation passenger line: "07 May 1980" */
+  function formatDobConfirmationLine(isoStr){
+    if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) return "—";
+    const parts = isoStr.split("-");
+    const y = Number(parts[0]);
+    const mo = Number(parts[1]);
+    const da = Number(parts[2]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(da)) return "—";
+    const monthLong = new Date(Date.UTC(y, mo - 1, da)).toLocaleDateString(undefined, { month:"long", timeZone:"UTC" });
+    const dd = String(da).padStart(2, "0");
+    return `${dd} ${monthLong} ${y}`;
+  }
+
   function minsToHM(mins){
     if (mins == null || !Number.isFinite(mins)) return "—";
     const m = Math.max(0, Math.round(mins));
@@ -2390,252 +2435,140 @@
     const pdArr = getPassengerDetailsArray(data);
     const paxCount = (pdArr && pdArr.length) ? pdArr.length : (Array.isArray(data.passengers) && data.passengers.length) ? data.passengers.length : 1;
 
-    const passengerCards = [];
+    const passengerRows = [];
     for (let i = 0; i < paxCount; i++) {
       const pax = getPassengerFromSession(data, i);
       const first = pax.first_name || "Passenger";
       const last = pax.last_name || String(i + 1);
-      const displayDob = pax.dobISO ? formatDobDisplay(pax.dobISO) : "—";
+      const fullName = (first + " " + last).trim();
+      const displayDobLine = pax.dobISO ? formatDobConfirmationLine(pax.dobISO) : "—";
       const displayGender = pax.gender ? (pax.gender === "male" ? "Male" : "Female") : "—";
-      passengerCards.push(`
-        <div class="baPaidPaxCard">
-          <div class="baPaidPaxCard__head">Passenger ${i + 1}</div>
-          <div class="baPaidPaxCard__summary">
-            <div class="baPaidPaxSummaryName">
-              <span class="baPaidPaxSummaryFirst">${escapeHtml(first)}</span>
-              <span class="baPaidPaxSummaryDivider" aria-hidden="true"></span>
-              <span class="baPaidPaxSummaryLast">${escapeHtml(last)}</span>
-            </div>
-            <div class="baPaidPaxSummaryMeta">
-              <span class="baPaidPaxSummaryGender">${escapeHtml(displayGender)}</span>
-              <span class="baPaidPaxSummaryDot">·</span>
-              <span class="baPaidPaxSummaryDob">DOB ${escapeHtml(displayDob)}</span>
-            </div>
+      const initials = escapeHtml(passengerAvatarInitials(first, last));
+      passengerRows.push(`
+        <div class="v3__paxItem">
+          <div class="v3__avatar">${initials}</div>
+          <div class="v3__paxBody">
+            <div class="v3__paxName">${escapeHtml(fullName)}</div>
+            <div class="v3__paxKind">Adult · DOB ${escapeHtml(displayDobLine)}</div>
+          </div>
+          <div class="v3__paxChips">
+            <span class="v3__chip">${escapeHtml(displayGender)}</span>
+            <span class="v3__chip v3__chip--ok">Confirmed</span>
           </div>
         </div>
       `);
     }
-    const passengersHtml = passengerCards.length ? passengerCards.join("") : "";
+    const passengersHtml = passengerRows.join("");
 
-    const paidAtStr = formatPaidAtDisplay(data.paid_at);
+    const paidAtHero = formatPaidAtConfirmationHero(data.paid_at);
+    const orderRef = orderReferenceCodeFromSession(data);
+    const orderRefHtml = orderRef ? escapeHtml(orderRef) : "—";
 
     root.innerHTML = `
       <style>
-        .baPaidWrap{
-          font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-          background:#f5f5f5;
-          color:#111;
-          font-size:15px;
-          line-height:1.5;
-          -webkit-font-smoothing:antialiased;
-          -moz-osx-font-smoothing:grayscale;
-          min-height:100vh;
-          box-sizing:border-box;
+        .vBase { font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; color:#111; box-sizing:border-box; }
+        .vBase * { box-sizing:border-box; }
+        .v3 { background:#fafaf8; padding:56px 40px; min-height:100vh; }
+        .v3__inner { max-width:880px; margin:0 auto; }
+        .v3__crumbs { display:flex; align-items:center; gap:8px; font-size:13px; color:#8a857c; margin-bottom:60px; flex-wrap:wrap; }
+        .v3__crumbs span { display:inline-flex; align-items:center; gap:8px; }
+        .v3__crumbs .done { color:#1f1f1f; }
+        .v3__crumbs .dot { width:6px; height:6px; border-radius:50%; background:#d6d2cb; flex-shrink:0; }
+        .v3__crumbs .dot.on { background:#3d9a5c; }
+        .v3__hero {
+          display:grid;
+          grid-template-columns:1.3fr 1fr;
+          gap:56px;
+          align-items:end;
+          padding-bottom:40px;
+          border-bottom:1px solid #e3e0db;
         }
-        .baPaidWrap *{ box-sizing:border-box; }
-        .baPaidPage{
-          max-width:1220px;
-          margin:0 auto;
-          padding:26px 18px 60px;
+        .v3__eyebrow {
+          font-size:13px; color:#3d9a5c; font-weight:500; letter-spacing:0.04em; text-transform:uppercase;
+          margin-bottom:18px; display:flex; align-items:center; gap:8px;
         }
-        .baPaidPanel{
-          background:#fff;
-          border:1px solid #e9e9e9;
-          border-radius:8px;
-          margin-bottom:18px;
-          overflow:hidden;
+        .v3__eyebrow::before { content:''; width:8px; height:8px; border-radius:50%; background:#3d9a5c; flex-shrink:0; }
+        .v3__title { font-size:64px; font-weight:600; letter-spacing:-0.04em; line-height:0.98; margin:0; max-width:14ch; }
+        .v3__bignum { text-align:right; min-width:0; }
+        .v3__bignum .lbl { font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#8a857c; margin-bottom:8px; }
+        .v3__bignum .num { font-size:56px; font-weight:600; letter-spacing:-0.04em; line-height:1; word-break:break-word; }
+        .v3__bignum .num small { font-size:18px; color:#8a857c; margin-left:4px; font-weight:500; }
+        .v3__bignum .when { font-size:13px; color:#8a857c; margin-top:8px; }
+        .v3__cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:36px; }
+        .v3__card { background:#fff; border:1px solid #e3e0db; border-radius:8px; padding:22px; }
+        .v3__cardLabel { font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#8a857c; margin-bottom:10px; }
+        .v3__cardValue { font-size:17px; font-weight:500; letter-spacing:-0.01em; word-break:break-word; }
+        .v3__cardSmall { font-size:13px; color:#8a857c; margin-top:4px; line-height:1.45; }
+        .v3__paxList { margin-top:36px; background:#fff; border:1px solid #e3e0db; border-radius:8px; overflow:hidden; }
+        .v3__paxItem {
+          display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px 18px;
+          padding:18px 22px; border-bottom:1px solid #f0ede7;
         }
-        .baPaidSuccess{
-          padding:28px 18px 32px;
-          display:flex;
-          flex-direction:column;
-          align-items:center;
-          justify-content:center;
-          text-align:center;
+        .v3__paxItem:last-child { border-bottom:none; }
+        .v3__avatar {
+          width:36px; height:36px; border-radius:50%; background:#ece9e2; color:#6a6760;
+          display:flex; align-items:center; justify-content:center; font-weight:500; font-size:14px; flex-shrink:0;
         }
-        @media (min-width:1024px){
-          .baPaidSuccess{ padding:32px 22px 36px; }
+        .v3__paxBody { flex:1 1 200px; min-width:0; }
+        .v3__paxName { font-size:16px; font-weight:500; }
+        .v3__paxKind { font-size:13px; color:#8a857c; margin-top:2px; }
+        .v3__paxChips { display:flex; flex-wrap:wrap; gap:8px; margin-left:auto; flex-shrink:0; }
+        .v3__chip { font-size:12px; background:#f5f3ee; color:#6a6760; padding:4px 10px; border-radius:999px; white-space:nowrap; }
+        .v3__chip--ok { background:#e8f5eb; color:#1f5f33; }
+        @media (max-width:900px){
+          .v3__hero { grid-template-columns:1fr; gap:28px; align-items:start; }
+          .v3__bignum { text-align:left; }
+          .v3__title { font-size:44px; max-width:none; }
+          .v3__bignum .num { font-size:44px; }
         }
-        .baPaidSuccess__title{
-          margin:0 0 10px;
-          font-weight:600;
-          font-size:28px;
-          letter-spacing:-0.035em;
-          line-height:1.12;
-          color:#111;
-          max-width:36rem;
-        }
-        @media (max-width:980px){
-          .baPaidSuccess__title{ font-size:24px; }
-        }
-        .baPaidSuccess__sub{
-          margin:0;
-          font-size:15px;
-          font-weight:400;
-          color:#6b7280;
-          line-height:1.5;
-          max-width:36rem;
-        }
-        .baPaidReceipt{
-          padding:18px;
-          display:flex;
-          flex-direction:row;
-          justify-content:space-between;
-          align-items:flex-start;
-          gap:20px 32px;
-        }
-        @media (min-width:1024px){
-          .baPaidReceipt{ padding:22px; }
-        }
-        .baPaidReceipt__col{ min-width:0; }
-        .baPaidReceipt__col--left{ text-align:left; }
-        .baPaidReceipt__col--right{
-          text-align:right;
-          flex-shrink:0;
-        }
-        @media (max-width:520px){
-          .baPaidReceipt{
-            flex-direction:column;
-            align-items:stretch;
-          }
-          .baPaidReceipt__col--right{ text-align:left; }
-        }
-        .baPaidReceipt__label{
-          font-size:14px;
-          font-weight:500;
-          color:#6b7280;
-          margin-bottom:4px;
-        }
-        .baPaidReceipt__val{
-          font-weight:600;
-          font-size:16px;
-          letter-spacing:-0.02em;
-          color:#111;
-        }
-        .baPaidReceipt__val--muted{
-          font-weight:500;
-          font-size:15px;
-        }
-        .baPaidSectionHead{
-          font-weight:600;
-          font-size:28px;
-          margin:8px 0 14px;
-          letter-spacing:-0.035em;
-          line-height:1.12;
-          color:#111;
-        }
-        @media (max-width:980px){
-          .baPaidSectionHead{ font-size:24px; }
-        }
-        .baPaidPaxCard{
-          background:#fff;
-          border:1px solid #e9e9e9;
-          border-radius:8px;
-          overflow:hidden;
-          margin-bottom:16px;
-          box-shadow:none;
-          font-size:1em;
-        }
-        .baPaidPaxCard__head{
-          font-weight:600;
-          font-size:22px;
-          letter-spacing:-0.03em;
-          padding:18px 14px 12px;
-          border-bottom:1px solid #efefef;
-          color:#111;
-        }
-        .baPaidPaxCard__summary{
-          padding:10px 14px 14px;
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          gap:14px;
-          font-size:15px;
-          font-weight:500;
-          color:#4b4b4b;
-          flex-wrap:wrap;
-        }
-        @media (min-width:1024px){
-          .baPaidPaxCard__head{ padding:22px 18px 12px; }
-          .baPaidPaxCard__summary{ padding:10px 18px 14px; }
-        }
-        @media (min-width:1536px){
-          .baPaidPaxCard__head{ padding:26px 26px 12px; }
-          .baPaidPaxCard__summary{ padding:10px 26px 14px; }
-        }
-        .baPaidPaxSummaryName{
-          flex:1 1 auto;
-          max-width:70%;
-          font-size:16px;
-          font-weight:600;
-          padding:0;
-          border:none;
-          border-radius:0;
-          background:transparent;
-          display:flex;
-          align-items:center;
-          justify-content:flex-start;
-          gap:10px;
-          line-height:1.3;
-          min-width:0;
-          color:#111;
-          text-align:left;
-        }
-        .baPaidPaxSummaryFirst,.baPaidPaxSummaryLast{
-          overflow:hidden;
-          text-overflow:ellipsis;
-          white-space:nowrap;
-        }
-        .baPaidPaxSummaryDivider{
-          width:1px;
-          height:1em;
-          align-self:center;
-          background:#dcdcdc;
-          display:inline-block;
-          flex-shrink:0;
-        }
-        .baPaidPaxSummaryMeta{
-          display:flex;
-          align-items:center;
-          gap:6px;
-          flex:0 1 auto;
-          min-width:0;
-          color:#6a6a6a;
-          font-weight:500;
-        }
-        .baPaidPaxSummaryGender{ display:inline-block; min-width:52px; text-align:center; }
-        .baPaidPaxSummaryDot{ opacity:.6; }
-        .baPaidPaxSummaryDob{ color:#6a6a6a; font-weight:600; }
         @media (max-width:640px){
-          .baPaidPaxCard__summary{ flex-direction:column; align-items:flex-start; }
+          .v3 { padding:32px 20px; }
+          .v3__crumbs { margin-bottom:36px; }
+          .v3__cards { grid-template-columns:1fr; }
+          .v3__title { font-size:36px; }
+          .v3__bignum .num { font-size:36px; }
+          .v3__paxChips { flex-basis:100%; width:100%; margin-left:0; padding-left:54px; justify-content:flex-start; }
+          .v3__paxItem { align-items:flex-start; }
         }
       </style>
-      <div class="baPaidWrap">
-        <div class="baPaidPage">
-          <div class="baPaidPanel">
-            <div class="baPaidSuccess">
-              <h1 class="baPaidSuccess__title">Your payment has been completed.</h1>
-              <p class="baPaidSuccess__sub">Your tickets will be sent to you as soon as they are booked.</p>
+      <div class="vBase v3">
+        <div class="v3__inner">
+          <div class="v3__crumbs" aria-label="Checkout progress">
+            <span class="done"><span class="dot on"></span>Flight Selected</span>
+            <span style="opacity:0.4" aria-hidden="true">›</span>
+            <span class="done"><span class="dot on"></span>Details Checked</span>
+            <span style="opacity:0.4" aria-hidden="true">›</span>
+            <span class="done" style="font-weight:600"><span class="dot on"></span>Confirmed</span>
+          </div>
+
+          <div class="v3__hero">
+            <div>
+              <div class="v3__eyebrow">Payment confirmed</div>
+              <h1 class="v3__title">Your tickets are being booked.</h1>
+            </div>
+            <div class="v3__bignum">
+              <div class="lbl">Charged</div>
+              <div class="num">${escapeHtml(fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount))}<small>${escapeHtml(data.currency || "USD")}</small></div>
+              <div class="when">${escapeHtml(paidAtHero)}</div>
             </div>
           </div>
 
-          <div class="baPaidPanel">
-            <div class="baPaidReceipt">
-              <div class="baPaidReceipt__col baPaidReceipt__col--left">
-                <div class="baPaidReceipt__label">Paid</div>
-                <div class="baPaidReceipt__val">
-                  ${fmtMoney(data.paid_amount ?? data.final_amount ?? data.total_amount)} ${escapeHtml(data.currency || "USD")}
-                </div>
-              </div>
-              <div class="baPaidReceipt__col baPaidReceipt__col--right">
-                <div class="baPaidReceipt__label">Paid at</div>
-                <div class="baPaidReceipt__val baPaidReceipt__val--muted">${escapeHtml(paidAtStr)}</div>
-              </div>
+          <div class="v3__cards">
+            <div class="v3__card">
+              <div class="v3__cardLabel">Order reference</div>
+              <div class="v3__cardValue">${orderRefHtml}</div>
+              <div class="v3__cardSmall">You will have your booking reference soon.</div>
+            </div>
+            <div class="v3__card">
+              <div class="v3__cardLabel">Tickets to</div>
+              <div class="v3__cardValue">WhatsApp or Email</div>
+              <div class="v3__cardSmall">Usually delivered within 1–2 hours.</div>
             </div>
           </div>
 
-          <h2 class="baPaidSectionHead">Passenger details</h2>
-          ${passengersHtml}
+          <div class="v3__paxList" aria-label="Passengers">
+            ${passengersHtml}
+          </div>
         </div>
       </div>
     `;
