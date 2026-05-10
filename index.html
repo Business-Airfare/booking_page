@@ -968,6 +968,17 @@
     return `${datePart} · ${timeStr}`;
   }
 
+  /** True when this checkout session is already paid (confirmation page should show, not checkout). */
+  function sessionLooksPaid(data){
+    if (!data || typeof data !== "object") return false;
+    if (data.paid_at) return true;
+    const st = String(data.status ?? "").toLowerCase();
+    if (st === "paid") return true;
+    const rd = data.ui && String(data.ui.reason_disabled ?? "").toLowerCase();
+    if (rd === "paid") return true;
+    return false;
+  }
+
   /** Short request code for Order reference (e.g. RQ-2026-000099), from session summary when the PQ link was created. */
   function orderReferenceCodeFromSession(data){
     const sum = data && data.summary && typeof data.summary === "object" ? data.summary : null;
@@ -3433,7 +3444,7 @@
 
   // ---------- main render ----------
   function renderSession(data){
-    if (data.paid_at || data.status === "paid") {
+    if (sessionLooksPaid(data)) {
       renderPaid(data);
       return;
     }
@@ -9483,7 +9494,7 @@
               try {
                 const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
                 const fresh = await res.json();
-                if (fresh && (fresh.paid_at || fresh.status === "paid")) {
+                if (fresh && sessionLooksPaid(fresh)) {
                   // Percentage should already be at 100% from when payment succeeded
                   // Small delay to ensure 100% is visible before navigating
                   setTimeout(() => {
@@ -9590,7 +9601,7 @@
         const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
         const fresh = await res.json().catch(() => ({}));
         lastSession = fresh;
-        if (fresh && (fresh.paid_at || fresh.status === "paid")) {
+        if (fresh && sessionLooksPaid(fresh)) {
           if (document.getElementById("baPaymentPercentage")) {
             const pct = document.getElementById("baPaymentPercentage");
             if (pct) pct.textContent = "100%";
