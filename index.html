@@ -3532,6 +3532,9 @@
     const ticketCents = Number(data.quote?.ticket ?? 0) || 0;
     const serviceCents = Number(data.quote?.service ?? 0) || 0;
     const careCents = Number(data.quote?.care ?? 0) || 0;
+    // Travel credit (TOTAL cents, already multiplied by passengers). Reduces
+    // the payable total; per-passenger displays stay at the pre-credit price.
+    const creditCents = Math.max(0, Number(data.quote?.credit ?? 0) || 0);
     const carePaxCount = Math.max(1, (() => {
       const pda = getPassengerDetailsArray(data);
       if (pda && pda.length) return pda.length;
@@ -3558,11 +3561,16 @@
       if (tipMode === "preset") return resolvedPresetAmount();
       return selectedTipAmount();
     }
-    function payableTotalCents(){
+    /** Total before the travel credit (what gets struck through in the summary). */
+    function preCreditTotalCents(){
       const base = baseTicketService();
       const care = careSelected ? careCents : 0;
       const tip = appliedTipAmount();
       return base + care + tip;
+    }
+    // Must match the DB total_amount trigger: base + care + tip - credit, floored at 0.
+    function payableTotalCents(){
+      return Math.max(0, preCreditTotalCents() - creditCents);
     }
 
     // PER-PASSENGER DISPLAY price for sticky bar:
@@ -7038,6 +7046,16 @@
     text-align: right;
     line-height: 1.1;
   }
+  .baSummaryBox__totalOld{
+    font-weight: 500;
+    font-size: 18px;
+    opacity: 0.55;
+    text-decoration: line-through;
+    margin-right: 6px;
+  }
+  .baSummaryBox__creditValue{
+    color: #0f766e;
+  }
   .baSummaryBox__totalWords{
     font-size: 11px;
     opacity: 0.65;
@@ -7716,13 +7734,21 @@
                 <div class="baSummaryBox__itemSub">To be processed by BUSINESS AIRFARE LLC</div>
                 <div class="baSummaryBox__itemSubValue">${fmtMoney(baseTicketService())}</div>
               </div>
+              ${creditCents > 0 ? `
+              <div class="baSummaryBox__item" data-item="credit">
+                <div class="baSummaryBox__itemLabel">Travel credit</div>
+                <div class="baSummaryBox__itemValue baSummaryBox__creditValue">-${fmtMoney(creditCents)}</div>
+                <div class="baSummaryBox__itemSub">Applied to this booking</div>
+                <div class="baSummaryBox__itemSubValue">-${fmtMoney(creditCents)}</div>
+              </div>
+              ` : ""}
             </div>
 
             <div class="baSummaryBox__divider"></div>
 
             <div class="baSummaryBox__total">
               <div class="baSummaryBox__totalLabel">Total:</div>
-              <div class="baSummaryBox__totalValue">${fmtMoney(payableTotalCents())}</div>
+              <div class="baSummaryBox__totalValue">${creditCents > 0 ? `<s class="baSummaryBox__totalOld">${fmtMoney(preCreditTotalCents())}</s> ` : ""}${fmtMoney(payableTotalCents())}</div>
               <div class="baSummaryBox__totalWords">(${numberToWords(payableTotalCents())})</div>
             </div>
           </div>
@@ -8454,11 +8480,23 @@
         if (tipItem) tipItem.remove();
       }
 
-      // Update grand total
+      // Keep the travel credit line last (after care/tip lines added above)
+      const creditItem = summaryBox.querySelector(".baSummaryBox__item[data-item='credit']");
+      if (creditItem && creditItem.parentElement) {
+        creditItem.parentElement.appendChild(creditItem);
+      }
+
+      // Update grand total (pre-credit total struck through when credit applies)
       const totalValue = summaryBox.querySelector(".baSummaryBox__totalValue");
       const totalWords = summaryBox.querySelector(".baSummaryBox__totalWords");
       const total = payableTotalCents();
-      if (totalValue) totalValue.textContent = fmtMoney(total);
+      if (totalValue) {
+        if (creditCents > 0) {
+          totalValue.innerHTML = `<s class="baSummaryBox__totalOld">${fmtMoney(preCreditTotalCents())}</s> ${fmtMoney(total)}`;
+        } else {
+          totalValue.textContent = fmtMoney(total);
+        }
+      }
       if (totalWords) totalWords.textContent = `(${numberToWords(total)})`;
     }
 
