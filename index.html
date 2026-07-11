@@ -3533,7 +3533,9 @@
     const serviceCents = Number(data.quote?.service ?? 0) || 0;
     const careCents = Number(data.quote?.care ?? 0) || 0;
     // Travel credit (TOTAL cents, already multiplied by passengers). Reduces
-    // the payable total; per-passenger displays stay at the pre-credit price.
+    // the payable total; the sticky bar shows the pre-credit per-passenger
+    // price struck through next to the discounted one (display only - exact
+    // charge math stays total-based in payableTotalCents()).
     const creditCents = Math.max(0, Number(data.quote?.credit ?? 0) || 0);
     const carePaxCount = Math.max(1, (() => {
       const pda = getPassengerDetailsArray(data);
@@ -3874,6 +3876,16 @@
 
     // sticky per pax display
     const perPaxCents = pickPerPassengerCents();
+    // Per-passenger share of the travel credit, for the sticky bar display.
+    // Rounding here never affects the charge; the payable total subtracts the
+    // credit as a whole.
+    const perPaxCreditCents = creditCents > 0
+      ? Math.min(perPaxCents, Math.round(creditCents / carePaxCount))
+      : 0;
+    const perPaxAfterCreditCents = Math.max(0, perPaxCents - perPaxCreditCents);
+    const stickyPerPaxHtml = perPaxCreditCents > 0
+      ? `<s class="baStickyAmtOld">${fmtMoney(perPaxCents)}</s> ${fmtMoney(perPaxAfterCreditCents)}`
+      : fmtMoney(perPaxCents);
 
     root.innerHTML = `
 <style>
@@ -6206,6 +6218,7 @@
     .baSticky .baStickyPrice{ justify-self: center; text-align: center; min-width: 0; grid-column: 1; }
     .baSticky .baStickyPriceTop{ justify-content: center; }
     .baSticky .baStickyAmt{ font-size: 35px !important; }
+    .baSticky .baStickyAmt s.baStickyAmtOld{ font-size: 22px !important; }
     .baSticky .baStickyCur{ font-size: 18px !important; }
     .baSticky .baStickySub{ font-size: 18px !important; }
     .baSticky .baCTA{ padding: 14px 20px; min-height: 48px; justify-self: end; grid-column: 2; grid-row: 1; }
@@ -6226,6 +6239,7 @@
   .baStickyPrice{ text-align:right; line-height: 1.05; }
   .baStickyPriceTop{ display:flex; justify-content:flex-end; gap: 10px; align-items:baseline; }
   .baStickyAmt{ font-weight: 700; font-size: 24px; letter-spacing: -0.03em; color: #fff; }
+  .baStickyAmt s.baStickyAmtOld{ font-weight: 600; font-size: 16px; opacity: 0.65; margin-right: 2px; }
   .baStickyCur{ opacity: 0.85; font-weight: 600; font-size: 12px; color: #fff; }
 
   /* updated label */
@@ -7772,7 +7786,7 @@
       <div class="baStickyRight">
         <div class="baStickyPrice">
           <div class="baStickyPriceTop">
-            <div class="baStickyAmt" id="baStickyPerPax">${fmtMoney(perPaxCents)}</div>
+            <div class="baStickyAmt" id="baStickyPerPax">${stickyPerPaxHtml}</div>
             <div class="baStickyCur">${escapeHtml(data.currency || "USD")}</div>
           </div>
           <div class="baStickySub">Total price per passenger</div>
@@ -8180,7 +8194,13 @@
           const perPaxEl = document.getElementById("baStickyPerPax");
           if (perPaxEl && result && result.passenger_count && result.quote) {
             const newPerPax = Math.round((Number(result.quote.ticket) + Number(result.quote.service)) / result.passenger_count);
-            perPaxEl.textContent = fmtMoney(newPerPax);
+            const freshCredit = Math.max(0, Number(result.quote.credit ?? 0) || 0);
+            const newPerPaxCredit = freshCredit > 0
+              ? Math.min(newPerPax, Math.round(freshCredit / result.passenger_count))
+              : 0;
+            perPaxEl.innerHTML = newPerPaxCredit > 0
+              ? `<s class="baStickyAmtOld">${fmtMoney(newPerPax)}</s> ${fmtMoney(newPerPax - newPerPaxCredit)}`
+              : fmtMoney(newPerPax);
           }
           if (result && typeof result.passenger_count === "number") {
             window.__baExpandPassengerIndex = result.passenger_count - 1;
