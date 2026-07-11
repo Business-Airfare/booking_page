@@ -1089,6 +1089,8 @@
     return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
   }
 
+  // Static fallback for sessions created before airline names were pre-resolved
+  // into summary_json (airline_names). New sessions never need this map.
   const AIRLINE_NAMES = {
     UA: "United Airlines",
     LH: "Lufthansa",
@@ -1100,6 +1102,18 @@
     BA: "British Airways",
     EY: "Etihad Airways",
   };
+
+  // Pre-resolved airline data from the session summary (create_payment_session
+  // fills these from the airlines reference table). Set on every renderSession.
+  const AIRLINE_META = { names: {}, logoBase: "", logoExt: ".png", overrides: {} };
+
+  function setAirlineMeta(data){
+    const sum = data && data.summary && typeof data.summary === "object" ? data.summary : {};
+    AIRLINE_META.names = (sum.airline_names && typeof sum.airline_names === "object") ? sum.airline_names : {};
+    AIRLINE_META.logoBase = typeof sum.airline_logo_base === "string" ? sum.airline_logo_base : "";
+    AIRLINE_META.logoExt = typeof sum.airline_logo_ext === "string" && sum.airline_logo_ext ? sum.airline_logo_ext : ".png";
+    AIRLINE_META.overrides = (sum.airline_logo_overrides && typeof sum.airline_logo_overrides === "object") ? sum.airline_logo_overrides : {};
+  }
 
   // Format cabin name from backend format to display format (payment card badge labels)
   function formatCabinName(cabin) {
@@ -1147,8 +1161,23 @@
     return "Economy Class";
   }
 
+  /**
+   * Airline logo URL chain: per-airline override -> session logo base ({IATA}.png
+   * in our Storage bucket) -> legacy CDN (pre-refactor sessions only).
+   * Every <img> using this must keep onerror hide so a 404 never renders broken;
+   * the carrier code stays visible via the flight-number label.
+   */
   function logoUrl(carrier){
-    return `https://pnrexpert.b-cdn.net/images/airlines/${String(carrier||"").toLowerCase()}.png`;
+    const c = String(carrier || "").trim().toUpperCase();
+    if (!c) return "";
+    if (AIRLINE_META.overrides[c]) return String(AIRLINE_META.overrides[c]);
+    if (AIRLINE_META.logoBase) {
+      // Our Storage bucket stores {IATA}.png uppercase; the legacy CDN base found
+      // in pre-refactor session summaries uses lowercase filenames.
+      const file = AIRLINE_META.logoBase.includes("pnrexpert") ? c.toLowerCase() : c;
+      return AIRLINE_META.logoBase + file + AIRLINE_META.logoExt;
+    }
+    return `https://pnrexpert.b-cdn.net/images/airlines/${c.toLowerCase()}.png`;
   }
 
   function cityPairFromJourney(j){
@@ -1255,6 +1284,7 @@
     s = s.replace(/\s+all\s+pax\s+models?\s*$/i, "").trim();
     s = s.replace(/\s*\(winglets\)\s+pax\s*$/i, "").trim();
     s = s.replace(/\s+pax\s*$/i, "").trim();
+    s = s.replace(/\s+Passenger\s*$/i, "").trim();
     s = s.replace(/\s*\(winglets\)\s*$/i, "").trim();
     s = s.replace(/\s+Ceo\s*$/i, "").trim();
     s = s.replace(/\s+Freighter\s*$/i, "").trim();
@@ -1276,10 +1306,12 @@
       .replace(/[^a-z0-9]+/g, "");
   }
 
+  /** Name chain: session airline_names -> static AIRLINE_NAMES map -> raw code. Never blank. */
   function resolveCarrierDisplayName(codeOrName){
     const raw = String(codeOrName || "").trim();
     if (!raw) return "";
-    const mapped = AIRLINE_NAMES[raw.toUpperCase()];
+    const key = raw.toUpperCase();
+    const mapped = AIRLINE_META.names[key] || AIRLINE_NAMES[key];
     return String(mapped || raw).trim();
   }
 
@@ -3444,6 +3476,7 @@
 
   // ---------- main render ----------
   function renderSession(data){
+    setAirlineMeta(data);
     if (sessionLooksPaid(data)) {
       renderPaid(data);
       return;
@@ -3607,9 +3640,9 @@
       firstCarrier = String(journeys[0].segments[0].marketing_carrier || "");
     }
     const stickyLogo = firstCarrier ? logoUrl(firstCarrier) : "";
-    const airlineNameFromMap = firstCarrier ? AIRLINE_NAMES[firstCarrier.toUpperCase()] : "";
+    const airlineNameResolved = firstCarrier ? resolveCarrierDisplayName(firstCarrier) : "";
     // Only show airline name if we have a full name (not just carrier code/initials)
-    const stickyAirlineName = (airlineNameFromMap && airlineNameFromMap !== firstCarrier) ? airlineNameFromMap : "";
+    const stickyAirlineName = (airlineNameResolved && airlineNameResolved !== firstCarrier.toUpperCase()) ? airlineNameResolved : "";
 
     function syncTipCustomPanelVisibility(){
       const panel = document.getElementById("baTipCustomPanel");
