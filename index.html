@@ -1172,12 +1172,13 @@
     if (!c) return "";
     if (AIRLINE_META.overrides[c]) return String(AIRLINE_META.overrides[c]);
     if (AIRLINE_META.logoBase) {
-      // Our Storage bucket stores {IATA}.png uppercase; the legacy CDN base found
-      // in pre-refactor session summaries uses lowercase filenames.
-      const file = AIRLINE_META.logoBase.includes("pnrexpert") ? c.toLowerCase() : c;
+      // Our Storage bucket stores {IATA}.png uppercase; any other base found in a
+      // pre-refactor session summary is a legacy CDN with lowercase filenames.
+      const file = AIRLINE_META.logoBase.includes("/storage/v1/object/public/") ? c : c.toLowerCase();
       return AIRLINE_META.logoBase + file + AIRLINE_META.logoExt;
     }
-    return `https://pnrexpert.b-cdn.net/images/airlines/${c.toLowerCase()}.png`;
+    // Sessions with no logo base in their summary: use the bucket directly.
+    return `https://ofyciacvdpwpkcbbmmxj.supabase.co/storage/v1/object/public/airline-logos/${c}.png`;
   }
 
   function cityPairFromJourney(j){
