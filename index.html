@@ -7778,10 +7778,18 @@
             <div class="baSummaryBox__items">
               <div class="baSummaryBox__item">
                 <div class="baSummaryBox__itemLabel">${escapeHtml(summaryFlightTypeLabel(journeys))}</div>
-                <div class="baSummaryBox__itemValue">${fmtMoney(baseTicketService())}</div>
+                <div class="baSummaryBox__itemValue">${fmtMoney(ticketCents)}</div>
                 <div class="baSummaryBox__itemSub">To be processed by BUSINESS AIRFARE LLC</div>
-                <div class="baSummaryBox__itemSubValue">${fmtMoney(baseTicketService())}</div>
+                <div class="baSummaryBox__itemSubValue">${fmtMoney(ticketCents)}</div>
               </div>
+              ${serviceCents > 0 ? `
+              <div class="baSummaryBox__item" data-item="service">
+                <div class="baSummaryBox__itemLabel">Service fee</div>
+                <div class="baSummaryBox__itemValue">${fmtMoney(serviceCents)}</div>
+                <div class="baSummaryBox__itemSub">To be processed by BUSINESS AIRFARE LLC</div>
+                <div class="baSummaryBox__itemSubValue">${fmtMoney(serviceCents)}</div>
+              </div>
+              ` : ""}
               ${creditCents > 0 ? `
               <div class="baSummaryBox__item" data-item="credit">
                 <div class="baSummaryBox__itemLabel">Travel credit</div>
