@@ -1839,6 +1839,87 @@
     }
   }
 
+  // ---------- customer-facing payment failure notice ----------
+  // Translates Stripe error codes into plain language so the customer knows why the
+  // payment failed and what to do next. Banks do not always disclose a reason: when a
+  // specific code is present we explain it, otherwise we fall back to helpful generic text.
+  function paymentFailureMessage(err){
+    const code = String((err && (err.stripeCode || err.code)) || "");
+    const decline = String((err && (err.stripeDeclineCode || err.decline_code)) || "");
+    const type = String((err && (err.stripeErrorType || err.type)) || "");
+    const raw = err && err.message ? String(err.message) : "";
+
+    if (code === "payment_intent_authentication_failure" || code === "setup_intent_authentication_failure") {
+      return "Your bank could not verify this card (the 3D Secure check did not complete). This often happens with debit cards on large amounts. Please contact your bank to authorize the payment, try a different card, or contact us about splitting the payment into smaller parts.";
+    }
+    if (code === "expired_card" || decline === "expired_card") {
+      return "This card has expired. Please use a different card.";
+    }
+    if (code === "incorrect_cvc" || code === "invalid_cvc" || decline === "incorrect_cvc") {
+      return "The card security code (CVC) is incorrect. Please check it and try again.";
+    }
+    if (code === "incorrect_number" || code === "invalid_number") {
+      return "The card number appears to be invalid. Please check it and try again.";
+    }
+    if (code === "amount_too_large") {
+      return "This amount is larger than what can be charged to this card in one payment. Please try a different card or contact us about splitting the payment.";
+    }
+    if (code === "processing_error" || decline === "processing_error" || decline === "try_again_later" || decline === "reenter_transaction") {
+      return "There was a temporary problem processing your card. Please wait a moment and try again.";
+    }
+    if (code === "card_declined") {
+      if (decline === "insufficient_funds") {
+        return "Your bank declined this payment due to insufficient funds. Please use a different card or contact your bank.";
+      }
+      if (decline === "card_velocity_exceeded" || decline === "withdrawal_count_limit_exceeded") {
+        return "Your bank declined this payment because the card's spending limit was reached. Please contact your bank to approve the payment, try a different card, or contact us about splitting the payment.";
+      }
+      if (decline === "transaction_not_allowed" || decline === "card_not_supported" || decline === "currency_not_supported") {
+        return "This card does not allow this type of purchase. Please contact your bank or use a different card.";
+      }
+      return "Your bank declined this payment without giving a specific reason. Large payments are sometimes blocked by card spending limits or bank security checks. Please contact your bank to approve the payment, try a different card, or contact us about splitting the payment.";
+    }
+    // Stripe marks card_error and validation_error messages as safe to show customers.
+    if ((type === "card_error" || type === "validation_error") && raw) {
+      return raw;
+    }
+    // Validation errors thrown by this page are already written for the customer.
+    if (!type && !code && raw && /^(please |acceptance required)/i.test(raw)) {
+      return raw;
+    }
+    return "The payment could not be completed. Please try again, use a different card, or contact your bank.";
+  }
+
+  function clearPaymentFailureNotice(){
+    const box = document.getElementById("baPayFailureNotice");
+    if (box && box.parentNode) box.parentNode.removeChild(box);
+  }
+
+  function showPaymentFailureNotice(err){
+    clearPaymentFailureNotice();
+    const confirmBtn = document.getElementById("baStripeConfirm");
+    if (!confirmBtn || !confirmBtn.parentNode) return;
+    const box = document.createElement("div");
+    box.id = "baPayFailureNotice";
+    box.className = "baPayFailureNotice";
+    box.setAttribute("role", "alert");
+    const title = document.createElement("div");
+    title.className = "baPayFailureNotice__title";
+    title.textContent = "Payment was not completed";
+    const body = document.createElement("div");
+    body.className = "baPayFailureNotice__text";
+    body.textContent = paymentFailureMessage(err);
+    const help = document.createElement("div");
+    help.className = "baPayFailureNotice__help";
+    help.innerHTML = 'Need help? Contact us at <a href="mailto:support@business-airfare.com">support@business-airfare.com</a>.';
+    box.appendChild(title);
+    box.appendChild(body);
+    box.appendChild(help);
+    confirmBtn.parentNode.insertBefore(box, confirmBtn);
+    try { box.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch (_) { try { box.scrollIntoView(); } catch (__) {} }
+  }
+
   function setConfirmEnabled(){
     const confirmBtn = document.getElementById("baStripeConfirm");
     if (!confirmBtn) return;
@@ -2095,6 +2176,7 @@
     
     // Listen for payment method changes to track selected method
     paymentElement.on("change", (event) => {
+      clearPaymentFailureNotice();
       if (event && typeof event.complete === "boolean") {
         paymentDetailsComplete = !!event.complete;
         const payM = document.getElementById("baStripeMount");
@@ -2385,8 +2467,13 @@
       if (errorMessage.toLowerCase().includes("apple pay") || errorMessage.toLowerCase().includes("apple_pay")) {
         throw new Error("Unable to process Apple Pay payment. Please try using a different payment method (card, Google Pay, or Link) and try again.");
       }
-      
-      throw new Error(errorMessage);
+
+      // Preserve Stripe's error classification so the failure notice can explain the reason
+      const failure = new Error(errorMessage);
+      failure.stripeErrorType = error.type || "";
+      failure.stripeCode = error.code || "";
+      failure.stripeDeclineCode = error.decline_code || "";
+      throw failure;
     }
     
     payLog("[BOOK_FLOW] Payment confirmed successfully", {
@@ -4101,6 +4188,31 @@
     font-family: var(--ba-font);
     cursor: not-allowed;
     opacity: 0.6;
+  }
+  .baPayFailureNotice{
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: #FDE8E8;
+    border: 1px solid #D0A7A7;
+    color: #7f1d1d;
+    font-family: var(--ba-font);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .baPayFailureNotice__title{
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #991b1b;
+  }
+  .baPayFailureNotice__help{
+    margin-top: 6px;
+    font-size: 13px;
+    color: #9f4b4b;
+  }
+  .baPayFailureNotice__help a{
+    color: inherit;
+    text-decoration: underline;
   }
   .baPayCheckoutWarn{
     outline: 2px solid #C34A4A !important;
@@ -9525,6 +9637,8 @@
         e.preventDefault();
         e.stopPropagation();
 
+        clearPaymentFailureNotice();
+
         const payState = computeBillingValidationState();
         if (!payState.payerEmailOk) {
           showPayCheckoutIssue("email");
@@ -9636,6 +9750,7 @@
             // Keep overlay visible for processing status
           } else {
             hidePaymentOverlay(); // Hide overlay for other statuses
+            showPaymentFailureNotice({ message: "The payment could not be completed. Please try again, use a different card, or contact your bank." });
             confirmBtn.removeAttribute("data-ba-processing");
             setConfirmEnabled();
           }
@@ -9645,6 +9760,7 @@
           const errorMsg = e && e.message ? e.message : String(e);
           payErr("[BOOK_FLOW] Payment error:", errorMsg);
           if (isGeoBlockedError(e)) renderGeoBlocked();
+          else showPaymentFailureNotice(e);
           confirmBtn.removeAttribute("data-ba-processing");
           setConfirmEnabled();
         }
@@ -9674,7 +9790,11 @@
       renderError("Payment authentication failed. Please try again or use a different card.");
       const res = await fetch(GET_SESSION + "?public_id=" + encodeURIComponent(publicId), { method: "GET" });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data) renderSession(data);
+      if (res.ok && data) {
+        renderSession(data);
+        // Show the reason inline once the page is rendered (no-op if the payment form is not on screen yet)
+        setTimeout(() => showPaymentFailureNotice({ stripeCode: "payment_intent_authentication_failure" }), 600);
+      }
       return;
     }
 
