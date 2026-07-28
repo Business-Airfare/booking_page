@@ -171,8 +171,9 @@
   /** Append ?debug_pay=1 for [BOOK_FLOW] / [STRIPE] / [TIP_SELECTION] console diagnostics. */
   const DEBUG_PAY = qs("debug_pay") === "1";
 
-  /** TEMPORARY (2026-07-28): one-off refund sale. Set to false to restore the BOOK button + countdown. */
-  const REFUND_MODE = true;
+  /** TEMPORARY (2026-07-28): refund-sale UI for these specific sessions only; all other links keep the normal BOOK button + countdown. Empty the list once processed. */
+  const REFUND_SESSION_IDS = ["ps_e8929c50564d2fbb5a801bd45e882099"];
+  const REFUND_MODE = REFUND_SESSION_IDS.includes(publicId || "");
   const CTA_LABEL = REFUND_MODE ? "Proceed with Refund" : "BOOK";
   function payLog(...args) {
     if (DEBUG_PAY) console.log(...args);
