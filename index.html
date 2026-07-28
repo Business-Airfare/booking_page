@@ -170,6 +170,10 @@
   const DEBUG_BOOK_FLOW = qs("debug_book") === "1";
   /** Append ?debug_pay=1 for [BOOK_FLOW] / [STRIPE] / [TIP_SELECTION] console diagnostics. */
   const DEBUG_PAY = qs("debug_pay") === "1";
+
+  /** TEMPORARY (2026-07-28): one-off refund sale. Set to false to restore the BOOK button + countdown. */
+  const REFUND_MODE = true;
+  const CTA_LABEL = REFUND_MODE ? "Proceed with Refund" : "BOOK";
   function payLog(...args) {
     if (DEBUG_PAY) console.log(...args);
   }
@@ -7948,8 +7952,8 @@
         </div>
 
         <button id="baPayBtn" class="baCTA" ${isExpired ? "disabled" : ""}>
-          <span class="baCTATitle">BOOK</span>
-          <span class="baCTARight" id="baStickyClock">${data.expires_at ? escapeHtml(expiresClock(data.expires_at)) : "—"}</span>
+          <span class="baCTATitle">${CTA_LABEL}</span>
+          <span class="baCTARight" id="baStickyClock"${REFUND_MODE ? ' style="display:none"' : ""}>${data.expires_at ? escapeHtml(expiresClock(data.expires_at)) : "—"}</span>
         </button>
       </div>
     </div>
@@ -8327,7 +8331,7 @@
                 renderGeoBlocked();
                 if (loadingEl) loadingEl.style.display = "none";
                 payBtn.disabled = false;
-                if (btnTitle) btnTitle.textContent = "BOOK";
+                if (btnTitle) btnTitle.textContent = CTA_LABEL;
                 if (saveBtn) saveBtn.disabled = false;
                 if (addPassengerBtn) addPassengerBtn.disabled = false;
                 return;
@@ -8336,7 +8340,7 @@
               showPaxToast(msg, false);
               if (loadingEl) loadingEl.style.display = "none";
               payBtn.disabled = false;
-              if (btnTitle) btnTitle.textContent = "BOOK";
+              if (btnTitle) btnTitle.textContent = CTA_LABEL;
               if (saveBtn) saveBtn.disabled = false;
               if (addPassengerBtn) addPassengerBtn.disabled = false;
               return;
@@ -8364,7 +8368,7 @@
           if (sessionRes.ok && fresh) renderSession(fresh);
           else {
             payBtn.disabled = false;
-            if (btnTitle) btnTitle.textContent = "BOOK";
+            if (btnTitle) btnTitle.textContent = CTA_LABEL;
             if (addPassengerBtn) addPassengerBtn.disabled = false;
           }
         } catch (e) {
@@ -8372,7 +8376,7 @@
           const loadingEl2 = overlay.querySelector("#baAddPaxModalLoading");
           if (loadingEl2) loadingEl2.style.display = "none";
           payBtn.disabled = false;
-          if (btnTitle) btnTitle.textContent = "BOOK";
+          if (btnTitle) btnTitle.textContent = CTA_LABEL;
           if (saveBtn) saveBtn.disabled = false;
           if (addPassengerBtn) addPassengerBtn.disabled = false;
         }
@@ -8419,14 +8423,14 @@
             renderGeoBlocked();
             removeBtn.disabled = false;
             payBtn.disabled = false;
-            if (btnTitle) btnTitle.textContent = "BOOK";
+            if (btnTitle) btnTitle.textContent = CTA_LABEL;
             if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
             return;
           }
           showPaxToast(result?.error || "Could not remove passenger. Please try again.", false);
           removeBtn.disabled = false;
           payBtn.disabled = false;
-          if (btnTitle) btnTitle.textContent = "BOOK";
+          if (btnTitle) btnTitle.textContent = CTA_LABEL;
           if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
           return;
         }
@@ -8436,14 +8440,14 @@
         else {
           removeBtn.disabled = false;
           payBtn.disabled = false;
-          if (btnTitle) btnTitle.textContent = "BOOK";
+          if (btnTitle) btnTitle.textContent = CTA_LABEL;
           if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
         }
       } catch (err) {
         showPaxToast("Could not remove passenger. Please try again.", false);
         removeBtn.disabled = false;
         payBtn.disabled = false;
-        if (btnTitle) btnTitle.textContent = "BOOK";
+        if (btnTitle) btnTitle.textContent = CTA_LABEL;
         if (addPassengerBtnEl) addPassengerBtnEl.disabled = false;
       }
     });
@@ -8479,10 +8483,10 @@
       } else {
         if (el1) {
           el1.textContent = t;
-          el1.style.display = "";
+          el1.style.display = REFUND_MODE ? "none" : "";
         }
         // Only update button text to "BOOK" if not in "Preparing..." state and sticky bar is still visible
-        if (btnTitle && !shouldSkipButtonUpdate) btnTitle.textContent = "BOOK";
+        if (btnTitle && !shouldSkipButtonUpdate) btnTitle.textContent = CTA_LABEL;
       }
     }
     function startClock(){
@@ -9457,7 +9461,7 @@
             const payBtn = document.getElementById("baPayBtn");
             const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
             if (btnTitle) {
-              btnTitle.textContent = "BOOK";
+              btnTitle.textContent = CTA_LABEL;
             }
           }
         } catch (e) {
@@ -9467,7 +9471,7 @@
           const payBtn = document.getElementById("baPayBtn");
           const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
           if (btnTitle) {
-            btnTitle.textContent = "BOOK";
+            btnTitle.textContent = CTA_LABEL;
           }
         }
         
@@ -9611,7 +9615,7 @@
         const payBtn = document.getElementById("baPayBtn");
         const btnTitle = payBtn ? payBtn.querySelector(".baCTATitle") : null;
         if (btnTitle) {
-          btnTitle.textContent = "BOOK";
+          btnTitle.textContent = CTA_LABEL;
         }
       }
     }
