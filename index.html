@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- maximum-scale=1 stops iOS auto-zooming into focused inputs
+         (Stripe's iframes included); pinch zoom by the user still
+         works - iOS and Android both ignore the cap for gestures. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="light" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,10 +18,10 @@
       rel="stylesheet"
     />
     <title>Secure payment | Business Airfare</title>
-    <script type="module" crossorigin src="./assets/index-CTzTANtl.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BpTsd6kU.css">
+    <script type="module" crossorigin src="./assets/index-DX15BhtN.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Mh5t89j2.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>
