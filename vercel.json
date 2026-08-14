@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/page.mjs": {
+      "includeFiles": "app.html"
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/api/page" }
+  ]
+}
