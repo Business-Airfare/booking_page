@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/page.mjs": {
-      "includeFiles": "index.html"
+      "includeFiles": "app.html"
     }
   },
   "rewrites": [

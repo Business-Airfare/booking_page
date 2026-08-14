@@ -18,14 +18,15 @@ const GENERIC_META = {
   url: PAGE_URL,
 };
 
-// index.html is bundled with the function via vercel.json includeFiles.
-// Try the standard locations; keep whichever works.
+// app.html is the page shell (renamed from index.html so the static
+// file no longer shadows the "/" rewrite; Vercel serves static matches
+// before rewrites). Bundled with the function via vercel.json includeFiles.
 function loadTemplate() {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    join(process.cwd(), "index.html"),
-    join(here, "..", "index.html"),
-    join(here, "index.html"),
+    join(process.cwd(), "app.html"),
+    join(here, "..", "app.html"),
+    join(here, "app.html"),
   ];
   for (const p of candidates) {
     try {
