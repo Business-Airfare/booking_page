@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitUntil } from "@vercel/functions";
 
 const PAGE_URL = "https://booking.business-airfare.com/";
 
@@ -68,11 +69,19 @@ function metaTagBlock(meta) {
     ["og:description", meta.description],
     ["og:url", meta.url],
   ];
+  if (meta.image) {
+    pairs.push(["og:image", meta.image]);
+    pairs.push(["og:image:type", "image/jpeg"]);
+    pairs.push(["og:image:width", "1200"]);
+    pairs.push(["og:image:height", "630"]);
+  }
   const lines = pairs.map(
     ([property, content]) =>
       `    <meta property="${property}" content="${escapeHtml(content)}" />`
   );
-  lines.push('    <meta name="twitter:card" content="summary" />');
+  lines.push(
+    `    <meta name="twitter:card" content="${meta.image ? "summary_large_image" : "summary"}" />`
+  );
   lines.push(
     `    <meta name="description" content="${escapeHtml(meta.description)}" />`
   );
@@ -229,7 +238,7 @@ function previewMeta(data, cardUrl) {
   };
 }
 
-async function buildMeta(query) {
+async function buildMeta(query, host) {
   const publicId = query.get("public_id");
   const previewId = query.get("preview");
 
@@ -237,10 +246,16 @@ async function buildMeta(query) {
     const data = await fetchJson(
       `/get_public_session?public_id=${encodeURIComponent(publicId)}`
     );
-    return (
-      sessionMeta(data, `${PAGE_URL}?public_id=${encodeURIComponent(publicId)}`) ??
-      GENERIC_META
+    const meta = sessionMeta(
+      data,
+      `${PAGE_URL}?public_id=${encodeURIComponent(publicId)}`
     );
+    if (meta) {
+      // Card image served by api/card.mjs on the same deployment. Only
+      // valid sessions get one; unknown ids stay text-only.
+      meta.image = `https://${host}/api/card?public_id=${encodeURIComponent(publicId)}`;
+    }
+    return meta ?? GENERIC_META;
   }
   if (previewId) {
     const data = await fetchJson(
@@ -261,7 +276,22 @@ export default async function handler(req, res) {
     let meta = GENERIC_META;
     try {
       const query = new URL(req.url ?? "/", "http://local").searchParams;
-      meta = (await buildMeta(query)) ?? GENERIC_META;
+      const host =
+        req.headers?.["x-forwarded-host"] ??
+        req.headers?.host ??
+        "booking.business-airfare.com";
+      meta = (await buildMeta(query, host)) ?? GENERIC_META;
+      if (meta.image) {
+        // Pre-warm the card image: crawlers always fetch the page first,
+        // and their image fetch follows within seconds. Rendering starts
+        // now so the image answers fast enough for the large preview
+        // layout. waitUntil keeps the work alive past our response.
+        try {
+          waitUntil(fetch(meta.image).then((r) => r.arrayBuffer()).catch(() => {}));
+        } catch {
+          // pre-warm is best effort only
+        }
+      }
     } catch {
       meta = GENERIC_META;
     }
