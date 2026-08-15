@@ -232,7 +232,7 @@ function tripCard(data) {
       ? { code: 124, city: 32, time: 34, date: 26, label: 28, chip: 26, arcH: 170, arcW: 470, arcPad: 12, headGap: 14, divider: 26, col: 310 }
       : shown.length === 2
       ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, arcH: 138, arcW: 460, arcPad: 4, headGap: 8, divider: 22, col: 280 }
-      : { code: 76, city: 22, time: 24, date: 19, label: 21, chip: 19, arcH: 92, arcW: 430, arcPad: 0, headGap: 2, divider: 14 };
+      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, arcH: 104, arcW: 440, arcPad: 0, headGap: 6, divider: 30, col: 280 };
 
   const body = [];
   shown.forEach((j, i) => {
