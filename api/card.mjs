@@ -110,6 +110,56 @@ function travelMinutes(j, segs) {
   return Number.isFinite(from) && Number.isFinite(to) ? Math.round((to - from) / 60000) : null;
 }
 
+/* ---------- airline logos ---------- */
+
+// Square carrier icons from the pay project's public bucket (the same
+// ones the payment page shows). Each is a couple of KB, they repeat
+// across bookings, and satori needs bytes rather than a URL, so they
+// are fetched once and kept as data URIs for the life of the instance.
+// A logo that will not load simply leaves the airline's name to stand
+// on its own: this card never shows a broken image.
+const LOGO_BASE =
+  "https://ofyciacvdpwpkcbbmmxj.supabase.co/storage/v1/object/public/airline-logos/airline-icons";
+const LOGO_TIMEOUT_MS = 2000;
+const LOGO_CACHE = new Map(); // carrier code -> data URI or "" when unavailable
+
+async function logoDataUri(code) {
+  if (LOGO_CACHE.has(code)) return LOGO_CACHE.get(code);
+  let uri = "";
+  try {
+    const res = await fetch(`${LOGO_BASE}/${code}.png`, {
+      signal: AbortSignal.timeout(LOGO_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 0) uri = `data:image/png;base64,${buf.toString("base64")}`;
+    }
+  } catch {
+    // leave "" — the name renders alone
+  }
+  LOGO_CACHE.set(code, uri);
+  return uri;
+}
+
+/** Marketing carriers of the legs actually flown, in order, deduped. */
+function journeyCarriers(segs) {
+  const out = [];
+  for (const s of segs) {
+    const code = String(s?.marketing_carrier ?? "").trim().toUpperCase();
+    if (code.length === 2 && !out.includes(code)) out.push(code);
+  }
+  return out;
+}
+
+/** Fetches every logo the card will draw, in parallel, once per render. */
+async function loadLogos(journeys) {
+  const codes = new Set();
+  for (const j of journeys) for (const c of journeyCarriers(flownSegments(j))) codes.add(c);
+  const list = [...codes];
+  const uris = await Promise.all(list.map(logoDataUri));
+  return new Map(list.map((code, i) => [code, uris[i]]));
+}
+
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -272,7 +322,37 @@ function arcShift(s, hasCabin) {
   return Math.round(codeCentre - (chipBlock + dotsInBox));
 }
 
-function journeyBlock(j, label, s) {
+// Who flies the journey, drawn opposite the "Outbound" / "Flight 2"
+// label: the carrier's square icon and, when a single airline covers
+// the whole journey, its name. Two airlines read as "A + B"; beyond
+// that the icons carry it and the names would crowd the row.
+function airlineMark(segs, s, ctx) {
+  const codes = journeyCarriers(segs);
+  if (codes.length === 0) return el("div", {}, "");
+
+  const named = codes.map((c) => ctx.names[c] ?? c);
+  const text =
+    codes.length === 1 ? named[0]
+    : codes.length === 2 ? `${named[0]} + ${named[1]}`
+    : `${codes.length} airlines`;
+
+  const icons = codes
+    .slice(0, 3)
+    .map((c) => ctx.logos.get(c))
+    .filter(Boolean)
+    .map((uri) =>
+      el("img", {}, undefined, { src: uri, width: s.logo, height: s.logo })
+    );
+
+  return el("div", { display: "flex", alignItems: "center", gap: 10 }, [
+    ...(icons.length
+      ? [el("div", { display: "flex", alignItems: "center", gap: 6 }, icons)]
+      : []),
+    el("div", { fontSize: s.label, fontWeight: 500, color: SOFT }, text),
+  ]);
+}
+
+function journeyBlock(j, label, s, ctx) {
   const segs = flownSegments(j);
   const first = segs[0] ?? {}, last = segs[segs.length - 1] ?? {};
   // Connection airports of the flown legs only.
@@ -289,6 +369,7 @@ function journeyBlock(j, label, s) {
   return el("div", { display: "flex", flexDirection: "column", width: "100%" }, [
     el("div", { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s.headGap }, [
       el("div", { fontSize: s.label, fontWeight: 500, color: MUTED }, label),
+      airlineMark(segs, s, ctx),
     ]),
     el("div", { display: "flex", alignItems: "flex-start", justifyContent: "space-between" }, [
       endpoint("left", first.origin_city, first.origin, first.depart_local, s),
@@ -308,7 +389,7 @@ function journeyBlock(j, label, s) {
   ]);
 }
 
-function tripCard(data) {
+function tripCard(data, ctx) {
   const journeys = realJourneys(data?.journeys);
   if (journeys.length === 0) return null;
   const shown = journeys.slice(0, 3);
@@ -330,17 +411,17 @@ function tripCard(data) {
     shown.length === 1
       // Columns + arc must stay within the card's 1028px content box:
       // wider than that and the outer code runs off the card edge.
-      ? { code: 116, city: 32, time: 34, date: 26, label: 28, chip: 26, rise: 62, arcW: 388, headGap: 14, divider: 26, col: 320, price: 58, priceGap: 40 }
+      ? { code: 116, city: 32, time: 34, date: 26, label: 28, chip: 26, rise: 62, arcW: 388, headGap: 14, divider: 26, col: 320, price: 58, priceGap: 40, logo: 40 }
       : shown.length === 2
-      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, rise: 53, arcW: 460, headGap: 8, divider: 84, col: 280, price: 48, priceGap: 30 }
+      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, rise: 53, arcW: 460, headGap: 8, divider: 84, col: 280, price: 48, priceGap: 30, logo: 36 }
       // Three rows plus the price line is the tallest the card gets;
       // the row gap is what pays for the price line's height here.
-      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, rise: 36, arcW: 440, headGap: 6, divider: 16, col: 280, price: 40, priceGap: 22 };
+      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, rise: 36, arcW: 440, headGap: 6, divider: 16, col: 280, price: 40, priceGap: 22, logo: 30 };
 
   const body = [];
   shown.forEach((j, i) => {
     if (i > 0) body.push(el("div", { height: 2, backgroundColor: "#EDF1F5", margin: `${s.divider}px 0` }, ""));
-    body.push(el("div", { display: "flex" }, [journeyBlock(j, labels[i], s)]));
+    body.push(el("div", { display: "flex" }, [journeyBlock(j, labels[i], s, ctx)]));
   });
   if (extra > 0) {
     body.push(el("div", { display: "flex", justifyContent: "center", fontSize: 19, color: MUTED, marginTop: 6 },
@@ -402,7 +483,16 @@ async function renderCard(publicId) {
   const data = await fetchJson(
     `/get_public_session?public_id=${encodeURIComponent(publicId)}`
   );
-  const tree = data ? tripCard(data) : null;
+  if (!data) return null;
+
+  // Airline names come resolved on the session; logos are fetched (and
+  // cached) before the render, since satori draws from bytes.
+  const ctx = {
+    names: data.summary?.airline_names ?? {},
+    logos: await loadLogos(realJourneys(data.journeys)),
+  };
+
+  const tree = tripCard(data, ctx);
   if (!tree) return null;
 
   const svg = await satori(tree, { width: W, height: H, fonts: FONTS });
