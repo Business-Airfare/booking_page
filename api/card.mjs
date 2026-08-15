@@ -220,10 +220,15 @@ function tripCard(data) {
   if (journeys.length === 0) return null;
   const shown = journeys.slice(0, 3);
   const extra = journeys.length - shown.length;
+  // "Outbound / Return" only when the trip really ends where it began;
+  // open-jaw two-journey trips are numbered like multi city ones.
+  const firstSeg = journeys[0]?.segments?.[0];
+  const lastJ = journeys[journeys.length - 1];
+  const lastSeg = lastJ?.segments?.[lastJ.segments.length - 1];
+  const roundTrip = journeys.length === 2 && lastSeg?.destination === firstSeg?.origin;
   const labels = shown.map((_, i) => {
     if (journeys.length === 1) return "One way";
-    if (journeys.length === 2 && i === 0) return "Outbound";
-    if (journeys.length === 2 && i === 1) return "Return";
+    if (roundTrip) return i === 0 ? "Outbound" : "Return";
     return `Flight ${i + 1}`;
   });
 
@@ -231,7 +236,7 @@ function tripCard(data) {
     shown.length === 1
       ? { code: 124, city: 32, time: 34, date: 26, label: 28, chip: 26, arcH: 170, arcW: 470, arcPad: 12, headGap: 14, divider: 26, col: 310 }
       : shown.length === 2
-      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, arcH: 138, arcW: 460, arcPad: 4, headGap: 8, divider: 22, col: 280 }
+      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, arcH: 138, arcW: 460, arcPad: 4, headGap: 8, divider: 84, col: 280 }
       : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, arcH: 104, arcW: 440, arcPad: 0, headGap: 6, divider: 30, col: 280 };
 
   const body = [];
