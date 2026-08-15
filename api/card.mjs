@@ -161,23 +161,44 @@ const FALLBACK_NAMES = {
   VS: "Virgin Atlantic", WN: "Southwest Airlines",
 };
 
-/** Marketing carriers of the legs actually flown, in order, deduped. */
-function journeyCarriers(segs) {
-  const out = [];
+function segmentMinutes(s) {
+  const stated = Number(s?.duration_minutes);
+  if (Number.isFinite(stated) && stated > 0) return stated;
+  const from = Date.parse(s?.depart_utc ?? "");
+  const to = Date.parse(s?.arrive_utc ?? "");
+  return Number.isFinite(from) && Number.isFinite(to) && to > from
+    ? Math.round((to - from) / 60000)
+    : 0;
+}
+
+/**
+ * The airline the journey belongs to: whoever operates its longest
+ * flight. A connection on a partner carrier does not displace the
+ * airline flying the ocean, and one journey names one airline.
+ * Ties keep the earlier leg, so the choice is stable.
+ */
+function dominantCarrier(segs) {
+  let best = "";
+  let bestMins = -1;
   for (const s of segs) {
     const code = String(s?.marketing_carrier ?? "").trim().toUpperCase();
-    if (code.length === 2 && !out.includes(code)) out.push(code);
+    if (code.length !== 2) continue;
+    const mins = segmentMinutes(s);
+    if (mins > bestMins) {
+      best = code;
+      bestMins = mins;
+    }
   }
-  return out;
+  return best;
 }
 
 /** Fetches every logo the card will draw, in parallel, once per render. */
 async function loadLogos(journeys) {
-  const codes = new Set();
-  for (const j of journeys) for (const c of journeyCarriers(flownSegments(j))) codes.add(c);
-  const list = [...codes];
-  const uris = await Promise.all(list.map(logoDataUri));
-  return new Map(list.map((code, i) => [code, uris[i]]));
+  const codes = [
+    ...new Set(journeys.map((j) => dominantCarrier(flownSegments(j))).filter(Boolean)),
+  ];
+  const uris = await Promise.all(codes.map(logoDataUri));
+  return new Map(codes.map((code, i) => [code, uris[i]]));
 }
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -343,39 +364,23 @@ function arcShift(s, hasCabin) {
 }
 
 // Who flies the journey, set below the duration and stops line: the
-// carrier's square icon and, when a single airline covers the whole
-// journey, its name. Two airlines read as "A + B"; beyond that the
-// icons carry it and the names would crowd the row.
+// square icon and name of the carrier operating its longest flight.
+// A carrier we cannot name is left to its logo; printing the raw
+// two-letter code beside that same airline's mark reads as noise.
+// With neither name nor logo the code is all there is.
 function airlineMark(segs, s, ctx) {
-  const codes = journeyCarriers(segs);
-  if (codes.length === 0) return el("div", {}, "");
+  const code = dominantCarrier(segs);
+  if (!code) return el("div", {}, "");
 
-  // A carrier we cannot name is left to its logo; printing the raw
-  // two-letter code next to that same airline's mark reads as noise.
-  // With neither name nor logo the code is all there is.
-  const nameOf = (c) => ctx.names[c] || FALLBACK_NAMES[c] || "";
-  const icons = codes.slice(0, 3).map((c) => ctx.logos.get(c) || "");
-  const named = codes.map(nameOf);
-
-  const text =
-    codes.length === 1
-      ? named[0] || (icons[0] ? "" : codes[0])
-      : codes.length === 2 && named[0] && named[1]
-      ? `${named[0]} + ${named[1]}`
-      : codes.length === 2
-      ? ""
-      : `${codes.length} airlines`;
-
-  const marks = icons
-    .filter(Boolean)
-    .map((uri) => el("img", {}, undefined, { src: uri, width: s.logo, height: s.logo }));
+  const icon = ctx.logos.get(code) || "";
+  const name = ctx.names[code] || FALLBACK_NAMES[code] || (icon ? "" : code);
 
   return el("div", { display: "flex", alignItems: "center", gap: 10 }, [
-    ...(marks.length
-      ? [el("div", { display: "flex", alignItems: "center", gap: 6 }, marks)]
+    ...(icon
+      ? [el("img", {}, undefined, { src: icon, width: s.logo, height: s.logo })]
       : []),
-    ...(text
-      ? [el("div", { fontSize: s.label, fontWeight: 500, color: SOFT }, text)]
+    ...(name
+      ? [el("div", { fontSize: s.label, fontWeight: 500, color: SOFT }, name)]
       : []),
   ]);
 }
