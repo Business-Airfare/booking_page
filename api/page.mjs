@@ -293,6 +293,14 @@ export default async function handler(req, res) {
 
   res.statusCode = 200;
   res.setHeader("content-type", "text/html; charset=utf-8");
-  res.setHeader("cache-control", "public, max-age=0, must-revalidate");
+  // Browsers always revalidate; the CDN may serve the same per-URL HTML
+  // for a few minutes so crawler fetches (Meta's server-side preview
+  // path is latency-sensitive) get an instant first byte. The shell only
+  // changes on deploy, which purges the CDN anyway; the injected tags
+  // going up to 5 minutes stale is harmless.
+  res.setHeader(
+    "cache-control",
+    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
+  );
   res.end(html);
 }
