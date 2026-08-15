@@ -117,14 +117,9 @@ function parseLocalDate(s) {
   return { month, day };
 }
 
-function formatDateRange(outbound, back) {
-  const a = parseLocalDate(outbound);
-  if (!a) return "";
-  const first = `${MONTHS[a.month - 1]} ${a.day}`;
-  const b = parseLocalDate(back);
-  if (!b || (b.month === a.month && b.day === a.day)) return first;
-  if (b.month === a.month) return `${first} to ${b.day}`;
-  return `${first} to ${MONTHS[b.month - 1]} ${b.day}`;
+function formatDate(local) {
+  const d = parseLocalDate(local);
+  return d ? `${MONTHS[d.month - 1]} ${d.day}` : "";
 }
 
 function formatMoney(cents, currency) {
@@ -169,48 +164,47 @@ function flownSegments(j) {
   return flown.length > 0 ? flown : segs;
 }
 
+// One journey as the title names it: where it leaves from, where it
+// lands, the day it departs. Flown legs only, so an ELR tail or a fake
+// return can never name a direction the traveler does not take.
+function journeyLeg(j) {
+  const segs = flownSegments(j);
+  if (segs.length === 0) return null;
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const from = first?.origin_city || first?.origin;
+  const to = last?.destination_city || last?.destination;
+  if (!from || !to) return null;
+  const date = formatDate(first?.depart_local);
+  return date ? `${from} to ${to}, ${date}` : `${from} to ${to}`;
+}
+
+// Beyond three directions the title would be truncated by the chat
+// app, so the rest are counted instead of named.
+const TITLE_LEGS = 3;
+
 function sessionMeta(data, cardUrl) {
   const journeys = realJourneys(data?.journeys);
   if (journeys.length === 0) return null;
 
-  // Flown legs only: a ticket's ELR / fake-return leg must never name
-  // the route, the dates or the trip kind. api/card.mjs draws the same.
-  const firstFlown = flownSegments(journeys[0]);
-  const lastFlown = flownSegments(journeys[journeys.length - 1]);
-  if (firstFlown.length === 0 || lastFlown.length === 0) return null;
-  const firstSeg = firstFlown[0];
-  const destSeg = firstFlown[firstFlown.length - 1];
+  const legs = journeys.map(journeyLeg).filter(Boolean);
+  if (legs.length === 0) return null;
 
-  const originCity = firstSeg?.origin_city || firstSeg?.origin;
-  const destCity = destSeg?.destination_city || destSeg?.destination;
-  if (!originCity || !destCity) return null;
-
-  const range = formatDateRange(
-    firstSeg?.depart_local,
-    journeys.length > 1 ? lastFlown[0]?.depart_local : null
-  );
-  const route = `${originCity} to ${destCity}`;
-  const title = `Flight Quote: ${range ? `${route}, ${range}` : route}`;
-
-  const returnsToStart =
-    lastFlown[lastFlown.length - 1]?.destination === firstSeg?.origin;
-  const tripType =
-    journeys.length === 1 ? "One way" : returnsToStart ? "Round trip" : "Multi-city";
-
-  const codes =
-    firstSeg?.origin && destSeg?.destination
-      ? `, ${firstSeg.origin} → ${destSeg.destination}`
-      : "";
+  const shown = legs.slice(0, TITLE_LEGS);
+  const extra = legs.length - shown.length;
+  const more = extra === 0 ? "" : extra === 1 ? " / + 1 more flight" : ` / + ${extra} more flights`;
+  const title = `Flight Quote: ${shown.join(" / ")}${more}`;
 
   // Always the ticket alone, per traveler: no service fee, no Travel
   // Care, no tip. api/card.mjs draws the same figure on the image.
   const price = perPaxTicket(data);
-  const pricePart = price ? ` ${price} per traveler.` : "";
 
   return {
     siteName: "Business Airfare",
     title,
-    description: `${tripType}${codes}.${pricePart} Click here to review full flight details.`,
+    description: price
+      ? `Priced at ${price} per traveler.`
+      : "Click here to review full flight details.",
     url: cardUrl,
   };
 }
