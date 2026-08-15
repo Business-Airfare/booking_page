@@ -140,6 +140,16 @@ function formatMoney(cents, currency) {
   return rem === 0 ? `${symbol}${wholeStr}` : `${symbol}${wholeStr}.${String(rem).padStart(2, "0")}`;
 }
 
+// Ticket price for one traveler. Sessions with no passengers on them
+// have no per-traveler figure, and the preview then quotes no price.
+function perPaxTicket(data) {
+  const list = Array.isArray(data?.passenger_details) ? data.passenger_details : [];
+  const pax = list.length || (Array.isArray(data?.passengers) ? data.passengers.length : 0);
+  const ticket = Number(data?.quote?.ticket);
+  if (pax < 1 || !Number.isFinite(ticket) || ticket <= 0) return "";
+  return formatMoney(Math.round(ticket / pax), data?.currency);
+}
+
 // Journeys made ONLY of not-for-travel segments are ticket artifacts
 // (fake return), not part of the trip the card describes.
 function realJourneys(journeys) {
@@ -150,14 +160,26 @@ function realJourneys(journeys) {
   return real.length > 0 ? real : list;
 }
 
+// The legs the traveler actually boards. Ghost legs buried inside an
+// otherwise real journey are dropped here; whole ghost journeys are
+// dropped by realJourneys above.
+function flownSegments(j) {
+  const segs = Array.isArray(j?.segments) ? j.segments : [];
+  const flown = segs.filter((s) => !s?.not_for_travel);
+  return flown.length > 0 ? flown : segs;
+}
+
 function sessionMeta(data, cardUrl) {
   const journeys = realJourneys(data?.journeys);
   if (journeys.length === 0) return null;
 
-  const firstJourney = journeys[0];
-  const lastJourney = journeys[journeys.length - 1];
-  const firstSeg = firstJourney.segments[0];
-  const destSeg = firstJourney.segments[firstJourney.segments.length - 1];
+  // Flown legs only: a ticket's ELR / fake-return leg must never name
+  // the route, the dates or the trip kind. api/card.mjs draws the same.
+  const firstFlown = flownSegments(journeys[0]);
+  const lastFlown = flownSegments(journeys[journeys.length - 1]);
+  if (firstFlown.length === 0 || lastFlown.length === 0) return null;
+  const firstSeg = firstFlown[0];
+  const destSeg = firstFlown[firstFlown.length - 1];
 
   const originCity = firstSeg?.origin_city || firstSeg?.origin;
   const destCity = destSeg?.destination_city || destSeg?.destination;
@@ -165,13 +187,13 @@ function sessionMeta(data, cardUrl) {
 
   const range = formatDateRange(
     firstSeg?.depart_local,
-    journeys.length > 1 ? lastJourney.segments[0]?.depart_local : null
+    journeys.length > 1 ? lastFlown[0]?.depart_local : null
   );
   const route = `${originCity} to ${destCity}`;
   const title = `Flight Quote: ${range ? `${route}, ${range}` : route}`;
 
   const returnsToStart =
-    lastJourney.segments[lastJourney.segments.length - 1]?.destination === firstSeg?.origin;
+    lastFlown[lastFlown.length - 1]?.destination === firstSeg?.origin;
   const tripType =
     journeys.length === 1 ? "One way" : returnsToStart ? "Round trip" : "Multi-city";
 
@@ -180,8 +202,10 @@ function sessionMeta(data, cardUrl) {
       ? `, ${firstSeg.origin} → ${destSeg.destination}`
       : "";
 
-  const price = formatMoney(data?.total_amount, data?.currency);
-  const pricePart = price ? ` Total ${price}.` : "";
+  // Always the ticket alone, per traveler: no service fee, no Travel
+  // Care, no tip. api/card.mjs draws the same figure on the image.
+  const price = perPaxTicket(data);
+  const pricePart = price ? ` ${price} per traveler.` : "";
 
   return {
     siteName: "Business Airfare",
@@ -200,8 +224,10 @@ function previewMeta(data, cardUrl) {
   const destCity = summary.destination_city || summary.destination;
   if (!originCity || !destCity) return null;
 
+  // from_price_per_pax is the ticket alone per traveler; the same basis
+  // the single-booking card quotes.
   const fromCents = options
-    .map((o) => Number(o?.from_total_per_pax))
+    .map((o) => Number(o?.from_price_per_pax))
     .filter((n) => Number.isFinite(n) && n > 0)
     .sort((x, y) => x - y)[0];
   const fromPrice = formatMoney(fromCents, options[0]?.currency ?? data?.currency);

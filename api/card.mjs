@@ -88,6 +88,28 @@ function realJourneys(journeys) {
   return real.length > 0 ? real : list;
 }
 
+// ELR / fake-return legs sit on the ticket but are never boarded, so
+// this card never shows them: not their airports, not their stops, not
+// their hours. Journeys made only of them are dropped by realJourneys;
+// this drops the ones buried inside a real journey. Falls back to every
+// segment if somehow all of them are marked.
+function flownSegments(j) {
+  const segs = Array.isArray(j?.segments) ? j.segments : [];
+  const flown = segs.filter((s) => !s?.not_for_travel);
+  return flown.length > 0 ? flown : segs;
+}
+
+// Same basis as the journey's own total_travel_minutes (first departure
+// to last arrival), recomputed whenever a ghost leg was dropped so the
+// card never quotes time the traveler does not spend travelling.
+function travelMinutes(j, segs) {
+  const all = Array.isArray(j?.segments) ? j.segments : [];
+  if (segs.length === all.length) return j?.total_travel_minutes;
+  const from = Date.parse(segs[0]?.depart_utc ?? "");
+  const to = Date.parse(segs[segs.length - 1]?.arrive_utc ?? "");
+  return Number.isFinite(from) && Number.isFinite(to) ? Math.round((to - from) / 60000) : null;
+}
+
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -113,6 +135,30 @@ function fmtDuration(mins) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+// Matches the money formatting in api/page.mjs, so the amount drawn on
+// the card and the one in the link's text preview always agree.
+function fmtMoney(cents, currency) {
+  const n = Number(cents);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const cur = String(currency ?? "usd").toLowerCase();
+  const symbol = cur === "usd" ? "$" : cur === "eur" ? "€" : `${cur.toUpperCase()} `;
+  const whole = Math.floor(n / 100).toLocaleString("en-US");
+  const rem = Math.round(n % 100);
+  return rem === 0 ? `${symbol}${whole}` : `${symbol}${whole}.${String(rem).padStart(2, "0")}`;
+}
+
+// The advertised price is always the ticket alone, per traveler: no
+// service fee, no Travel Care, no tip. Same rule in api/page.mjs. With
+// no passengers on the session there is no per-traveler figure to show,
+// and the card simply leaves the price line out.
+function perPaxTicket(data) {
+  const list = Array.isArray(data?.passenger_details) ? data.passenger_details : [];
+  const pax = list.length || (Array.isArray(data?.passengers) ? data.passengers.length : 0);
+  const ticket = Number(data?.quote?.ticket);
+  if (pax < 1 || !Number.isFinite(ticket) || ticket <= 0) return "";
+  return fmtMoney(Math.round(ticket / pax), data?.currency);
+}
+
 const CABIN_LABELS = {
   economy: "Economy Class",
   premium_economy: "Premium Economy",
@@ -122,8 +168,17 @@ const CABIN_LABELS = {
 
 /* ---------- pieces ---------- */
 
-function arcSvg(width, height, stops) {
-  const x0 = 10, x1 = width - 10, y = height - 22, cy = 10;
+// The box is drawn tight around the curve: 8px of air above the apex,
+// 10px below the end dots. Anything looser leaves invisible padding
+// that the layout would then have to compensate for.
+const ARC_TOP = 8, ARC_BOTTOM = 10;
+const arcBoxHeight = (rise) => rise + ARC_TOP + ARC_BOTTOM;
+
+function arcSvg(width, rise, stops) {
+  const height = arcBoxHeight(rise);
+  // Quadratic midpoint is halfway between the ends and the control
+  // point, so the control point sits twice the rise above the ends.
+  const x0 = 10, x1 = width - 10, y = height - ARC_BOTTOM, cy = y - rise * 2;
   const path = `M ${x0} ${y} Q ${width / 2} ${cy} ${x1} ${y}`;
   const pt = (t) => {
     const bx = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * (width / 2) + t ** 2 * x1;
@@ -162,12 +217,18 @@ function stopLabels(stops, pt, fontSize) {
   });
 }
 
+// Line heights are pinned so the arc can be positioned against the
+// airport code's own centre line (see arcShift).
+const CITY_LH = 1.2, CODE_LH = 1.1, CHIP_LH = 1.2, CITY_GAP = -6;
+// Clearance between the cabin chip and the apex of the arc below it.
+const CHIP_GAP = 6;
+
 function endpoint(align, city, code, timeLocal, s) {
   const [t, ap] = fmtTime(timeLocal);
   const alignItems = align === "left" ? "flex-start" : "flex-end";
   return el("div", { display: "flex", flexDirection: "column", alignItems, width: s.col ?? 250 }, [
-    el("div", { fontSize: s.city, color: SOFT, marginBottom: -6 }, city ?? ""),
-    el("div", { fontSize: s.code, fontWeight: 800, letterSpacing: -3, color: INK, lineHeight: 1.1 }, code ?? ""),
+    el("div", { fontSize: s.city, color: SOFT, marginBottom: CITY_GAP, lineHeight: CITY_LH }, city ?? ""),
+    el("div", { fontSize: s.code, fontWeight: 800, letterSpacing: -3, color: INK, lineHeight: CODE_LH }, code ?? ""),
     el("div", { display: "flex", alignItems: "baseline", gap: 6, marginTop: -4 }, [
       el("div", { fontSize: s.time, fontWeight: 700, color: INK }, t),
       el("div", { fontSize: s.time - 9, fontWeight: 700, color: INK }, ap),
@@ -179,19 +240,38 @@ function endpoint(align, city, code, timeLocal, s) {
 function chip(text, bg, color, size) {
   return el("div", {
     display: "flex", backgroundColor: bg, color, fontSize: size, fontWeight: 600,
-    padding: `${Math.round(size * 0.36)}px ${size}px`, borderRadius: 999,
+    lineHeight: CHIP_LH,
+    padding: `${chipPad(size)}px ${size}px`, borderRadius: 999,
   }, text);
 }
 
+const chipPad = (size) => Math.round(size * 0.36);
+const chipHeight = (size) => size * CHIP_LH + chipPad(size) * 2;
+
+// The arc reads as the line joining the two airport codes, so its end
+// dots sit on the codes' own centre line rather than below the block.
+// Returns the offset to apply to the middle column: everything in it
+// (cabin chip, arc, duration) moves with the dots.
+function arcShift(s, hasCabin) {
+  const codeCentre = s.city * CITY_LH + CITY_GAP + (s.code * CODE_LH) / 2;
+  const chipBlock = hasCabin ? chipHeight(s.chip) + CHIP_GAP : 0;
+  const dotsInBox = arcBoxHeight(s.rise) - ARC_BOTTOM;
+  return Math.round(codeCentre - (chipBlock + dotsInBox));
+}
+
 function journeyBlock(j, label, s) {
-  const segs = j.segments ?? [];
+  const segs = flownSegments(j);
   const first = segs[0] ?? {}, last = segs[segs.length - 1] ?? {};
-  const stops = (j.layovers ?? []).map((l) => l.at).filter(Boolean);
-  const arcW = s.arcW, arcH = s.arcH;
-  const arc = arcSvg(arcW, arcH, stops);
+  // Connection airports of the flown legs only.
+  const stops = segs
+    .slice(0, -1)
+    .filter((seg, i) => seg?.destination && seg.destination === segs[i + 1]?.origin)
+    .map((seg) => seg.destination);
+  const arcW = s.arcW, arcH = arcBoxHeight(s.rise);
+  const arc = arcSvg(arcW, s.rise, stops);
   const cabin = CABIN_LABELS[first.cabin] ?? null;
   const stopsText = stops.length === 0 ? "Nonstop" : stops.length === 1 ? "1 stop" : `${stops.length} stops`;
-  const dur = fmtDuration(j.total_travel_minutes);
+  const dur = fmtDuration(travelMinutes(j, segs));
 
   return el("div", { display: "flex", flexDirection: "column", width: "100%" }, [
     el("div", { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s.headGap }, [
@@ -199,8 +279,8 @@ function journeyBlock(j, label, s) {
     ]),
     el("div", { display: "flex", alignItems: "flex-start", justifyContent: "space-between" }, [
       endpoint("left", first.origin_city, first.origin, first.depart_local, s),
-      el("div", { display: "flex", flexDirection: "column", alignItems: "center", flexGrow: 1, paddingTop: s.arcPad }, [
-        cabin ? el("div", { display: "flex", marginBottom: -10 }, [chip(cabin, CHIP_BG, "#334155", s.chip)]) : el("div", {}, ""),
+      el("div", { display: "flex", flexDirection: "column", alignItems: "center", flexGrow: 1, marginTop: arcShift(s, Boolean(cabin)) }, [
+        cabin ? el("div", { display: "flex", marginBottom: CHIP_GAP }, [chip(cabin, CHIP_BG, "#334155", s.chip)]) : el("div", {}, ""),
         el("div", { display: "flex", position: "relative", width: arcW, height: arcH + 14 }, [
           el("img", { width: arcW, height: arcH }, undefined, { src: arc.uri, width: arcW, height: arcH }),
           ...stopLabels(stops, arc.pt, s.chip),
@@ -222,9 +302,10 @@ function tripCard(data) {
   const extra = journeys.length - shown.length;
   // "Outbound / Return" only when the trip really ends where it began;
   // open-jaw two-journey trips are numbered like multi city ones.
-  const firstSeg = journeys[0]?.segments?.[0];
-  const lastJ = journeys[journeys.length - 1];
-  const lastSeg = lastJ?.segments?.[lastJ.segments.length - 1];
+  const firstFlown = flownSegments(journeys[0]);
+  const lastFlown = flownSegments(journeys[journeys.length - 1]);
+  const firstSeg = firstFlown[0];
+  const lastSeg = lastFlown[lastFlown.length - 1];
   const roundTrip = journeys.length === 2 && lastSeg?.destination === firstSeg?.origin;
   const labels = shown.map((_, i) => {
     if (journeys.length === 1) return "One way";
@@ -234,10 +315,14 @@ function tripCard(data) {
 
   const s =
     shown.length === 1
-      ? { code: 124, city: 32, time: 34, date: 26, label: 28, chip: 26, arcH: 170, arcW: 470, arcPad: 12, headGap: 14, divider: 26, col: 310 }
+      // Columns + arc must stay within the card's 1028px content box:
+      // wider than that and the outer code runs off the card edge.
+      ? { code: 116, city: 32, time: 34, date: 26, label: 28, chip: 26, rise: 62, arcW: 388, headGap: 14, divider: 26, col: 320, price: 58, priceGap: 40 }
       : shown.length === 2
-      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, arcH: 138, arcW: 460, arcPad: 4, headGap: 8, divider: 84, col: 280 }
-      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, arcH: 104, arcW: 440, arcPad: 0, headGap: 6, divider: 30, col: 280 };
+      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, rise: 53, arcW: 460, headGap: 8, divider: 84, col: 280, price: 48, priceGap: 30 }
+      // Three rows plus the price line is the tallest the card gets;
+      // the row gap is what pays for the price line's height here.
+      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, rise: 36, arcW: 440, headGap: 6, divider: 16, col: 280, price: 40, priceGap: 22 };
 
   const body = [];
   shown.forEach((j, i) => {
@@ -247,6 +332,19 @@ function tripCard(data) {
   if (extra > 0) {
     body.push(el("div", { display: "flex", justifyContent: "center", fontSize: 19, color: MUTED, marginTop: 6 },
       extra === 1 ? "+ 1 more flight" : `+ ${extra} more flights`));
+  }
+
+  // Price line, the same figure the link's text preview quotes.
+  const price = perPaxTicket(data);
+  if (price) {
+    body.push(el("div", { height: 2, backgroundColor: "#EDF1F5", margin: `${s.priceGap}px 0 0` }, ""));
+    body.push(el("div", {
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      marginTop: s.priceGap,
+    }, [
+      el("div", { fontSize: s.label, color: MUTED }, "Price per traveler"),
+      el("div", { fontSize: s.price, fontWeight: 800, letterSpacing: -1, color: INK, lineHeight: 1.1 }, price),
+    ]));
   }
 
   return el("div", {
