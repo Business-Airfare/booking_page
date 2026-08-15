@@ -14,6 +14,16 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
+import jpeg from "jpeg-js";
+
+// WhatsApp decides large vs small preview while the sender types, with a
+// tight fetch timeout; a slow first byte demotes the card to the small
+// layout and that decision is cached per URL. Rendered images are
+// therefore cached in-memory (the page function pre-warms this endpoint
+// on crawler hits) and on the CDN via s-maxage.
+const IMAGE_CACHE = new Map(); // publicId -> { buf, at }
+const IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+const IMAGE_CACHE_MAX = 50;
 
 const W = 1200, H = 630;
 const INK = "#0B1220", MUTED = "#64748B", SOFT = "#475569";
@@ -249,6 +259,39 @@ function notFound(res) {
   res.end();
 }
 
+function sendJpeg(res, buf) {
+  res.statusCode = 200;
+  res.setHeader("content-type", "image/jpeg");
+  res.setHeader("content-length", String(buf.length));
+  res.setHeader("cache-control", "public, max-age=300, s-maxage=86400");
+  res.end(buf);
+}
+
+async function renderCard(publicId) {
+  const cached = IMAGE_CACHE.get(publicId);
+  if (cached && Date.now() - cached.at < IMAGE_CACHE_TTL_MS) return cached.buf;
+
+  const data = await fetchJson(
+    `/get_public_session?public_id=${encodeURIComponent(publicId)}`
+  );
+  const tree = data ? tripCard(data) : null;
+  if (!tree) return null;
+
+  const svg = await satori(tree, { width: W, height: H, fonts: FONTS });
+  const rendered = new Resvg(svg, { fitTo: { mode: "width", value: W } }).render();
+  const buf = jpeg.encode(
+    { data: rendered.pixels, width: rendered.width, height: rendered.height },
+    85
+  ).data;
+
+  if (IMAGE_CACHE.size >= IMAGE_CACHE_MAX) {
+    const first = IMAGE_CACHE.keys().next().value;
+    if (first) IMAGE_CACHE.delete(first);
+  }
+  IMAGE_CACHE.set(publicId, { buf, at: Date.now() });
+  return buf;
+}
+
 export default async function handler(req, res) {
   try {
     if (!FONTS) return notFound(res);
@@ -257,19 +300,9 @@ export default async function handler(req, res) {
     const publicId = query.get("public_id") ?? "";
     if (!/^ps_[A-Za-z0-9_-]+$/.test(publicId)) return notFound(res);
 
-    const data = await fetchJson(
-      `/get_public_session?public_id=${encodeURIComponent(publicId)}`
-    );
-    const tree = data ? tripCard(data) : null;
-    if (!tree) return notFound(res);
-
-    const svg = await satori(tree, { width: W, height: H, fonts: FONTS });
-    const png = new Resvg(svg, { fitTo: { mode: "width", value: W } }).render().asPng();
-
-    res.statusCode = 200;
-    res.setHeader("content-type", "image/png");
-    res.setHeader("cache-control", "public, max-age=300, s-maxage=86400");
-    res.end(Buffer.from(png));
+    const buf = await renderCard(publicId);
+    if (!buf) return notFound(res);
+    sendJpeg(res, buf);
   } catch {
     notFound(res);
   }
