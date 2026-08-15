@@ -342,10 +342,10 @@ function arcShift(s, hasCabin) {
   return Math.round(codeCentre - (chipBlock + dotsInBox));
 }
 
-// Who flies the journey, drawn opposite the "Outbound" / "Flight 2"
-// label: the carrier's square icon and, when a single airline covers
-// the whole journey, its name. Two airlines read as "A + B"; beyond
-// that the icons carry it and the names would crowd the row.
+// Who flies the journey, set below the duration and stops line: the
+// carrier's square icon and, when a single airline covers the whole
+// journey, its name. Two airlines read as "A + B"; beyond that the
+// icons carry it and the names would crowd the row.
 function airlineMark(segs, s, ctx) {
   const codes = journeyCarriers(segs);
   if (codes.length === 0) return el("div", {}, "");
@@ -397,7 +397,6 @@ function journeyBlock(j, label, s, ctx) {
   return el("div", { display: "flex", flexDirection: "column", width: "100%" }, [
     el("div", { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s.headGap }, [
       el("div", { fontSize: s.label, fontWeight: 500, color: MUTED }, label),
-      airlineMark(segs, s, ctx),
     ]),
     el("div", { display: "flex", alignItems: "flex-start", justifyContent: "space-between" }, [
       endpoint("left", first.origin_city, first.origin, first.depart_local, s),
@@ -411,6 +410,8 @@ function journeyBlock(j, label, s, ctx) {
           dur ? chip(dur, "#F1F5F9", SOFT, s.chip) : el("div", {}, ""),
           el("div", { fontSize: s.chip + 1, color: MUTED }, stopsText),
         ]),
+        // Who flies it, set apart from the timing line above it.
+        el("div", { display: "flex", marginTop: s.airlineGap }, [airlineMark(segs, s, ctx)]),
       ]),
       endpoint("right", last.destination_city, last.destination, last.arrive_local ?? last.depart_local, s),
     ]),
@@ -439,12 +440,12 @@ function tripCard(data, ctx) {
     shown.length === 1
       // Columns + arc must stay within the card's 1028px content box:
       // wider than that and the outer code runs off the card edge.
-      ? { code: 116, city: 32, time: 34, date: 26, label: 28, chip: 26, rise: 62, arcW: 388, headGap: 14, divider: 26, col: 320, price: 58, priceGap: 40, logo: 40 }
+      ? { code: 116, city: 32, time: 34, date: 26, label: 28, chip: 26, rise: 62, arcW: 388, headGap: 14, divider: 26, col: 320, price: 58, priceGap: 40, logo: 40, airlineGap: 34 }
       : shown.length === 2
-      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, rise: 53, arcW: 460, headGap: 8, divider: 84, col: 280, price: 48, priceGap: 30, logo: 36 }
+      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, rise: 53, arcW: 460, headGap: 8, divider: 60, col: 280, price: 48, priceGap: 30, logo: 34, airlineGap: 28 }
       // Three rows plus the price line is the tallest the card gets;
       // the row gap is what pays for the price line's height here.
-      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, rise: 36, arcW: 440, headGap: 6, divider: 16, col: 280, price: 40, priceGap: 22, logo: 30 };
+      : { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, rise: 36, arcW: 440, headGap: 4, divider: 10, col: 280, price: 40, priceGap: 18, logo: 28, airlineGap: 18 };
 
   const body = [];
   shown.forEach((j, i) => {
