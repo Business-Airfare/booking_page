@@ -166,6 +166,19 @@ const CABIN_LABELS = {
   first: "First Class",
 };
 
+// One chip stands for the whole journey, so it may only name a cabin
+// the traveler holds on every leg of it. Two legs in different cabins
+// read as "Mixed cabin" rather than the first leg's. Legs with a cabin
+// we cannot name are ignored: they can neither label the journey nor
+// make it look mixed.
+function cabinLabel(segs) {
+  const named = new Set(
+    segs.map((s) => CABIN_LABELS[s?.cabin]).filter(Boolean)
+  );
+  if (named.size === 0) return null;
+  return named.size === 1 ? [...named][0] : "Mixed cabin";
+}
+
 /* ---------- pieces ---------- */
 
 // The box is drawn tight around the curve: 8px of air above the apex,
@@ -269,7 +282,7 @@ function journeyBlock(j, label, s) {
     .map((seg) => seg.destination);
   const arcW = s.arcW, arcH = arcBoxHeight(s.rise);
   const arc = arcSvg(arcW, s.rise, stops);
-  const cabin = CABIN_LABELS[first.cabin] ?? null;
+  const cabin = cabinLabel(segs);
   const stopsText = stops.length === 0 ? "Nonstop" : stops.length === 1 ? "1 stop" : `${stops.length} stops`;
   const dur = fmtDuration(travelMinutes(j, segs));
 
