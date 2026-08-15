@@ -141,6 +141,26 @@ async function logoDataUri(code) {
   return uri;
 }
 
+// Live sessions carry server-resolved airline names; this mirrors the
+// payment page's offline fallback (payment-react/src/lib/airlines.ts)
+// so an older session without them still names common carriers rather
+// than printing a bare code beside the logo.
+const FALLBACK_NAMES = {
+  AA: "American Airlines", AC: "Air Canada", AF: "Air France", AS: "Alaska Airlines",
+  AV: "Avianca", AY: "Finnair", AZ: "ITA Airways", A3: "Aegean Airlines",
+  BA: "British Airways", BR: "EVA Air", B6: "JetBlue", CA: "Air China",
+  CI: "China Airlines", CX: "Cathay Pacific", DL: "Delta Air Lines", EI: "Aer Lingus",
+  EK: "Emirates", ET: "Ethiopian Airlines", EY: "Etihad Airways", FI: "Icelandair",
+  IB: "Iberia", JL: "Japan Airlines", KE: "Korean Air", KL: "KLM",
+  LH: "Lufthansa", LO: "LOT Polish Airlines", LX: "Swiss", MS: "EgyptAir",
+  MU: "China Eastern", NH: "ANA", NZ: "Air New Zealand", OS: "Austrian Airlines",
+  OZ: "Asiana Airlines", QF: "Qantas", QR: "Qatar Airways", RO: "TAROM",
+  SK: "SAS", SN: "Brussels Airlines", SQ: "Singapore Airlines", SV: "Saudia",
+  TG: "Thai Airways", TK: "Turkish Airlines", TP: "TAP Air Portugal",
+  UA: "United Airlines", UX: "Air Europa", VN: "Vietnam Airlines",
+  VS: "Virgin Atlantic", WN: "Southwest Airlines",
+};
+
 /** Marketing carriers of the legs actually flown, in order, deduped. */
 function journeyCarriers(segs) {
   const out = [];
@@ -330,25 +350,33 @@ function airlineMark(segs, s, ctx) {
   const codes = journeyCarriers(segs);
   if (codes.length === 0) return el("div", {}, "");
 
-  const named = codes.map((c) => ctx.names[c] ?? c);
-  const text =
-    codes.length === 1 ? named[0]
-    : codes.length === 2 ? `${named[0]} + ${named[1]}`
-    : `${codes.length} airlines`;
+  // A carrier we cannot name is left to its logo; printing the raw
+  // two-letter code next to that same airline's mark reads as noise.
+  // With neither name nor logo the code is all there is.
+  const nameOf = (c) => ctx.names[c] || FALLBACK_NAMES[c] || "";
+  const icons = codes.slice(0, 3).map((c) => ctx.logos.get(c) || "");
+  const named = codes.map(nameOf);
 
-  const icons = codes
-    .slice(0, 3)
-    .map((c) => ctx.logos.get(c))
+  const text =
+    codes.length === 1
+      ? named[0] || (icons[0] ? "" : codes[0])
+      : codes.length === 2 && named[0] && named[1]
+      ? `${named[0]} + ${named[1]}`
+      : codes.length === 2
+      ? ""
+      : `${codes.length} airlines`;
+
+  const marks = icons
     .filter(Boolean)
-    .map((uri) =>
-      el("img", {}, undefined, { src: uri, width: s.logo, height: s.logo })
-    );
+    .map((uri) => el("img", {}, undefined, { src: uri, width: s.logo, height: s.logo }));
 
   return el("div", { display: "flex", alignItems: "center", gap: 10 }, [
-    ...(icons.length
-      ? [el("div", { display: "flex", alignItems: "center", gap: 6 }, icons)]
+    ...(marks.length
+      ? [el("div", { display: "flex", alignItems: "center", gap: 6 }, marks)]
       : []),
-    el("div", { fontSize: s.label, fontWeight: 500, color: SOFT }, text),
+    ...(text
+      ? [el("div", { fontSize: s.label, fontWeight: 500, color: SOFT }, text)]
+      : []),
   ]);
 }
 
