@@ -140,13 +140,6 @@ function formatMoney(cents, currency) {
   return rem === 0 ? `${symbol}${wholeStr}` : `${symbol}${wholeStr}.${String(rem).padStart(2, "0")}`;
 }
 
-const CABIN_LABELS = {
-  economy: "economy",
-  premium_economy: "premium economy",
-  business: "business class",
-  first: "first class",
-};
-
 // Journeys made ONLY of not-for-travel segments are ticket artifacts
 // (fake return), not part of the trip the card describes.
 function realJourneys(journeys) {
@@ -174,31 +167,18 @@ function sessionMeta(data, cardUrl) {
     firstSeg?.depart_local,
     journeys.length > 1 ? lastJourney.segments[0]?.depart_local : null
   );
-  const title = range ? `${originCity} to ${destCity}, ${range}` : `${originCity} to ${destCity}`;
+  const route = `${originCity} to ${destCity}`;
+  const title = `Flight Quote: ${range ? `${route}, ${range}` : route}`;
 
   const returnsToStart =
     lastJourney.segments[lastJourney.segments.length - 1]?.destination === firstSeg?.origin;
   const tripType =
-    journeys.length === 1 ? "One way" : returnsToStart ? "Round trip" : "Multi city trip";
+    journeys.length === 1 ? "One way" : returnsToStart ? "Round trip" : "Multi-city";
 
-  const paxCount =
-    (Array.isArray(data?.passenger_details) && data.passenger_details.length) ||
-    (Array.isArray(data?.passengers) && data.passengers.length) ||
-    (Array.isArray(data?.suggested_passengers) && data.suggested_passengers.length) ||
-    0;
-  const travelers =
-    paxCount === 1 ? " for 1 traveler" : paxCount > 1 ? ` for ${paxCount} travelers` : "";
-
-  const cabinCounts = {};
-  for (const j of journeys) {
-    for (const s of j.segments) {
-      if (s?.not_for_travel) continue;
-      const label = CABIN_LABELS[s?.cabin];
-      if (label) cabinCounts[label] = (cabinCounts[label] ?? 0) + 1;
-    }
-  }
-  const cabin = Object.keys(cabinCounts).sort((x, y) => cabinCounts[y] - cabinCounts[x])[0];
-  const cabinPart = cabin ? `, ${cabin}` : "";
+  const codes =
+    firstSeg?.origin && destSeg?.destination
+      ? `, ${firstSeg.origin} → ${destSeg.destination}`
+      : "";
 
   const price = formatMoney(data?.total_amount, data?.currency);
   const pricePart = price ? ` Total ${price}.` : "";
@@ -206,7 +186,7 @@ function sessionMeta(data, cardUrl) {
   return {
     siteName: "Business Airfare",
     title,
-    description: `${tripType}${travelers}${cabinPart}.${pricePart} Review your flights and book securely.`,
+    description: `${tripType}${codes}.${pricePart} Click here to review full flight details.`,
     url: cardUrl,
   };
 }

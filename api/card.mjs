@@ -196,11 +196,11 @@ function journeyBlock(j, label, s) {
   return el("div", { display: "flex", flexDirection: "column", width: "100%" }, [
     el("div", { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s.headGap }, [
       el("div", { fontSize: s.label, fontWeight: 500, color: MUTED }, label),
-      cabin ? chip(cabin, CHIP_BG, "#334155", s.chip) : el("div", {}, ""),
     ]),
     el("div", { display: "flex", alignItems: "flex-start", justifyContent: "space-between" }, [
       endpoint("left", first.origin_city, first.origin, first.depart_local, s),
       el("div", { display: "flex", flexDirection: "column", alignItems: "center", flexGrow: 1, paddingTop: s.arcPad }, [
+        cabin ? el("div", { display: "flex", marginBottom: -10 }, [chip(cabin, CHIP_BG, "#334155", s.chip)]) : el("div", {}, ""),
         el("div", { display: "flex", position: "relative", width: arcW, height: arcH + 14 }, [
           el("img", { width: arcW, height: arcH }, undefined, { src: arc.uri, width: arcW, height: arcH }),
           ...stopLabels(stops, arc.pt, s.chip),
@@ -250,12 +250,21 @@ function tripCard(data) {
   }
 
   return el("div", {
-    width: W, height: H, display: "flex", backgroundColor: BG, padding: 34,
+    width: W, height: H, display: "flex", backgroundColor: BG, padding: 34, position: "relative",
   }, [
     el("div", {
       display: "flex", flexDirection: "column", justifyContent: "center", flexGrow: 1,
       backgroundColor: CARD, borderRadius: 30, padding: "26px 52px",
     }, body),
+    // Open affordance perched on the card corner, clear of all content:
+    // tells the viewer the card is a link to the full details. The one
+    // accent element on the surface (--ba-accent).
+    el("div", {
+      position: "absolute", top: 10, right: 14, width: 62, height: 62,
+      borderRadius: 999, backgroundColor: "#4653E8", color: "#FFFFFF",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 42, fontWeight: 500, paddingBottom: 5,
+    }, "+"),
   ]);
 }
 
