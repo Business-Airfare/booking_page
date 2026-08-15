@@ -2,6 +2,9 @@
   "functions": {
     "api/page.mjs": {
       "includeFiles": "app.html"
+    },
+    "api/card.mjs": {
+      "includeFiles": "api/_fonts/**"
     }
   },
   "rewrites": [
