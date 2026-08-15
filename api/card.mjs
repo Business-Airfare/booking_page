@@ -25,7 +25,10 @@ const IMAGE_CACHE = new Map(); // publicId -> { buf, at }
 const IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 const IMAGE_CACHE_MAX = 50;
 
-const W = 1200, H = 630;
+// 4:3 rather than the classic 1.91:1: WhatsApp renders the image at
+// full bubble width with height following the image's own aspect
+// ratio, so the squarer canvas shows ~40% taller in the chat.
+const W = 1200, H = 900;
 const INK = "#0B1220", MUTED = "#64748B", SOFT = "#475569";
 const CHIP_BG = "#EEF2F6", LINE = "#C4CFDC", BG = "#E9EEF3", CARD = "#FFFFFF";
 
@@ -162,7 +165,7 @@ function stopLabels(stops, pt, fontSize) {
 function endpoint(align, city, code, timeLocal, s) {
   const [t, ap] = fmtTime(timeLocal);
   const alignItems = align === "left" ? "flex-start" : "flex-end";
-  return el("div", { display: "flex", flexDirection: "column", alignItems, width: 250 }, [
+  return el("div", { display: "flex", flexDirection: "column", alignItems, width: s.col ?? 250 }, [
     el("div", { fontSize: s.city, color: SOFT, marginBottom: -6 }, city ?? ""),
     el("div", { fontSize: s.code, fontWeight: 800, letterSpacing: -3, color: INK, lineHeight: 1.1 }, code ?? ""),
     el("div", { display: "flex", alignItems: "baseline", gap: 6, marginTop: -4 }, [
@@ -226,10 +229,10 @@ function tripCard(data) {
 
   const s =
     shown.length === 1
-      ? { code: 96, city: 26, time: 28, date: 22, label: 24, chip: 22, arcH: 130, arcW: 460, arcPad: 8, headGap: 10, divider: 20 }
+      ? { code: 124, city: 32, time: 34, date: 26, label: 28, chip: 26, arcH: 170, arcW: 470, arcPad: 12, headGap: 14, divider: 26, col: 310 }
       : shown.length === 2
-      ? { code: 84, city: 24, time: 25, date: 20, label: 22, chip: 20, arcH: 104, arcW: 440, arcPad: 0, headGap: 4, divider: 16 }
-      : { code: 56, city: 18, time: 19, date: 16, label: 17, chip: 16, arcH: 60, arcW: 400, arcPad: 0, headGap: 0, divider: 8 };
+      ? { code: 104, city: 28, time: 30, date: 23, label: 25, chip: 23, arcH: 138, arcW: 460, arcPad: 4, headGap: 8, divider: 22, col: 280 }
+      : { code: 76, city: 22, time: 24, date: 19, label: 21, chip: 19, arcH: 92, arcW: 430, arcPad: 0, headGap: 2, divider: 14 };
 
   const body = [];
   shown.forEach((j, i) => {

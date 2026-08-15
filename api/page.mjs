@@ -73,7 +73,7 @@ function metaTagBlock(meta) {
     pairs.push(["og:image", meta.image]);
     pairs.push(["og:image:type", "image/jpeg"]);
     pairs.push(["og:image:width", "1200"]);
-    pairs.push(["og:image:height", "630"]);
+    pairs.push(["og:image:height", "900"]);
   }
   const lines = pairs.map(
     ([property, content]) =>
