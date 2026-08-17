@@ -462,15 +462,20 @@ function tripCard(data, ctx) {
       extra === 1 ? "+ 1 more flight" : `+ ${extra} more flights`));
   }
 
-  // Price line, the same figure the link's text preview quotes.
-  const price = perPaxTicket(data);
+  // Price line, the same figure the link's text preview quotes. Exchange
+  // (flight change) sessions label it as the change price; an even
+  // exchange reads "No charge" (same rule as api/page.mjs).
+  const isExchange = Boolean(data?.exchange);
+  const evenExchange = isExchange && Number(data?.quote?.ticket) === 0;
+  const price = evenExchange ? "No charge" : perPaxTicket(data);
   if (price) {
     body.push(el("div", { height: 2, backgroundColor: "#EDF1F5", margin: `${s.priceGap}px 0 0` }, ""));
     body.push(el("div", {
       display: "flex", justifyContent: "space-between", alignItems: "center",
       marginTop: s.priceGap,
     }, [
-      el("div", { fontSize: s.label, color: MUTED }, "Price per traveler"),
+      el("div", { fontSize: s.label, color: MUTED },
+        evenExchange ? "Flight change" : isExchange ? "Change price per traveler" : "Price per traveler"),
       el("div", { fontSize: s.price, fontWeight: 800, letterSpacing: -1, color: INK, lineHeight: 1.1 }, price),
     ]));
   }

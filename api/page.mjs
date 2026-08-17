@@ -193,18 +193,27 @@ function sessionMeta(data, cardUrl) {
   const shown = legs.slice(0, TITLE_LEGS);
   const extra = legs.length - shown.length;
   const more = extra === 0 ? "" : extra === 1 ? " / + 1 more flight" : ` / + ${extra} more flights`;
-  const title = `Flight Quote: ${shown.join(" / ")}${more}`;
+  // Exchange (flight change) sessions are priced as a change, not a
+  // ticket: the pay project marks them with an `exchange` block. The
+  // figure is still the per-traveler ticket amount (the change total).
+  const isExchange = Boolean(data?.exchange);
+  const title = `${isExchange ? "Flight Change" : "Flight Quote"}: ${shown.join(" / ")}${more}`;
 
   // Always the ticket alone, per traveler: no service fee, no Travel
   // Care, no tip. api/card.mjs draws the same figure on the image.
   const price = perPaxTicket(data);
+  const evenExchange = isExchange && Number(data?.quote?.ticket) === 0;
 
   return {
     siteName: "Business Airfare",
     title,
-    description: price
-      ? `Priced at ${price} per traveler.`
-      : "Click here to review full flight details.",
+    description: evenExchange
+      ? "No charge for this flight change."
+      : price
+        ? isExchange
+          ? `Change price ${price} per traveler.`
+          : `Priced at ${price} per traveler.`
+        : "Click here to review full flight details.",
     url: cardUrl,
   };
 }
