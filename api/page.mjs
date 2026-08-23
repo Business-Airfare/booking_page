@@ -88,19 +88,31 @@ function metaTagBlock(meta) {
   return lines.join("\n");
 }
 
+/**
+ * @returns {Promise<{data: any, gone: boolean}>} `gone` is true only when a base
+ * answered a definite 404: the link was killed by an agent, or never existed.
+ * Every other failure (403, timeout, both bases down) leaves it false, because
+ * those are indistinguishable from an infrastructure hiccup and must never be
+ * allowed to hide a page that actually works.
+ */
 async function fetchJson(path) {
+  let gone = false;
   for (const base of FUNCTIONS_BASES) {
     try {
       const res = await fetch(`${base}${path}`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      if (res.status === 404) {
+        gone = true;
+        continue;
+      }
       if (!res.ok) continue;
-      return await res.json();
+      return { data: await res.json(), gone: false };
     } catch {
       // try the fallback base
     }
   }
-  return null;
+  return { data: null, gone };
 }
 
 /* ---------- card text helpers ---------- */
@@ -252,9 +264,10 @@ async function buildMeta(query, host) {
   const previewId = query.get("preview");
 
   if (publicId) {
-    const data = await fetchJson(
+    const { data, gone } = await fetchJson(
       `/get_public_session?public_id=${encodeURIComponent(publicId)}`
     );
+    if (gone) return { meta: GENERIC_META, gone: true };
     const meta = sessionMeta(
       data,
       `${PAGE_URL}?public_id=${encodeURIComponent(publicId)}`
@@ -264,19 +277,56 @@ async function buildMeta(query, host) {
       // valid sessions get one; unknown ids stay text-only.
       meta.image = `https://${host}/api/card?public_id=${encodeURIComponent(publicId)}`;
     }
-    return meta ?? GENERIC_META;
+    return { meta: meta ?? GENERIC_META, gone: false };
   }
   if (previewId) {
-    const data = await fetchJson(
+    const { data, gone } = await fetchJson(
       `/get_public_preview?public_id=${encodeURIComponent(previewId)}`
     );
-    return (
-      previewMeta(data, `${PAGE_URL}?preview=${encodeURIComponent(previewId)}`) ??
-      GENERIC_META
-    );
+    if (gone) return { meta: GENERIC_META, gone: true };
+    return {
+      meta:
+        previewMeta(data, `${PAGE_URL}?preview=${encodeURIComponent(previewId)}`) ??
+        GENERIC_META,
+      gone: false,
+    };
   }
-  return GENERIC_META;
+  return { meta: GENERIC_META, gone: false };
 }
+
+/*
+ * Served instead of the app when the link is definitely dead, so a killed or
+ * unknown link never loads the payment bundle at all.
+ *
+ * The app would otherwise paint its "Loading your trip" animation - a flight
+ * arc, a plane - for the moment it takes to discover the session is gone, which
+ * tells whoever is holding a killed link that there is a real booking page
+ * behind it. Nothing here is branded, and there is no script.
+ *
+ * Wording matches the app's own unavailable screen exactly, so the two are
+ * indistinguishable whichever path a visitor arrives by.
+ */
+const GONE_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex" />
+    <title>Not available</title>
+    <style>
+      html,body{margin:0;height:100%;background:#fff}
+      body{display:flex;align-items:center;justify-content:center;padding:0 24px;
+        font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+        color:#414b57}
+      p{max-width:420px;text-align:center;margin:0}
+    </style>
+  </head>
+  <body>
+    <p>This link has expired or is no longer valid.</p>
+  </body>
+</html>
+`;
 
 export default async function handler(req, res) {
   let html = TEMPLATE;
@@ -289,7 +339,17 @@ export default async function handler(req, res) {
         req.headers?.["x-forwarded-host"] ??
         req.headers?.host ??
         "booking.business-airfare.com";
-      meta = (await buildMeta(query, host)) ?? GENERIC_META;
+      const built = (await buildMeta(query, host)) ?? { meta: GENERIC_META, gone: false };
+      if (built.gone) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        // Never cached: an agent can kill a link at any moment, and a link
+        // can equally be replaced, so this answer must not outlive the check.
+        res.setHeader("cache-control", "no-store");
+        res.end(GONE_HTML);
+        return;
+      }
+      meta = built.meta;
       if (meta.image) {
         // Pre-warm the card image: crawlers always fetch the page first,
         // and their image fetch follows within seconds. Rendering starts
