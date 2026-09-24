@@ -209,23 +209,33 @@ function sessionMeta(data, cardUrl) {
   // ticket: the pay project marks them with an `exchange` block. The
   // figure is still the per-traveler ticket amount (the change total).
   const isExchange = Boolean(data?.exchange);
-  const title = `${isExchange ? "Flight Change" : "Flight Quote"}: ${shown.join(" / ")}${more}`;
+  // Addition sessions (the client pays more on a trip already booked: a
+  // fare upgrade, seats, bags; CRM sale money, section 9): the title is
+  // the addition's own words and the figure is the whole amount, not a
+  // per-traveler ticket price.
+  const isAddition = Boolean(data?.addition);
+  const additionLabel = isAddition ? String(data.addition.label || "Additional charge") : "";
+  const title = isAddition
+    ? `${additionLabel}: ${shown.join(" / ")}${more}`
+    : `${isExchange ? "Flight Change" : "Flight Quote"}: ${shown.join(" / ")}${more}`;
 
   // Always the ticket alone, per traveler: no service fee, no Travel
   // Care, no tip. api/card.mjs draws the same figure on the image.
-  const price = perPaxTicket(data);
+  const price = isAddition ? formatMoney(Number(data?.quote?.ticket) || 0, data?.currency) : perPaxTicket(data);
   const evenExchange = isExchange && Number(data?.quote?.ticket) === 0;
 
   return {
     siteName: "Business Airfare",
     title,
-    description: evenExchange
-      ? "No charge for this flight change."
-      : price
-        ? isExchange
-          ? `Change price ${price} per traveler.`
-          : `Priced at ${price} per traveler.`
-        : "Click here to review full flight details.",
+    description: isAddition
+      ? `Amount ${price}, on your existing booking.`
+      : evenExchange
+        ? "No charge for this flight change."
+        : price
+          ? isExchange
+            ? `Change price ${price} per traveler.`
+            : `Priced at ${price} per traveler.`
+          : "Click here to review full flight details.",
     url: cardUrl,
   };
 }

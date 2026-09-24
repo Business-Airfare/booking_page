@@ -467,7 +467,11 @@ function tripCard(data, ctx) {
   // exchange reads "No charge" (same rule as api/page.mjs).
   const isExchange = Boolean(data?.exchange);
   const evenExchange = isExchange && Number(data?.quote?.ticket) === 0;
-  const price = evenExchange ? "No charge" : perPaxTicket(data);
+  // Addition sessions (the client pays more on a trip already booked; CRM
+  // sale money, section 9): the whole amount, labelled with the addition's
+  // own words, never a per-traveler ticket price. Same rule as api/page.mjs.
+  const isAddition = Boolean(data?.addition);
+  const price = isAddition ? fmtMoney(Number(data?.quote?.ticket) || 0, data?.currency) : evenExchange ? "No charge" : perPaxTicket(data);
   if (price) {
     body.push(el("div", { height: 2, backgroundColor: "#EDF1F5", margin: `${s.priceGap}px 0 0` }, ""));
     body.push(el("div", {
@@ -475,7 +479,7 @@ function tripCard(data, ctx) {
       marginTop: s.priceGap,
     }, [
       el("div", { fontSize: s.label, color: MUTED },
-        evenExchange ? "Flight change" : isExchange ? "Change price per traveler" : "Price per traveler"),
+        isAddition ? String(data.addition.label || "Additional charge") : evenExchange ? "Flight change" : isExchange ? "Change price per traveler" : "Price per traveler"),
       el("div", { fontSize: s.price, fontWeight: 800, letterSpacing: -1, color: INK, lineHeight: 1.1 }, price),
     ]));
   }
