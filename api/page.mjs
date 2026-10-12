@@ -90,10 +90,12 @@ function metaTagBlock(meta) {
 
 /**
  * @returns {Promise<{data: any, gone: boolean}>} `gone` is true only when a base
- * answered a definite 404: the link was killed by an agent, or never existed.
- * Every other failure (403, timeout, both bases down) leaves it false, because
- * those are indistinguishable from an infrastructure hiccup and must never be
- * allowed to hide a page that actually works.
+ * answered a definite 404 or 410: the link was killed by an agent, never
+ * existed, or closed 7 days after its payment (410, the pay project's
+ * _shared/link_closure.ts). Every other failure (403, timeout, both bases
+ * down) leaves it false, because those are indistinguishable from an
+ * infrastructure hiccup and must never be allowed to hide a page that
+ * actually works.
  */
 async function fetchJson(path) {
   let gone = false;
@@ -102,7 +104,7 @@ async function fetchJson(path) {
       const res = await fetch(`${base}${path}`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      if (res.status === 404) {
+      if (res.status === 404 || res.status === 410) {
         gone = true;
         continue;
       }
@@ -305,8 +307,9 @@ async function buildMeta(query, host) {
 }
 
 /*
- * Served instead of the app when the link is definitely dead, so a killed or
- * unknown link never loads the payment bundle at all.
+ * Served instead of the app when the link is definitely dead, so a killed,
+ * closed (7 days after its payment) or unknown link never loads the payment
+ * bundle at all.
  *
  * The app would otherwise paint its "Loading your trip" animation - a flight
  * arc, a plane - for the moment it takes to discover the session is gone, which
@@ -340,11 +343,14 @@ const GONE_HTML = `<!doctype html>
 
 export default async function handler(req, res) {
   let html = TEMPLATE;
+  /** The page of one link (?public_id= or ?preview=), as opposed to the bare page. */
+  let perLink = false;
 
   try {
     let meta = GENERIC_META;
     try {
       const query = new URL(req.url ?? "/", "http://local").searchParams;
+      perLink = Boolean(query.get("public_id") || query.get("preview"));
       const host =
         req.headers?.["x-forwarded-host"] ??
         req.headers?.host ??
@@ -392,14 +398,22 @@ export default async function handler(req, res) {
 
   res.statusCode = 200;
   res.setHeader("content-type", "text/html; charset=utf-8");
-  // Browsers always revalidate; the CDN may serve the same per-URL HTML
-  // for a few minutes so crawler fetches (Meta's server-side preview
-  // path is latency-sensitive) get an instant first byte. The shell only
-  // changes on deploy, which purges the CDN anyway; the injected tags
-  // going up to 5 minutes stale is harmless.
-  res.setHeader(
-    "cache-control",
-    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
-  );
+  if (perLink) {
+    // A link's page is answered fresh every time. Until 12 Oct 2026 the CDN
+    // kept it for five minutes and served it stale for a day after that, so
+    // a link an agent had just killed went on loading the app (the loader,
+    // then the app's own "not available") for everyone who opened it in
+    // that window: the kill is only as immediate as this answer is.
+    res.setHeader("cache-control", "no-store");
+  } else {
+    // The bare page (no link): browsers always revalidate; the CDN may
+    // serve the same HTML for a few minutes so crawler fetches (Meta's
+    // server-side preview path is latency-sensitive) get an instant first
+    // byte. The shell only changes on deploy, which purges the CDN anyway.
+    res.setHeader(
+      "cache-control",
+      "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
+    );
+  }
   res.end(html);
 }
