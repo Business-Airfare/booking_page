@@ -14,7 +14,28 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitUntil } from "@vercel/functions";
 
-const PAGE_URL = "https://booking.business-airfare.com/";
+/*
+ * The page is reachable on more than one host while it moves to
+ * pay.bookingportals.com (12 Oct 2026). The preview card's own URL and its
+ * image are built on the host the request came in on, so each host
+ * describes itself; DEFAULT_HOST is only for a request with no host header.
+ */
+const DEFAULT_HOST = "booking.business-airfare.com";
+function pageUrl(host) {
+  return `https://${host}/`;
+}
+
+/*
+ * The canonical host, once the page has moved: PAYMENT_PAGE_CANONICAL_HOST on
+ * Vercel (set at step 4 of the move, needs a redeploy to take effect). While it
+ * is set, a request on any other host of this project is handed over to it,
+ * carrying the device's trusted key when the browser holds one (the page's
+ * geoKey.ts keeps it under ba_geo_bypass_key), so an agent is re-keyed on their
+ * first click and a client is simply forwarded. Unset: every host serves the
+ * page itself.
+ */
+const CANONICAL_HOST = (process.env.PAYMENT_PAGE_CANONICAL_HOST ?? "").trim().toLowerCase();
+const GEO_KEY_STORAGE = "ba_geo_bypass_key";
 
 // Same bases the page bundle uses (src/lib/config.ts in payment-react).
 const FUNCTIONS_BASES = [
@@ -27,7 +48,7 @@ const GENERIC_META = {
   siteName: "Business Airfare",
   title: "Secure payment | Business Airfare",
   description: "Review your flights and book securely with Business Airfare.",
-  url: PAGE_URL,
+  url: pageUrl(DEFAULT_HOST),
 };
 
 // app.html is the page shell (renamed from index.html so the static
@@ -274,36 +295,85 @@ function previewMeta(data, cardUrl) {
 async function buildMeta(query, host) {
   const publicId = query.get("public_id");
   const previewId = query.get("preview");
+  const generic = { ...GENERIC_META, url: pageUrl(host) };
 
   if (publicId) {
     const { data, gone } = await fetchJson(
       `/get_public_session?public_id=${encodeURIComponent(publicId)}`
     );
-    if (gone) return { meta: GENERIC_META, gone: true };
+    if (gone) return { meta: generic, gone: true };
     const meta = sessionMeta(
       data,
-      `${PAGE_URL}?public_id=${encodeURIComponent(publicId)}`
+      `${pageUrl(host)}?public_id=${encodeURIComponent(publicId)}`
     );
     if (meta) {
       // Card image served by api/card.mjs on the same deployment. Only
       // valid sessions get one; unknown ids stay text-only.
       meta.image = `https://${host}/api/card?public_id=${encodeURIComponent(publicId)}`;
     }
-    return { meta: meta ?? GENERIC_META, gone: false };
+    return { meta: meta ?? generic, gone: false };
   }
   if (previewId) {
     const { data, gone } = await fetchJson(
       `/get_public_preview?public_id=${encodeURIComponent(previewId)}`
     );
-    if (gone) return { meta: GENERIC_META, gone: true };
+    if (gone) return { meta: generic, gone: true };
     return {
       meta:
-        previewMeta(data, `${PAGE_URL}?preview=${encodeURIComponent(previewId)}`) ??
-        GENERIC_META,
+        previewMeta(data, `${pageUrl(host)}?preview=${encodeURIComponent(previewId)}`) ??
+        generic,
       gone: false,
     };
   }
-  return { meta: GENERIC_META, gone: false };
+  return { meta: generic, gone: false };
+}
+
+/*
+ * The hand-over page an old host serves while CANONICAL_HOST is set: the
+ * browser forwards itself to the same link on the canonical host, adding the
+ * device's trusted key when it holds one and the link does not already carry
+ * one. No script: the meta refresh forwards without the key. Nothing here is
+ * branded, and nothing is cached.
+ */
+function handoverHtml(target) {
+  const attr = escapeHtml(target);
+  const js = JSON.stringify(target).replace(/<\//g, "<\\/");
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content="1;url=${attr}" />
+    <title>Secure payment</title>
+    <style>html,body{margin:0;height:100%;background:#fff}</style>
+    <script>
+      (function () {
+        var t = ${js};
+        try {
+          var k = (window.localStorage.getItem(${JSON.stringify(GEO_KEY_STORAGE)}) || "").trim();
+          if (k.length >= 16 && t.indexOf("geo_key=") < 0) {
+            t += (t.indexOf("?") >= 0 ? "&" : "?") + "geo_key=" + encodeURIComponent(k);
+          }
+        } catch (e) {}
+        window.location.replace(t);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
+`;
+}
+
+/** The host the request came in on, without a port; DEFAULT_HOST when none. */
+function requestHost(req) {
+  const raw = String(req.headers?.["x-forwarded-host"] ?? req.headers?.host ?? "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const host = raw.replace(/:\d+$/, "");
+  return /^[a-z0-9.-]+$/.test(host) ? host : DEFAULT_HOST;
 }
 
 /*
@@ -351,10 +421,15 @@ export default async function handler(req, res) {
     try {
       const query = new URL(req.url ?? "/", "http://local").searchParams;
       perLink = Boolean(query.get("public_id") || query.get("preview"));
-      const host =
-        req.headers?.["x-forwarded-host"] ??
-        req.headers?.host ??
-        "booking.business-airfare.com";
+      const host = requestHost(req);
+      if (CANONICAL_HOST && host !== CANONICAL_HOST) {
+        const search = query.toString();
+        res.statusCode = 200;
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        res.setHeader("cache-control", "no-store");
+        res.end(handoverHtml(`${pageUrl(CANONICAL_HOST)}${search ? `?${search}` : ""}`));
+        return;
+      }
       const built = (await buildMeta(query, host)) ?? { meta: GENERIC_META, gone: false };
       if (built.gone) {
         res.statusCode = 404;
