@@ -14,6 +14,11 @@
             "/": "/",
             "?": { "public_id": "?*" },
             "comment": "A payment link: the Booking Portals app's payment sheet for the client it was made for, Safari for anyone else (the owner's pick A, 28 Nov 2026; the CRM repo, src/app/portal/lib/nativeOwnLink.ts)"
+          },
+          {
+            "/": "/",
+            "?": { "geo_key": "?*" },
+            "comment": "A payment page pass (the CRM's Devices): opened in the app's own payment sheet, whose storage is apart from Safari's, so the pass is the sheet's (the owner's yes, 28 Nov 2026; the CRM repo, nativeOwnLink.ts)"
           }
         ]
       }
