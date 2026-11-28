@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.businessairfare.portal",
+      "sha256_cert_fingerprints": [
+        "54:41:BD:85:67:FB:B6:A5:EA:E9:BE:3C:DC:D7:99:80:52:CB:5B:99:00:E7:E9:FB:53:79:1B:F4:48:12:9D:5F",
+        "B8:7B:E1:7A:65:23:B3:E0:40:C5:99:CE:3A:1C:B5:37:33:D0:ED:D2:2F:E3:74:E6:97:2C:B6:E8:29:95:2C:CE"
+      ]
+    }
+  }
+]

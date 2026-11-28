@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["4U7X3F548V.com.businessairfare.portal"],
+        "components": [
+          {
+            "/": "/",
+            "?": { "public_id": "?*" },
+            "comment": "A payment link: the Booking Portals app's payment sheet for the client it was made for, Safari for anyone else (the owner's pick A, 28 Nov 2026; the CRM repo, src/app/portal/lib/nativeOwnLink.ts)"
+          }
+        ]
+      }
+    ]
+  }
+}
