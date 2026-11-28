@@ -6,6 +6,12 @@
         "components": [
           {
             "/": "/",
+            "?": { "ba_app": "1" },
+            "exclude": true,
+            "comment": "A payment page the app opens itself (its sheet, or Safari for a link it does not keep): never claimed, so no 'Open in the app' banner over the app's own sheet (the CRM repo, nativeLinkPath.ts markedForAppSheet)"
+          },
+          {
+            "/": "/",
             "?": { "public_id": "?*" },
             "comment": "A payment link: the Booking Portals app's payment sheet for the client it was made for, Safari for anyone else (the owner's pick A, 28 Nov 2026; the CRM repo, src/app/portal/lib/nativeOwnLink.ts)"
           }
